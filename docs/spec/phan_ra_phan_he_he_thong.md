@@ -111,14 +111,14 @@ Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload
 ```text
 Document Management
   ├── FileUploadHandler             — Validate MIME type, extension, size
-  ├── StorageService                — Lưu/xóa file (Local / S3 Phase 2)
+  ├── MinioStorageService           — Lưu/xóa object trong MinIO bucket
   ├── DocumentAccessPolicyService   — Dùng chung cho detail, preview, download và search filter
   ├── ContentExtractorService       — Trích xuất text từ file
   │     ├── PdfTextExtractor        (Apache PDFBox)
   │     ├── DocxExtractor           (Apache POI - XWPF)
   │     ├── DocExtractor            (Apache POI - HWPF)
   │     ├── ExcelExtractor          (Apache POI)
-  │     └── ImageOcrExtractor       (Tesseract - Phase 2)
+  │     └── ImageOcrExtractor       (Tesseract OCR)
   ├── PreviewService                — Convert, sanitize & stream file preview
   ├── HtmlSanitizer                 — Làm sạch HTML preview để tránh XSS
   ├── VersionService                — Quản lý phiên bản

@@ -87,9 +87,9 @@ Admin chọn "Upload tài liệu"
   ├── ❌ Thiếu rule phân quyền → 400 Bad Request
   └── ✅ Hợp lệ
         ↓
-[StorageService] — Lưu file gốc vào File Storage
-  • Tạo UUID filename → tránh trùng lặp
-  • Lưu vào /storage/documents/YYYY/MM/{uuid}_original.ext
+[MinioStorageService] — Lưu file gốc vào MinIO bucket
+  • Tạo UUID object key → tránh trùng lặp
+  • Lưu vào bucket `dms-documents` theo key `documents/YYYY/MM/{documentUuid}/versions/{versionUuid}/original.ext`
         ↓
 [DocumentService] — Lưu metadata vào MySQL
   • Tạo record trong bảng `documents`
@@ -103,7 +103,7 @@ Admin chọn "Upload tài liệu"
   ├── DOCX             → Apache POI (XWPF)
   ├── DOC (cũ)         → Apache POI (HWPF)
   ├── XLS/XLSX         → Apache POI
-  └── Image/PDF scan   → Không OCR ở Phase 1, vẫn preview nếu có quyền
+  └── Image/PDF scan   → Tesseract OCR, vẫn preview nếu có quyền
         ↓
   Lưu extracted_content vào bảng `document_contents`
         ↓
@@ -143,7 +143,7 @@ Response ApiResponse<DocumentUploadResult> → {
 
 Business rules:
 
-- Tài liệu ảnh/PDF scan không có OCR ở Phase 1 vẫn có thể chuyển `INDEXED` với `extracted_content` rỗng nếu metadata và index thành công.
+- Tài liệu ảnh/PDF scan dùng OCR; nếu OCR thất bại nhưng metadata index thành công thì Admin có thể retry xử lý thủ công.
 - Auto retry áp dụng cho lỗi trích xuất hoặc lỗi index tạm thời; Admin vẫn có thể retry thủ công từ màn hình quản trị tài liệu lỗi.
 
 ---
@@ -328,7 +328,7 @@ Admin click "Upload phiên bản mới"
 [DocumentController] — POST /documents/{id}/versions
       ↓
 [DocumentService]
-  ├── Lưu file mới vào Storage
+  ├── Lưu file mới vào MinIO bucket
   ├── Tạo record mới trong document_versions
   ├── Cập nhật current_version trong documents
   ├── Status = PROCESSING

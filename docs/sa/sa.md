@@ -45,8 +45,8 @@
     ┌───────────┼────────────────┐
     ▼           ▼                ▼
 ┌────────┐ ┌──────────────┐ ┌──────────────────┐
-│ MySQL  │ │ File Storage │ │ Elasticsearch    │
-│ (Meta) │ │ (Local/S3)   │ │ (Full-text)      │
+│ MySQL  │ │ MinIO        │ │ Elasticsearch    │
+│ (Meta) │ │ Object Store │ │ (Full-text)      │
 └────────┘ └──────────────┘ └──────────────────┘
 ```
 
@@ -58,7 +58,7 @@
 
 - **Domain Services**: (`DocumentService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
 - **Application Layer** (Use Cases): (`DocumentUploadUseCase`, `DocumentSearchUseCase`). Điều phối nhiều Domain Services.
-  - Ví dụ: `DocumentUploadUseCase` sẽ gọi `StorageService` (lưu file) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
+  - Ví dụ: `DocumentUploadUseCase` sẽ gọi `MinioStorageService` (lưu object vào MinIO) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
 
 ### 2.2 Strategy Pattern — Content Extraction
 
@@ -67,11 +67,11 @@ Hệ thống hỗ trợ nhiều loại file, sử dụng **Strategy Pattern** đ
 ```text
 ContentExtractorService
   ├── PdfTextExtractor          (Apache PDFBox)
-  ├── PdfOcrExtractor           (Tika + Tesseract - Phase 2)
+  ├── PdfOcrExtractor           (Tika + Tesseract OCR)
   ├── DocxExtractor             (Apache POI - XWPF)
   ├── DocExtractor              (Apache POI - HWPF)
   ├── ExcelExtractor            (Apache POI)
-  └── ImageOcrExtractor         (Tesseract - Phase 2)
+  └── ImageOcrExtractor         (Tesseract OCR)
 ```
 
 ```java
@@ -140,7 +140,7 @@ Sử dụng **MapStruct** cho toàn bộ chuyển đổi Entity ↔ DTO. Không 
 
 ### Elasticsearch-first Search Engine
 
-Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu. MySQL lưu metadata nguồn và dữ liệu quan hệ; Elasticsearch lưu index phục vụ full-text search, filter, highlight, relevance scoring và permission-aware query. Phase 1 không dùng MySQL Full-text Search làm fallback.
+Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu. MySQL lưu metadata nguồn và dữ liệu quan hệ; Elasticsearch lưu index phục vụ full-text search, filter, highlight, relevance scoring và permission-aware query. Hệ thống không dùng MySQL Full-text Search làm fallback.
 
 ```text
 ┌─────────────────────────────────────────────────────┐
@@ -194,7 +194,7 @@ Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu.
 
 ### Extraction & Preview Responsibility
 
-Tika không phải extractor chính cho toàn bộ file trong Phase 1. Trách nhiệm được phân định như sau:
+Tika không phải extractor chính cho toàn bộ file. Trách nhiệm được phân định như sau:
 
 | Thành phần | Vai trò |
 |------------|---------|
@@ -203,7 +203,7 @@ Tika không phải extractor chính cho toàn bộ file trong Phase 1. Trách nh
 | **Apache POI** | Extractor chính cho DOC/DOCX/XLS/XLSX |
 | **JODConverter + LibreOffice headless** | Convert Word/Excel sang PDF hoặc HTML preview |
 | **OWASP Java HTML Sanitizer / Jsoup** | Sanitize HTML preview và search highlight trước khi trả frontend |
-| **Tesseract OCR** | OCR scanned PDF/image ở Phase 2 |
+| **Tesseract OCR** | OCR scanned PDF/image |
 
 ```text
 File Input
@@ -214,7 +214,7 @@ File Input
     ├── XLS/XLSX      → Apache POI extract text → extracted_content
     ├── Word/Excel    → JODConverter + LibreOffice → PDF/HTML preview
     ├── HTML preview  → HtmlSanitizer → safe preview response
-    └── Image/PDF scan → OCR Phase 2, Phase 1 có thể index metadata với extracted_content rỗng
+    └── Image/PDF scan → Tesseract OCR
     ↓
 ExtractionResult {
     extractedText: String,
@@ -224,7 +224,7 @@ ExtractionResult {
 }
 ```
 
-### OCR Pipeline (Phase 2)
+### OCR Pipeline
 
 ```text
 Scanned PDF / Image
@@ -314,9 +314,9 @@ Sử dụng **Spring Scheduler** (`@Scheduled`):
 |-----|----------|-------|
 | Re-index batch | Hàng đêm (2:00 AM) | Đồng bộ lại toàn bộ search index để self-heal lệch index |
 | Content extraction retry | Mỗi 30 phút | Retry extraction/indexing cho documents `EXTRACTION_FAILED` do lỗi tạm thời |
-| Storage cleanup | Hàng tuần hoặc Phase 2 hardening | Chỉ xóa orphan files không còn metadata/version reference; không xóa file của tài liệu soft-deleted còn khả năng restore |
+| Storage cleanup | Hàng tuần hoặc production hardening | Chỉ xóa orphan files không còn metadata/version reference; không xóa file của tài liệu soft-deleted còn khả năng restore |
 | Analytics aggregation | Hàng ngày | Tổng hợp view/download/search metrics cho dashboard, tránh scan log lớn trực tiếp |
-| OCR queue processor | Mỗi 5 phút (Phase 2) | Xử lý hàng đợi OCR |
+| OCR queue processor | Mỗi 5 phút | Xử lý hàng đợi OCR |
 
 ---
 
@@ -416,10 +416,10 @@ backend/
 
 ---
 
-## 10. Scalability Roadmap
+## 10. Scalability Tiers
 
-| Phase | Mục tiêu | Giải pháp |
-|-------|----------|-----------|
-| **Phase 1** | MVP — < 10k documents | Elasticsearch single-node, Local Storage, Monolith |
-| **Phase 2** | Scale — 10k–100k documents | Elasticsearch cluster, S3/MinIO, OCR (Tesseract), Redis Cache |
-| **Phase 3** | Enterprise — > 100k documents | Multi-node Elasticsearch, CDN, Async queue (RabbitMQ), Vietnamese NLP |
+| Quy mô | Mục tiêu | Giải pháp |
+|--------|----------|-----------|
+| **MVP / single server** | < 10k documents | Elasticsearch single-node, MinIO, Monolith, OCR (Tesseract) |
+| **Production scale** | 10k–100k documents | Elasticsearch cluster, MinIO/S3-compatible object storage, OCR queue, Redis Cache |
+| **Enterprise scale** | > 100k documents | Multi-node Elasticsearch, CDN, Async queue (RabbitMQ), Vietnamese NLP |

@@ -98,9 +98,9 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | POI (XWPF) |
 | `application/vnd.ms-excel` | `.xls` | POI |
 | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `.xlsx` | POI |
-| `image/jpeg` | `.jpg`, `.jpeg` | OCR (Phase 2) |
-| `image/png` | `.png` | OCR (Phase 2) |
-| `image/tiff` | `.tiff` | OCR (Phase 2) |
+| `image/jpeg` | `.jpg`, `.jpeg` | Tesseract OCR |
+| `image/png` | `.png` | Tesseract OCR |
+| `image/tiff` | `.tiff` | Tesseract OCR |
 
 Upload validation rules:
 

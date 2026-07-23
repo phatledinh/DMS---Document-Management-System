@@ -359,7 +359,7 @@ CREATE INDEX idx_doc_dept_access_dept ON document_department_accesses(department
 CREATE INDEX idx_doc_user_access_user ON document_user_accesses(user_id, document_id);
 ```
 
-MySQL chỉ dùng B-Tree indexes cho lookup metadata, join, filter, ACL và đồng bộ Elasticsearch. Full-text search không dùng MySQL Full-text Search trong Phase 1.
+MySQL chỉ dùng B-Tree indexes cho lookup metadata, join, filter, ACL và đồng bộ Elasticsearch. Full-text search không dùng MySQL Full-text Search làm fallback.
 
 ---
 

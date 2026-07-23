@@ -701,7 +701,7 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 | 4 | Row link | Link sang MH04 chi tiết tài liệu |
 | 5 | Pagination | Phân trang |
 
-> Sidebar Admin bổ sung menu "Audit Logs". Export CSV có thể để Phase 2.
+> Sidebar Admin bổ sung menu "Audit Logs" và hỗ trợ Export CSV.
 
 ---
 

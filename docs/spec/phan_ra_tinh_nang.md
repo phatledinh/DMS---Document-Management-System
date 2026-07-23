@@ -100,9 +100,9 @@
 |------------|----------|
 | Actor | System (Background) |
 | Mô tả | Tự động trích xuất text từ file sau khi upload |
-| Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → Không OCR ở Phase 1, OCR thuộc Phase 2 |
+| Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → Tesseract OCR |
 | Output | `extracted_content` lưu trong `document_contents` |
-| Business Rules | - Chạy async/background<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan Phase 1 có thể `INDEXED` với `extracted_content` rỗng nếu metadata và index thành công<br>- Retry tự động mỗi 30 phút cho lỗi extraction/index tạm thời |
+| Business Rules | - Chạy async/background<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan phải chạy OCR để tạo `extracted_content` khi có thể<br>- Retry tự động mỗi 30 phút cho lỗi extraction/index tạm thời |
 
 ### F2.3: Danh sách tài liệu
 

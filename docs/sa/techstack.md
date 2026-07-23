@@ -15,7 +15,7 @@
 │  │                │  │                │  │               │  │
 │  │  React 18+     │  │  Spring Boot 3 │  │  MySQL 8.0+   │  │
 │  │  Vite          │  │  Java 17+      │  │  Redis        │  │
-│  │  TypeScript    │  │  Spring Sec 6  │  │  Elasticsearch │  │
+│  │  JavaScript    │  │  Spring Sec 6  │  │  Elasticsearch │  │
 │  └────────────────┘  └────────────────┘  └───────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -30,7 +30,7 @@
 |-----------|---------|-------|
 | **React** | 18+ | UI Library |
 | **Vite** | 5+ | Build tool & Dev server |
-| **TypeScript** | 5+ | Type safety |
+| **JavaScript** | ES2022+ | Ngôn ngữ frontend thuần |
 
 ### UI & Styling
 
@@ -73,9 +73,9 @@ frontend/
 ├── public/
 ├── src/
 │   ├── api/                    ← API client (Axios instances, interceptors)
-│   │   ├── axiosClient.ts
-│   │   ├── authApi.ts
-│   │   ├── documentApi.ts
+│   │   ├── axiosClient.js
+│   │   ├── authApi.js
+│   │   ├── documentApi.js
 │   │   └── ...
 │   ├── assets/                 ← Images, fonts
 │   ├── components/             ← Shared/reusable components
@@ -99,13 +99,11 @@ frontend/
 │   ├── hooks/                  ← Custom hooks
 │   ├── pages/                  ← Route pages
 │   ├── store/                  ← Global state
-│   ├── types/                  ← TypeScript types/interfaces
 │   ├── utils/                  ← Utility functions
-│   ├── App.tsx
-│   └── main.tsx
+│   ├── App.jsx
+│   └── main.jsx
 ├── index.html
-├── vite.config.ts
-├── tsconfig.json
+├── vite.config.js
 └── package.json
 ```
 
@@ -140,7 +138,7 @@ frontend/
 | **Apache PDFBox** | PDF text extraction (extractor chính cho PDF) |
 | **Apache POI** | DOC/DOCX/XLS/XLSX text extraction (extractor chính cho Office) |
 | **JODConverter + LibreOffice (headless)** | Convert Word/Excel → PDF/HTML cho Preview (F2.7, MH05) |
-| **Tesseract OCR** (Phase 2) | OCR cho scanned PDF & images |
+| **Tesseract OCR** | OCR cho scanned PDF & images |
 
 > **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho Elasticsearch. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image backend phải cài sẵn LibreOffice. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
 
@@ -337,7 +335,7 @@ backend/
 | **Docker** | Containerization |
 | **Docker Compose** | Multi-container orchestration |
 
-### CI/CD (Phase 2+)
+### CI/CD
 
 | Công cụ | Mô tả |
 |---------|-------|
