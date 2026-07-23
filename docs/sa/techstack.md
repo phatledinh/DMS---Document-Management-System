@@ -15,7 +15,7 @@
 │  │                │  │                │  │               │  │
 │  │  React 18+     │  │  Spring Boot 3 │  │  MySQL 8.0+   │  │
 │  │  Vite          │  │  Java 17+      │  │  Redis        │  │
-│  │  TypeScript    │  │  Spring Sec 6  │  │  ES (Phase 2) │  │
+│  │  TypeScript    │  │  Spring Sec 6  │  │  Elasticsearch │  │
 │  └────────────────┘  └────────────────┘  └───────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -223,7 +223,7 @@ backend/
 | **MySQL** | 8.0+ | Relational database chính |
 
 **Lý do chọn MySQL:**
-- Hỗ trợ FULLTEXT Index (Phase 1 search)
+- Lưu trữ dữ liệu quan hệ và metadata tài liệu
 - Ổn định, phổ biến, dễ quản lý
 - Tương thích tốt với Spring Data JPA / Hibernate
 - Hỗ trợ InnoDB (transactions, foreign keys)
@@ -240,16 +240,17 @@ backend/
 - Search suggestions autocomplete
 - Session management (nếu cần)
 
-### Search Engine (Phase 2)
+### Search Engine
 
 | Công nghệ | Version | Mô tả |
 |-----------|---------|-------|
-| **Elasticsearch** | 8+ | Full-text search engine |
+| **Elasticsearch** | 8+ | Full-text search engine chính |
 
-**Khi nào migrate:**
-- Khi lượng tài liệu > 10k documents
-- Khi cần fuzzy search, synonym, Vietnamese analyzer
-- Khi cần faceted aggregations
+**Sử dụng cho:**
+- Full-text search trên tiêu đề, mô tả và nội dung trích xuất
+- Fuzzy search, synonym, Vietnamese analyzer
+- Faceted aggregations theo danh mục, phòng ban, loại file, tags
+- Highlight matched snippets và relevance scoring
 
 ### Database Schema Overview
 

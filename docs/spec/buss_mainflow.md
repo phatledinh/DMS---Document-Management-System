@@ -101,9 +101,7 @@ Admin chọn "Upload tài liệu"
         ↓
   Lưu extracted_text vào bảng `document_contents`
         ↓
-[SearchIndexService] — Đánh index nội dung + metadata
-  • Phase 1: MySQL FULLTEXT Index
-  • Phase 2: Elasticsearch
+[SearchIndexService] — Đánh index nội dung + metadata vào Elasticsearch
         ↓
 Cập nhật status = "INDEXED" (hoặc "EXTRACTION_FAILED" nếu lỗi)
         ↓
@@ -138,16 +136,12 @@ User mở trang tìm kiếm
       ↓
 [SearchService] — Xây dựng search query
       ↓
-[Search Engine] — Execute query
-  Phase 1 (MySQL):
-    • MATCH(title, extracted_text) AGAINST ('keyword' IN NATURAL LANGUAGE MODE)
-    • Kết hợp WHERE clause cho filters
-    • ORDER BY relevance DESC
-  Phase 2 (Elasticsearch):
-    • Multi-match query trên title, description, extracted_text
-    • Fuzzy matching (tolerance for typos)
-    • Faceted aggregations
-    • Highlighted snippets
+[Elasticsearch] — Execute query
+  • Multi-match query trên title, description, extracted_text
+  • Fuzzy matching (tolerance for typos)
+  • Faceted aggregations
+  • Highlighted snippets
+  • Permission filters theo quyền truy cập tài liệu
       ↓
 [SearchService] — Post-processing
   • Highlight matched text (đánh dấu <em> tại vị trí match)

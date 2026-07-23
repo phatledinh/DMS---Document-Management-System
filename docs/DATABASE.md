@@ -170,7 +170,7 @@ Tài liệu đào tạo
 | error_message | TEXT | NULLABLE | Lỗi khi trích xuất (nếu có) |
 | extracted_at | TIMESTAMP | NOT NULL | Thời điểm trích xuất |
 
-> **Lý do tách bảng**: `extracted_text` có thể rất lớn (hàng MB cho PDF dài). Tách riêng để tránh ảnh hưởng performance khi query metadata `documents`. Chỉ JOIN khi cần search full-text.
+> **Lý do tách bảng**: `extracted_text` có thể rất lớn (hàng MB cho PDF dài). Tách riêng để tránh ảnh hưởng performance khi query metadata `documents`. Nội dung này được đồng bộ sang Elasticsearch để phục vụ full-text search.
 
 ### document_versions (Lịch sử phiên bản)
 | Column | Type | Constraints | Description |
@@ -194,9 +194,9 @@ Tài liệu đào tạo
 
 
 
-## 4. Search Index (Elasticsearch — Phase 2)
+## 4. Search Index (Elasticsearch)
 
-> Phase 1 sử dụng MySQL FULLTEXT Index. Phase 2 migrate sang Elasticsearch.
+> Elasticsearch là search engine mặc định cho full-text search, fuzzy search, faceted filters, highlight và relevance scoring. MySQL chỉ lưu dữ liệu quan hệ và metadata nguồn.
 
 ### Elasticsearch Document Mapping
 
@@ -263,17 +263,9 @@ CREATE INDEX idx_documents_created_at ON documents(created_at);
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
 ```
 
-### Full-Text Indexes (Phase 1 — MySQL)
-```sql
--- Search trên tiêu đề tài liệu
-CREATE FULLTEXT INDEX ft_documents_title ON documents(title);
+### Search-related Indexes (MySQL)
 
--- Search trên nội dung trích xuất (bảng riêng)
-CREATE FULLTEXT INDEX ft_document_contents_text ON document_contents(extracted_text);
-
--- Combined search (title + description)
-CREATE FULLTEXT INDEX ft_documents_title_desc ON documents(title, description);
-```
+MySQL chỉ cần B-Tree indexes cho các trường dùng để join, filter, đồng bộ index và kiểm tra quyền. Full-text search được thực thi bởi Elasticsearch.
 
 ### Composite Indexes
 ```sql
@@ -291,23 +283,36 @@ CREATE INDEX idx_access_logs_doc_time ON access_logs(document_id, accessed_at);
 
 ## 6. Sample Queries (Tham khảo)
 
-### Search tài liệu theo từ khóa (Phase 1 — MySQL Full-text)
-```sql
--- Tìm trong tiêu đề
-SELECT d.*, MATCH(d.title) AGAINST ('quy trình ISO' IN NATURAL LANGUAGE MODE) AS relevance
-FROM documents d
-WHERE d.deleted_at IS NULL AND d.status = 'INDEXED'
-ORDER BY relevance DESC
-LIMIT 20 OFFSET 0;
+### Search tài liệu theo từ khóa
 
--- Tìm trong nội dung (JOIN bảng content)
-SELECT d.*, MATCH(dc.extracted_text) AGAINST ('an toàn lao động' IN BOOLEAN MODE) AS relevance
-FROM documents d
-INNER JOIN document_contents dc ON dc.document_id = d.id
-WHERE d.deleted_at IS NULL
-  AND d.status = 'INDEXED'
-  AND d.category_id = 5
-  AND dc.extraction_status = 'SUCCESS'
-ORDER BY relevance DESC
-LIMIT 20 OFFSET 0;
+Full-text search được thực thi trên Elasticsearch index. MySQL chỉ phục vụ lookup metadata, kiểm tra quyền và đồng bộ dữ liệu nguồn.
+
+```json
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "multi_match": {
+            "query": "quy trình ISO",
+            "fields": ["title^5", "description^2", "extracted_text"]
+          }
+        }
+      ],
+      "filter": [
+        { "term": { "status": "INDEXED" } },
+        { "term": { "category_id": 5 } }
+      ]
+    }
+  },
+  "highlight": {
+    "fields": {
+      "title": {},
+      "description": {},
+      "extracted_text": {}
+    }
+  },
+  "from": 0,
+  "size": 20
+}
 ```

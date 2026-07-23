@@ -326,7 +326,7 @@ public interface StorageService {
 | Spring Boot (Backend) | 8080 | 8080 | REST API |
 | MySQL | 3306 | 3306 | Database |
 | Redis | 6379 | 6379 | Cache |
-| Elasticsearch (Phase 2) | 9200 | 9200 | Search |
+| Elasticsearch | 9200 | 9200 | Search |
 | Swagger UI | 8080 | 8080 | `/swagger-ui.html` |
 
 ---

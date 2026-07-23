@@ -290,12 +290,9 @@ CREATE INDEX idx_documents_created_at ON documents(created_at);
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
 ```
 
-### Full-Text Indexes (Phase 1)
-```sql
-CREATE FULLTEXT INDEX ft_documents_title ON documents(title);
-CREATE FULLTEXT INDEX ft_document_contents_text ON document_contents(extracted_text);
-CREATE FULLTEXT INDEX ft_documents_title_desc ON documents(title, description);
-```
+### Search Index
+
+Full-text search được thực thi bởi Elasticsearch. MySQL chỉ dùng B-Tree indexes cho lookup metadata, filter, join và đồng bộ index.
 
 ### Composite Indexes
 ```sql

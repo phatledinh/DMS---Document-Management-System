@@ -119,18 +119,18 @@ Document Management
 Cho phép User tìm kiếm tài liệu theo từ khóa, tìm trong tiêu đề + mô tả + nội dung file đã trích xuất.
 
 ### Chức năng chính
-- Full-text search (Natural Language Mode / Boolean Mode)
+- Full-text search bằng Elasticsearch trên title, description và nội dung file đã trích xuất
 - Filter kết quả theo: danh mục, phòng ban, loại file, tags, khoảng thời gian
 - Sắp xếp: relevance, date, views, downloads
 - Highlight matched text (đánh dấu vị trí match trong kết quả)
 - Tính toán relevance score
+- Fuzzy search, synonym, faceted aggregations và Vietnamese analyzer
 
-### Phân pha
+### Search Engine mặc định
 
-| Phase | Search Engine | Mô tả |
-|-------|---------------|-------|
-| Phase 1 | MySQL FULLTEXT Index | MATCH AGAINST, đơn giản, < 10k docs |
-| Phase 2 | Elasticsearch | Fuzzy, Synonym, Faceted, Vietnamese Analyzer |
+| Công nghệ | Vai trò | Mô tả |
+|-----------|---------|-------|
+| Elasticsearch | Full-text search engine | Multi-match query, fuzzy search, synonym, faceted filters, highlight, relevance scoring |
 
 ### API Endpoints
 | Method | Endpoint | Mô tả |
@@ -141,11 +141,10 @@ Cho phép User tìm kiếm tài liệu theo từ khóa, tìm trong tiêu đề +
 
 ```text
 Search Engine
-  ├── SearchService              — Xây dựng & thực thi query
-  ├── SearchEngine (Interface)   — Abstraction cho search engine
-  │     ├── MySqlSearchEngine    (Phase 1)
-  │     └── ElasticsearchEngine  (Phase 2)
-  └── SearchIndexService         — Đồng bộ index khi create/update/delete
+  ├── SearchService              — Xây dựng & thực thi Elasticsearch query
+  ├── ElasticsearchSearchEngine  — Adapter thực thi full-text search
+  ├── SearchIndexService         — Đồng bộ index khi create/update/delete
+  └── SearchPermissionService    — Build filter quyền truy cập tài liệu
 ```
 
 ---

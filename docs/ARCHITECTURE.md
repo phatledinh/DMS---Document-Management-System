@@ -108,9 +108,10 @@ User nhập query + filters
   ├── Highlight matched text trong kết quả
   └── Sort: relevance, date, downloads, title
       ↓
-[Search Engine] — Execute query
-  ├── Phase 1: MySQL Full-text Index (MATCH AGAINST)
-  └── Phase 2: Elasticsearch (khi scale lên)
+[Elasticsearch] — Execute query
+  ├── Multi-match + fuzzy search
+  ├── Faceted aggregations
+  └── Native highlight snippets
       ↓
 Response ← { results[], facets{}, totalHits, highlights[] }
 ```
@@ -192,7 +193,7 @@ DocumentDeletedEvent  → SearchIndexListener (remove from index)
 
 ### 4. Adapter Pattern — Search Engine Abstraction
 
-Trừu tượng hóa Search Engine để dễ dàng chuyển đổi giữa MySQL Full-text và Elasticsearch:
+Trừu tượng hóa lớp gọi Elasticsearch để tách business logic khỏi chi tiết query/indexing:
 
 ```java
 public interface SearchEngine {
@@ -203,9 +204,8 @@ public interface SearchEngine {
 }
 ```
 
-Implementations:
-- `MySqlSearchEngine` — Phase 1 (MySQL Full-text Index)
-- `ElasticsearchSearchEngine` — Phase 2
+Implementation:
+- `ElasticsearchSearchEngine` — search engine mặc định cho full-text search, filters, highlight và scoring
 
 ### 5. Transaction Boundaries
 
@@ -267,33 +267,9 @@ All Modules → Identity (User)
 
 ## Search Engine Architecture (Chi tiết)
 
-### Phase 1 — MySQL Full-text Index
+### Elasticsearch-first Search Engine
 
-Sử dụng **MySQL FULLTEXT Index** trên cột `extracted_text` và `title` của bảng `documents`. Hỗ trợ:
-
-- **Natural Language Mode**: Tìm kiếm tự nhiên, MySQL tự scoring relevance.
-- **Boolean Mode**: Hỗ trợ operators (`+required`, `-excluded`, `"exact phrase"`).
-- **Metadata Filtering**: Kết hợp `WHERE` clause lọc theo category, file_type, tags, date_range.
-
-```sql
--- Ví dụ query Phase 1
-SELECT d.*, MATCH(d.title, d.extracted_text) AGAINST ('quy trình ISO' IN NATURAL LANGUAGE MODE) AS relevance
-FROM documents d
-WHERE d.category_id = ? AND d.deleted_at IS NULL
-ORDER BY relevance DESC
-LIMIT 20 OFFSET 0;
-```
-
-**Hạn chế Phase 1:**
-- Không hỗ trợ Fuzzy search (tìm lỗi chính tả).
-- Không hỗ trợ Synonym (từ đồng nghĩa).
-- Không hỗ trợ Faceted search (đếm kết quả theo filter).
-- Highlight phải xử lý thủ công ở Application layer.
-- Hiệu năng giảm khi `extracted_text` có kích thước lớn (> 100k documents).
-
-### Phase 2 — Elasticsearch Migration
-
-Khi lượng tài liệu tăng hoặc cần search nâng cao, migrate sang **Elasticsearch**:
+Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu. MySQL lưu metadata nguồn và dữ liệu quan hệ; Elasticsearch lưu index phục vụ full-text search, filter, highlight và relevance scoring:
 
 ```text
 ┌─────────────────────────────────────────────────────┐
@@ -488,6 +464,6 @@ Sử dụng **Spring Scheduler** (`@Scheduled`):
 
 | Phase | Mục tiêu | Giải pháp |
 |-------|----------|-----------|
-| **Phase 1** | MVP — < 10k documents | MySQL Full-text, Local Storage, Monolith |
-| **Phase 2** | Scale — 10k–100k documents | Elasticsearch, S3/MinIO, OCR (Tesseract), Redis Cache |
-| **Phase 3** | Enterprise — > 100k documents | Elasticsearch cluster, CDN cho preview, Async processing queue (RabbitMQ), Vietnamese NLP |
+| **Phase 1** | MVP — < 10k documents | Elasticsearch single-node, Local Storage, Monolith |
+| **Phase 2** | Scale — 10k–100k documents | Elasticsearch cluster, S3/MinIO, OCR (Tesseract), Redis Cache |
+| **Phase 3** | Enterprise — > 100k documents | Multi-node Elasticsearch, CDN cho preview, Async processing queue (RabbitMQ), Vietnamese NLP |

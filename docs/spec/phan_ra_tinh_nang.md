@@ -213,7 +213,7 @@
 |------------|----------|
 | Actor | System |
 | Mô tả | Đánh dấu `<em>` tại vị trí match trong tiêu đề và nội dung |
-| Business Rules | - Phase 1: Xử lý ở Application layer<br>- Phase 2: Elasticsearch native highlight |
+| Business Rules | - Sử dụng Elasticsearch native highlight cho `title`, `description`, `extracted_text`<br>- Backend sanitize highlight trước khi trả về frontend |
 
 ### F3.3: Sắp xếp kết quả
 
