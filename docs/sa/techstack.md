@@ -59,9 +59,12 @@
 | Thư viện | Mô tả |
 |----------|-------|
 | **React PDF** / **pdf.js** | PDF preview trong browser |
+| **DOMPurify** | Sanitize HTML preview (Word/Excel convert) chống XSS trước khi render |
 | **Day.js** | Date formatting |
 | **React Hook Form** + **Zod** | Form validation |
 | **React Toastify** | Toast notifications |
+
+> **Chốt lựa chọn UI**: dùng **Ant Design** (component Table/Form/Modal/Tree/Upload phong phú, hợp Admin CMS) và **CSS Modules** cho styling tùy biến. Package manager thống nhất **pnpm**.
 
 ### Project Structure (FE)
 
@@ -90,7 +93,9 @@ frontend/
 │   │   ├── departments/
 │   │   ├── tags/
 │   │   ├── users/
-│   │   └── dashboard/
+│   │   ├── dashboard/
+│   │   ├── audit/              ← MH16 Audit & Access Log
+│   │   └── profile/            ← MH06 Profile cá nhân
 │   ├── hooks/                  ← Custom hooks
 │   ├── pages/                  ← Route pages
 │   ├── store/                  ← Global state
@@ -131,10 +136,31 @@ frontend/
 
 | Thư viện | Mô tả |
 |----------|-------|
-| **Apache Tika** | Content extraction framework |
-| **Apache PDFBox** | PDF text extraction |
-| **Apache POI** | DOC/DOCX/XLS/XLSX extraction |
+| **Apache Tika** | Detect MIME type thực tế (validate F2.1) + fallback extraction |
+| **Apache PDFBox** | PDF text extraction (extractor chính cho PDF) |
+| **Apache POI** | DOC/DOCX/XLS/XLSX text extraction (extractor chính cho Office) |
+| **JODConverter + LibreOffice (headless)** | Convert Word/Excel → PDF/HTML cho Preview (F2.7, MH05) |
 | **Tesseract OCR** (Phase 2) | OCR cho scanned PDF & images |
+
+> **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho Elasticsearch. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image backend phải cài sẵn LibreOffice. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
+
+### Content Sanitizer & Async Processing
+
+| Thư viện | Mô tả |
+|----------|-------|
+| **OWASP Java HTML Sanitizer** / **Jsoup** | Sanitize HTML preview & search highlight chống XSS (NFR#11, `HtmlSanitizer`) |
+| **Spring `@Async` + `ThreadPoolTaskExecutor`** | Chạy content extraction / indexing nền (F2.2) |
+| **Spring `@Scheduled`** (+ **ShedLock** nếu multi-instance) | Auto retry `EXTRACTION_FAILED` mỗi 30 phút (spec §7, F2.2) |
+
+### Data Access — Search, Cache & Migration
+
+| Thư viện | Mô tả |
+|----------|-------|
+| **Elasticsearch Java Client** (`co.elastic.clients`) 8.x | Client chính cho ES: native query builder (multi-match, boosting, permission filter, facets, highlight) |
+| **Spring Data Redis (Lettuce)** | Truy cập Redis cache (categories tree, tags, suggestions) |
+| **Flyway** | Version hóa & migrate schema MySQL |
+
+> **Lựa chọn ES client**: dùng **Elasticsearch Java Client 8.x** thay vì Spring Data Elasticsearch vì yêu cầu query phức tạp (permission-aware filter, boost theo thứ tự ưu tiên, faceted aggregation, native highlight) cần điều khiển query ở mức thấp. Kiểm tra ma trận tương thích client ↔ ES 8.11.
 
 ### Mapping & Utilities
 
@@ -157,7 +183,10 @@ frontend/
 | **JUnit 5** | Unit testing |
 | **Mockito** | Mocking framework |
 | **Spring Boot Test** | Integration testing |
-| **H2 Database** | In-memory DB cho test |
+| **Testcontainers** (MySQL, Elasticsearch, Redis) | Integration test sát production cho ES query, cache, JPA |
+| **H2 Database** | In-memory DB cho unit test JPA nhanh (lưu ý lệch hành vi với MySQL 8) |
+
+> Logic cốt lõi (permission-aware ES query, faceted aggregation, Redis cache) không kiểm thử được bằng H2 — ưu tiên **Testcontainers** cho các test này; H2 chỉ dùng cho test JPA đơn giản.
 
 ### Project Structure (BE)
 
@@ -183,7 +212,7 @@ backend/
 │   │   │   ├── DocumentService.java
 │   │   │   ├── StorageService.java
 │   │   │   ├── ContentExtractorService.java
-│   │   │   └── PreviewService.java
+│   │   │   └── PreviewService.java     ← JODConverter/LibreOffice + HtmlSanitizer
 │   │   ├── entity/
 │   │   ├── repository/
 │   │   ├── dto/
@@ -199,12 +228,19 @@ backend/
 │   │   ├── repository/
 │   │   ├── dto/
 │   │   └── mapper/
-│   └── dashboard/                      ← PH5: Dashboard
-│       ├── controller/
-│       ├── service/
+│   ├── dashboard/                      ← PH5: Dashboard
+│   │   ├── controller/
+│   │   ├── service/
+│   │   └── dto/
+│   └── audit/                          ← PH6: Audit & Access Log
+│       ├── controller/                 ← AuditLogController (/admin/audit-logs)
+│       ├── service/                    ← AuditLogService, AccessLogService, SearchLogService
+│       ├── entity/                     ← AuditLog, AccessLog, SearchLog
+│       ├── repository/
 │       └── dto/
 ├── src/main/resources/
-│   ├── application.yml
+│   ├── db/migration/                   ← Flyway migration scripts (V1__init.sql...)
+│   ├── application.yml                 ← cấu hình multipart max-file-size/max-request-size = 50MB
 │   ├── application-dev.yml
 │   └── application-prod.yml
 ├── src/test/
@@ -321,3 +357,6 @@ backend/
 | MySQL | 8.0 | 8.0.33+ |
 | Redis | 7.0 | 7.2+ |
 | Elasticsearch | 8.0 | 8.11+ |
+| Elasticsearch Java Client | 8.0 | khớp version ES đang chạy |
+| LibreOffice (headless, cho JODConverter) | 7.4 | 7.6+ |
+| Flyway | 9.x | 10.x |

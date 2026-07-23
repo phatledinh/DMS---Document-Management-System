@@ -133,7 +133,8 @@ Business rules:
 
 - Search mặc định chỉ trả về tài liệu `INDEXED`.
 - Tài liệu `DELETED` không xuất hiện trong search, preview hoặc download.
-- Admin có thể xem tài liệu lỗi xử lý để retry extraction/indexing.
+- Hệ thống tự động retry extraction/indexing mỗi 30 phút cho tài liệu `EXTRACTION_FAILED` do lỗi xử lý/index tạm thời.
+- Admin có thể xem tài liệu lỗi xử lý để retry extraction/indexing thủ công.
 - Soft delete không xóa file vật lý ngay lập tức.
 
 ---

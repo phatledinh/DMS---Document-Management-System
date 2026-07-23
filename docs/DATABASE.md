@@ -1,51 +1,103 @@
 # Database Schema — Hệ Thống Quản Lý Tài Liệu Nội Bộ (DMS)
 
 > Schema thiết kế cho hệ thống Quản lý & Tìm kiếm Tài liệu Doanh nghiệp.
-> Sử dụng MySQL. Update file này khi có thay đổi schema.
+> MySQL lưu metadata, dữ liệu quan hệ, ACL và log; Elasticsearch là search engine mặc định cho full-text search.
 
 ---
 
-## Entity Relationship Diagram
+## 1. Entity Relationship Diagram
 
 ```text
+[departments] 1──N [users]
 [users] 1──N [documents] (uploaded_by)
+[users] 1──N [documents] (owner_id)
 [categories] 1──N [documents]
-[departments] 1──N [documents]
+[departments] 1──N [documents] (department_id / owning department)
 
 [documents] 1──N [document_versions]
 [documents] N──N [tags] (via document_tags)
-[documents] 1──1 [document_contents] (extracted text)
+[documents] 1──1 [document_contents]
+[documents] N──N [departments] (via document_department_accesses)
+[documents] N──N [users] (via document_user_accesses)
 
-[users] 1──N [search_histories]
+[users] 1──N [audit_logs] (actor_id)
+[users] 1──N [access_logs]
+[users] 1──N [search_logs]
+[documents] 1──N [access_logs]
 ```
 
 ---
 
-## 0. Base Conventions (Audit & Soft Delete)
+## 2. Base Conventions
 
 ### BaseEntity
 
-Tất cả entity chính đều kế thừa `BaseEntity`:
+Tất cả entity chính có:
+
 - `id` (BIGINT, PK, AUTO_INCREMENT)
-- `created_at` (TIMESTAMP, NOT NULL)
-- `updated_at` (TIMESTAMP, NULLABLE)
+- `created_at` (TIMESTAMP, NOT NULL, DEFAULT CURRENT_TIMESTAMP)
+- `updated_at` (TIMESTAMP, NULLABLE, ON UPDATE CURRENT_TIMESTAMP)
 
 ### Soft Delete Strategy
 
-| Entity | Soft Delete? | Lý do |
-|--------|:---:|--------|
-| Category | ✅ `deleted_at` | Cần giữ lại cho tài liệu cũ |
-| Department | ✅ `deleted_at` | Cần giữ lại cho tài liệu cũ |
-| Tag | ✅ `deleted_at` | Cần giữ lại cho tài liệu cũ |
-| Document | ✅ `deleted_at` | Không xóa vĩnh viễn, có thể restore |
-| User | ✅ `deleted_at` | Giữ lại lịch sử hoạt động |
-| Document Version | ❌ | Hard delete khi cleanup |
+| Entity | Soft Delete? | Field | Lý do |
+|--------|:---:|-------|-------|
+| User | Có | `deleted_at` | Giữ lại lịch sử hoạt động |
+| Document | Có | `deleted_at` + `status = DELETED` | Không xóa vĩnh viễn, có thể restore |
+| Category | Có | `deleted_at` | Cần giữ lại cho tài liệu cũ |
+| Department | Có | `deleted_at` | Cần giữ lại cho user/tài liệu cũ |
+| Tag | Có | `deleted_at` | Cần giữ lại mapping tài liệu cũ |
+| Document Version | Không | — | Giữ lịch sử phiên bản, cleanup theo policy riêng |
+| Logs | Không | — | Phục vụ audit và dashboard |
+
+### Naming & Storage Rules
+
+- `storage_path` phải dùng UUID hoặc generated key, không dùng trực tiếp tên file gốc.
+- `file_name` là tên gốc đã sanitize để hiển thị/tải xuống.
+- File upload tối đa `50MB`.
+- Validate cả extension và MIME thực tế bằng Apache Tika.
+- Chặn extension nguy hiểm: `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`, `.htm`, `.jar`, `.msi`, `.ps1`, `.vbs`.
 
 ---
 
-## 1. Identity Domain (Người dùng & Phân quyền)
+## 3. Access Model & Lifecycle
+
+### Document Access Levels
+
+| Access level | Quyền truy cập |
+|--------------|----------------|
+| `PUBLIC` | Tất cả user đã đăng nhập có thể xem, search, preview và download. |
+| `DEPARTMENT` | User thuộc các phòng ban được cấp trong `document_department_accesses`, hoặc Admin. |
+| `RESTRICTED` | Owner, user được cấp trực tiếp trong `document_user_accesses`, hoặc Admin. |
+
+Quy tắc quyền phải dùng thống nhất cho list, detail, search, preview, download, version download và dashboard drill-down.
+
+### Document Lifecycle
+
+```text
+PROCESSING -> INDEXED
+PROCESSING -> EXTRACTION_FAILED
+EXTRACTION_FAILED -> PROCESSING
+INDEXED -> ARCHIVED
+ARCHIVED -> INDEXED
+INDEXED/ARCHIVED/EXTRACTION_FAILED -> DELETED
+DELETED -> PROCESSING/INDEXED/ARCHIVED
+```
+
+| Status | Mô tả |
+|--------|-------|
+| `PROCESSING` | File đã upload, đang extract text và đồng bộ Elasticsearch. |
+| `INDEXED` | Tài liệu đã sẵn sàng để search/preview/download. |
+| `EXTRACTION_FAILED` | Extract hoặc index thất bại; có thể retry. |
+| `ARCHIVED` | Tài liệu ngưng sử dụng, ẩn khỏi danh sách/search mặc định. |
+| `DELETED` | Xóa mềm; không hiển thị/search/preview/download theo mặc định. |
+
+---
+
+## 4. Identity Domain
 
 ### users
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
@@ -63,11 +115,12 @@ Tất cả entity chính đều kế thừa `BaseEntity`:
 | deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
 ### refresh_tokens
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
 | token | VARCHAR(500) | NOT NULL, UNIQUE | Refresh token value |
-| user_id | BIGINT | FK → users(id), NOT NULL | |
+| user_id | BIGINT | FK → users(id), NOT NULL | Chủ sở hữu token |
 | expires_at | TIMESTAMP | NOT NULL | Thời điểm hết hạn |
 | revoked | BOOLEAN | NOT NULL, DEFAULT false | Đã thu hồi chưa |
 | device_info | VARCHAR(255) | NULLABLE | User-Agent |
@@ -75,9 +128,10 @@ Tất cả entity chính đều kế thừa `BaseEntity`:
 
 ---
 
-## 2. Document Domain (Tài liệu — Core)
+## 5. Master Data Domain
 
 ### categories
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
@@ -85,51 +139,43 @@ Tất cả entity chính đều kế thừa `BaseEntity`:
 | name | VARCHAR(255) | NOT NULL | Tên danh mục |
 | slug | VARCHAR(255) | NOT NULL, UNIQUE | URL-friendly |
 | description | TEXT | NULLABLE | Mô tả |
-| icon | VARCHAR(100) | NULLABLE | Icon class hoặc emoji |
+| icon | VARCHAR(100) | NULLABLE | Icon class |
 | sort_order | INT | NOT NULL, DEFAULT 0 | Thứ tự hiển thị |
-| is_active | BOOLEAN | NOT NULL, DEFAULT true | |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Trạng thái sử dụng |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NULLABLE, ON UPDATE CURRENT_TIMESTAMP | |
 | deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
-**Ví dụ cây danh mục:**
-```text
-Quy trình ISO
-  ├── ISO 9001 - Quản lý chất lượng
-  ├── ISO 14001 - Môi trường
-  └── ISO 45001 - An toàn lao động
-Biểu mẫu
-  ├── Biểu mẫu nhân sự
-  ├── Biểu mẫu kế toán
-  └── Biểu mẫu kỹ thuật
-SOP (Quy trình vận hành)
-Hướng dẫn công việc
-Tài liệu đào tạo
-```
-
 ### departments
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
 | name | VARCHAR(255) | NOT NULL | Tên phòng ban |
-| code | VARCHAR(50) | NOT NULL, UNIQUE | Mã phòng ban (HR, IT, FIN...) |
-| description | TEXT | NULLABLE | |
-| is_active | BOOLEAN | NOT NULL, DEFAULT true | |
+| code | VARCHAR(50) | NOT NULL, UNIQUE | Mã phòng ban |
+| description | TEXT | NULLABLE | Mô tả |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Trạng thái sử dụng |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NULLABLE, ON UPDATE CURRENT_TIMESTAMP | |
 | deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
 ### tags
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
 | name | VARCHAR(100) | NOT NULL, UNIQUE | Tên tag |
-| slug | VARCHAR(100) | NOT NULL, UNIQUE | URL-friendly |
+| slug | VARCHAR(100) | NOT NULL, UNIQUE | Tự sinh từ name |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NULLABLE, ON UPDATE CURRENT_TIMESTAMP | |
 | deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
-### documents ⭐ (Bảng chính)
+---
+
+## 6. Document Domain
+
+### documents
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
@@ -137,111 +183,141 @@ Tài liệu đào tạo
 | slug | VARCHAR(500) | NOT NULL, UNIQUE | URL-friendly |
 | description | TEXT | NULLABLE | Mô tả ngắn |
 | category_id | BIGINT | FK → categories(id), NOT NULL | Danh mục |
-| department_id | BIGINT | FK → departments(id), NULLABLE | Phòng ban sở hữu |
-| uploaded_by | BIGINT | FK → users(id), NOT NULL | Admin upload |
-| file_name | VARCHAR(255) | NOT NULL | Tên file gốc |
+| department_id | BIGINT | FK → departments(id), NULLABLE | Phòng ban sở hữu/chủ quản |
+| uploaded_by | BIGINT | FK → users(id), NOT NULL | Người upload |
+| owner_id | BIGINT | FK → users(id), NOT NULL | Người chịu trách nhiệm tài liệu |
+| file_name | VARCHAR(255) | NOT NULL | Tên file gốc đã sanitize |
 | file_type | VARCHAR(20) | NOT NULL | PDF, DOC, DOCX, XLS, XLSX, JPG, PNG, TIFF |
-| mime_type | VARCHAR(100) | NOT NULL | e.g. `application/pdf` |
-| file_size | BIGINT | NOT NULL | Kích thước file (bytes) |
-| storage_path | VARCHAR(500) | NOT NULL | Đường dẫn lưu trữ trên disk/S3 |
-| thumbnail_path | VARCHAR(500) | NULLABLE | Đường dẫn thumbnail |
-| page_count | INT | NULLABLE | Số trang (nếu áp dụng) |
-| document_code | VARCHAR(100) | NULLABLE, UNIQUE | Mã tài liệu doanh nghiệp (VD: SOP-HR-001) |
-| version_number | VARCHAR(20) | NOT NULL, DEFAULT '1.0' | Số phiên bản hiện tại |
-| status | VARCHAR(30) | NOT NULL, DEFAULT 'PROCESSING' | PROCESSING, INDEXED, EXTRACTION_FAILED |
-| is_public | BOOLEAN | NOT NULL, DEFAULT true | Tất cả user đều xem được? |
-| view_count | INT | NOT NULL, DEFAULT 0 | Số lượt xem |
+| mime_type | VARCHAR(100) | NOT NULL | MIME thực tế sau validation |
+| file_size | BIGINT | NOT NULL | Kích thước file bytes |
+| storage_path | VARCHAR(500) | NOT NULL | UUID/generated storage key |
+| thumbnail_path | VARCHAR(500) | NULLABLE | Đường dẫn thumbnail/preview image |
+| page_count | INT | NULLABLE | Số trang nếu áp dụng |
+| document_code | VARCHAR(100) | NULLABLE, UNIQUE | Mã tài liệu doanh nghiệp |
+| version_number | VARCHAR(20) | NOT NULL, DEFAULT '1.0' | Phiên bản hiện tại |
+| status | VARCHAR(30) | NOT NULL, DEFAULT 'PROCESSING' | PROCESSING, INDEXED, EXTRACTION_FAILED, ARCHIVED, DELETED |
+| access_level | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC, DEPARTMENT, RESTRICTED |
+| view_count | INT | NOT NULL, DEFAULT 0 | Số lượt preview/xem |
 | download_count | INT | NOT NULL, DEFAULT 0 | Số lượt tải |
 | effective_date | DATE | NULLABLE | Ngày hiệu lực |
 | expiry_date | DATE | NULLABLE | Ngày hết hiệu lực |
+| archived_at | TIMESTAMP | NULLABLE | Thời điểm archive |
+| deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NULLABLE, ON UPDATE CURRENT_TIMESTAMP | |
-| deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
-### document_contents (Nội dung trích xuất — tách bảng riêng vì data lớn)
+### document_department_accesses
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu được cấp quyền |
+| department_id | BIGINT | FK → departments(id), NOT NULL | Phòng ban được xem |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Admin cấp quyền |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
+| | | Composite PK (document_id, department_id) | |
+
+### document_user_accesses
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu được cấp quyền |
+| user_id | BIGINT | FK → users(id), NOT NULL | User được xem trực tiếp |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Admin cấp quyền |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
+| | | Composite PK (document_id, user_id) | |
+
+### document_contents
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
 | document_id | BIGINT | FK → documents(id), NOT NULL, UNIQUE | 1:1 với documents |
-| extracted_text | LONGTEXT | NULLABLE | Nội dung text đã trích xuất từ file |
-| extraction_method | VARCHAR(50) | NOT NULL | TIKA, OCR, MANUAL |
-| language | VARCHAR(10) | NULLABLE | Ngôn ngữ phát hiện (vi, en...) |
+| extracted_text | LONGTEXT | NULLABLE | Nội dung text đã trích xuất |
+| extraction_method | VARCHAR(50) | NOT NULL | PDFBOX, POI, TIKA_FALLBACK, OCR, MANUAL |
+| language | VARCHAR(10) | NULLABLE | vi, en... |
 | extraction_status | VARCHAR(30) | NOT NULL | SUCCESS, PARTIAL, FAILED |
-| error_message | TEXT | NULLABLE | Lỗi khi trích xuất (nếu có) |
-| extracted_at | TIMESTAMP | NOT NULL | Thời điểm trích xuất |
+| error_message | TEXT | NULLABLE | Lỗi extraction/indexing gần nhất |
+| retry_count | INT | NOT NULL, DEFAULT 0 | Số lần retry extraction/indexing |
+| extracted_at | TIMESTAMP | NULLABLE | Thời điểm trích xuất gần nhất |
 
-> **Lý do tách bảng**: `extracted_text` có thể rất lớn (hàng MB cho PDF dài). Tách riêng để tránh ảnh hưởng performance khi query metadata `documents`. Nội dung này được đồng bộ sang Elasticsearch để phục vụ full-text search.
+`extracted_text` có thể rất lớn nên tách khỏi bảng `documents`; dữ liệu này được đồng bộ sang Elasticsearch để full-text search.
 
-### document_versions (Lịch sử phiên bản)
+### document_versions
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | BIGINT | PK, AUTO_INCREMENT | |
-| document_id | BIGINT | FK → documents(id), NOT NULL | |
-| version_number | VARCHAR(20) | NOT NULL | e.g. 1.0, 1.1, 2.0 |
-| file_name | VARCHAR(255) | NOT NULL | Tên file của phiên bản này |
-| file_size | BIGINT | NOT NULL | Kích thước (bytes) |
-| storage_path | VARCHAR(500) | NOT NULL | Đường dẫn lưu trữ |
+| document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu gốc |
+| version_number | VARCHAR(20) | NOT NULL | Ví dụ 1.0, 1.1, 2.0 |
+| file_name | VARCHAR(255) | NOT NULL | Tên file gốc đã sanitize |
+| file_size | BIGINT | NOT NULL | Kích thước bytes |
+| mime_type | VARCHAR(100) | NOT NULL | MIME thực tế sau validation |
+| storage_path | VARCHAR(500) | NOT NULL | UUID/generated storage key |
 | changelog | TEXT | NULLABLE | Ghi chú thay đổi |
-| uploaded_by | BIGINT | FK → users(id), NOT NULL | Ai upload phiên bản này |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
+| uploaded_by | BIGINT | FK → users(id), NOT NULL | Người upload version |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm upload |
 
-### document_tags (Bảng trung gian N:N)
+### document_tags
+
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | document_id | BIGINT | FK → documents(id), NOT NULL | |
 | tag_id | BIGINT | FK → tags(id), NOT NULL | |
 | | | Composite PK (document_id, tag_id) | |
 
+---
 
+## 7. Audit, Access & Search Logs
 
-## 4. Search Index (Elasticsearch)
+### audit_logs
 
-> Elasticsearch là search engine mặc định cho full-text search, fuzzy search, faceted filters, highlight và relevance scoring. MySQL chỉ lưu dữ liệu quan hệ và metadata nguồn.
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | BIGINT | PK, AUTO_INCREMENT | |
+| actor_id | BIGINT | FK → users(id), NULLABLE | User thực hiện hành động |
+| action | VARCHAR(50) | NOT NULL | CREATE, UPDATE, DELETE, ARCHIVE, RESTORE, LOGIN, LOGOUT |
+| target_type | VARCHAR(50) | NOT NULL | DOCUMENT, USER, CATEGORY, DEPARTMENT, TAG |
+| target_id | BIGINT | NULLABLE | ID đối tượng tác động |
+| old_value | JSON | NULLABLE | Giá trị trước khi đổi |
+| new_value | JSON | NULLABLE | Giá trị sau khi đổi |
+| ip_address | VARCHAR(45) | NULLABLE | IPv4/IPv6 |
+| user_agent | VARCHAR(255) | NULLABLE | User-Agent |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm ghi log |
 
-### Elasticsearch Document Mapping
+### access_logs
 
-```json
-{
-  "mappings": {
-    "properties": {
-      "id":              { "type": "long" },
-      "title":           { "type": "text", "analyzer": "vietnamese_analyzer" },
-      "description":     { "type": "text", "analyzer": "vietnamese_analyzer" },
-      "extracted_text":  { "type": "text", "analyzer": "vietnamese_analyzer" },
-      "document_code":   { "type": "keyword" },
-      "file_name":       { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
-      "file_type":       { "type": "keyword" },
-      "category_id":     { "type": "long" },
-      "category_name":   { "type": "keyword" },
-      "department_id":   { "type": "long" },
-      "department_name": { "type": "keyword" },
-      "tags":            { "type": "keyword" },
-      "uploaded_by_name":{ "type": "keyword" },
-      "version_number":  { "type": "keyword" },
-      "page_count":      { "type": "integer" },
-      "file_size":       { "type": "long" },
-      "view_count":      { "type": "integer" },
-      "download_count":  { "type": "integer" },
-      "effective_date":  { "type": "date" },
-      "expiry_date":     { "type": "date" },
-      "created_at":      { "type": "date" },
-      "updated_at":      { "type": "date" },
-      "suggest":         { "type": "completion" }
-    }
-  }
-}
-```
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | BIGINT | PK, AUTO_INCREMENT | |
+| user_id | BIGINT | FK → users(id), NOT NULL | User truy cập |
+| document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu được truy cập |
+| action | VARCHAR(30) | NOT NULL | VIEW, PREVIEW, DOWNLOAD, VERSION_DOWNLOAD |
+| access_granted | BOOLEAN | NOT NULL | Có được phép truy cập không |
+| denial_reason | VARCHAR(255) | NULLABLE | Lý do bị từ chối |
+| ip_address | VARCHAR(45) | NULLABLE | IPv4/IPv6 |
+| user_agent | VARCHAR(255) | NULLABLE | User-Agent |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm truy cập |
+
+### search_logs
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | BIGINT | PK, AUTO_INCREMENT | |
+| user_id | BIGINT | FK → users(id), NOT NULL | User tìm kiếm |
+| keyword | VARCHAR(500) | NULLABLE | Từ khóa tìm kiếm |
+| filters | JSON | NULLABLE | category, type, department, date range... |
+| result_count | INT | NOT NULL | Số kết quả sau khi áp quyền |
+| latency_ms | INT | NULLABLE | Thời gian xử lý search |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm tìm kiếm |
 
 ---
 
-## 5. Database Indexes
+## 8. Database Indexes
 
-### Unique Indexes (B-Tree)
+### Unique Indexes
+
 ```sql
--- Identity
 CREATE UNIQUE INDEX idx_users_email ON users(email);
-
--- Document
 CREATE UNIQUE INDEX idx_documents_slug ON documents(slug);
 CREATE UNIQUE INDEX idx_documents_code ON documents(document_code);
 CREATE UNIQUE INDEX idx_categories_slug ON categories(slug);
@@ -250,69 +326,108 @@ CREATE UNIQUE INDEX idx_tags_slug ON tags(slug);
 CREATE UNIQUE INDEX idx_document_contents_doc ON document_contents(document_id);
 ```
 
-### Performance Indexes (B-Tree)
+### Performance Indexes
+
 ```sql
--- Document queries
+CREATE INDEX idx_users_department ON users(department_id);
+CREATE INDEX idx_users_status ON users(status);
+
 CREATE INDEX idx_documents_category ON documents(category_id);
 CREATE INDEX idx_documents_department ON documents(department_id);
 CREATE INDEX idx_documents_uploaded_by ON documents(uploaded_by);
+CREATE INDEX idx_documents_owner ON documents(owner_id);
 CREATE INDEX idx_documents_status ON documents(status);
+CREATE INDEX idx_documents_access_level ON documents(access_level);
 CREATE INDEX idx_documents_file_type ON documents(file_type);
 CREATE INDEX idx_documents_effective_date ON documents(effective_date);
 CREATE INDEX idx_documents_created_at ON documents(created_at);
+
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
+CREATE INDEX idx_audit_logs_actor_date ON audit_logs(actor_id, created_at);
+CREATE INDEX idx_audit_logs_target ON audit_logs(target_type, target_id);
+CREATE INDEX idx_access_logs_doc_date ON access_logs(document_id, created_at);
+CREATE INDEX idx_access_logs_user_date ON access_logs(user_id, created_at);
+CREATE INDEX idx_search_logs_user_date ON search_logs(user_id, created_at);
 ```
-
-### Search-related Indexes (MySQL)
-
-MySQL chỉ cần B-Tree indexes cho các trường dùng để join, filter, đồng bộ index và kiểm tra quyền. Full-text search được thực thi bởi Elasticsearch.
 
 ### Composite Indexes
+
 ```sql
--- Lọc tài liệu theo category + status + ngày tạo (query phổ biến nhất)
 CREATE INDEX idx_documents_cat_status_date ON documents(category_id, status, created_at);
-
--- Lọc tài liệu theo department + file_type
 CREATE INDEX idx_documents_dept_type ON documents(department_id, file_type);
-
--- Access log theo document + thời gian (analytics)
-CREATE INDEX idx_access_logs_doc_time ON access_logs(document_id, accessed_at);
+CREATE INDEX idx_doc_dept_access_dept ON document_department_accesses(department_id, document_id);
+CREATE INDEX idx_doc_user_access_user ON document_user_accesses(user_id, document_id);
 ```
+
+MySQL chỉ dùng B-Tree indexes cho lookup metadata, join, filter, ACL và đồng bộ Elasticsearch. Full-text search không dùng MySQL Full-text Search trong Phase 1.
 
 ---
 
-## 6. Sample Queries (Tham khảo)
+## 9. Elasticsearch Index Design
 
-### Search tài liệu theo từ khóa
+### Index: `documents_v1`
 
-Full-text search được thực thi trên Elasticsearch index. MySQL chỉ phục vụ lookup metadata, kiểm tra quyền và đồng bộ dữ liệu nguồn.
+| Field | Type | Usage |
+|-------|------|-------|
+| `document_id` | keyword | Join ngược về MySQL |
+| `title` | text + keyword | Full-text, exact sort/filter |
+| `description` | text | Full-text |
+| `content` | text | Nội dung extract |
+| `document_code` | keyword + text | Tìm theo mã tài liệu |
+| `category_id` | keyword | Filter/facet |
+| `category_name` | keyword | Facet display |
+| `department_id` | keyword | Phòng ban chủ quản |
+| `document_type` | keyword | PDF/DOC/DOCX/XLS/XLSX/JPG/PNG/TIFF |
+| `tags` | keyword + text | Filter/facet và search |
+| `status` | keyword | Mặc định search `INDEXED` |
+| `access_level` | keyword | PUBLIC, DEPARTMENT, RESTRICTED |
+| `owner_id` | keyword | Permission filter |
+| `department_ids` | keyword[] | Departments được cấp quyền |
+| `allowed_user_ids` | keyword[] | Users được cấp quyền trực tiếp |
+| `uploaded_by` | keyword | Filter/admin dashboard |
+| `created_at` | date | Sort/filter |
+| `updated_at` | date | Sync/debug |
+| `effective_date` | date | Filter |
+| `expiry_date` | date | Filter |
+| `view_count` | integer | Sort/boost |
+| `download_count` | integer | Sort/boost |
 
-```json
-{
-  "query": {
-    "bool": {
-      "must": [
-        {
-          "multi_match": {
-            "query": "quy trình ISO",
-            "fields": ["title^5", "description^2", "extracted_text"]
-          }
-        }
-      ],
-      "filter": [
-        { "term": { "status": "INDEXED" } },
-        { "term": { "category_id": 5 } }
-      ]
-    }
-  },
-  "highlight": {
-    "fields": {
-      "title": {},
-      "description": {},
-      "extracted_text": {}
-    }
-  },
-  "from": 0,
-  "size": 20
-}
+### Permission Filter
+
+Mọi Elasticsearch query phải áp quyền theo user hiện tại:
+
+```text
+status = INDEXED
+AND (
+  access_level = PUBLIC
+  OR owner_id = current_user_id
+  OR (access_level = DEPARTMENT AND department_ids contains current_user.department_id)
+  OR (access_level = RESTRICTED AND allowed_user_ids contains current_user_id)
+  OR current_user.role = ADMIN
+)
 ```
+
+### Ranking & Facets
+
+- Analyzer tiếng Việt cho `title`, `description`, `content`, `tags`.
+- Boost: `title^4`, `document_code^3`, `tags^2`, `description^1.5`, `content^1`.
+- Highlight cho `title`, `description`, `content`.
+- Facets tối thiểu: category, department, document type, tags, created date range.
+- Suggestions dùng completion suggester hoặc prefix query trên `title`, `document_code`, `tags`.
+
+---
+
+## 10. Logging Rules
+
+| Action | Log table |
+|--------|-----------|
+| Login/logout | `audit_logs` |
+| Create/update/delete/archive/restore document | `audit_logs` |
+| Update ACL/tags/category/metadata | `audit_logs` |
+| Upload/restore version | `audit_logs` |
+| Preview/download/version download | `access_logs` |
+| Denied preview/download/detail due to ACL | `access_logs` |
+| Search/suggestions | `search_logs` |
+| Retry extraction/indexing | `audit_logs` |
+
+Dashboard tổng hợp từ `documents`, `users`, `audit_logs`, `access_logs`, `search_logs`, `document_contents` và Elasticsearch sync metadata.
