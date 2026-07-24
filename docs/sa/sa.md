@@ -45,7 +45,7 @@
     ┌───────────┼────────────────┐
     ▼           ▼                ▼
 ┌────────┐ ┌──────────────┐ ┌──────────────────┐
-│ MySQL  │ │ MinIO        │ │ Elasticsearch    │
+│ MySQL  │ │ S3-compatible│ │ Elasticsearch    │
 │ (Meta) │ │ Object Store │ │ (Full-text)      │
 └────────┘ └──────────────┘ └──────────────────┘
 ```
@@ -58,7 +58,7 @@
 
 - **Domain Services**: (`DocumentService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
 - **Application Layer** (Use Cases): (`DocumentUploadUseCase`, `DocumentSearchUseCase`). Điều phối nhiều Domain Services.
-  - Ví dụ: `DocumentUploadUseCase` sẽ gọi `MinioStorageService` (lưu object vào MinIO) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
+  - Ví dụ: `DocumentUploadUseCase` sẽ gọi `S3StorageService` (lưu object qua S3-compatible API; dev dùng MinIO, production dùng Cloudflare R2) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
 
 ### 2.2 Strategy Pattern — Content Extraction
 
@@ -420,6 +420,6 @@ backend/
 
 | Quy mô | Mục tiêu | Giải pháp |
 |--------|----------|-----------|
-| **MVP / single server** | < 10k documents | Elasticsearch single-node, MinIO, Monolith, OCR (Tesseract) |
-| **Production scale** | 10k–100k documents | Elasticsearch cluster, MinIO/S3-compatible object storage, OCR queue, Redis Cache |
+| **MVP / single server** | < 10k documents | Elasticsearch single-node, MinIO dev object storage, Monolith, OCR (Tesseract) |
+| **Production scale** | 10k–100k documents | Elasticsearch cluster, Cloudflare R2 qua S3-compatible API, OCR queue, Redis Cache |
 | **Enterprise scale** | > 100k documents | Multi-node Elasticsearch, CDN, Async queue (RabbitMQ), Vietnamese NLP |

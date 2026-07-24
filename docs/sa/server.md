@@ -27,8 +27,8 @@ Elasticsearch được triển khai theo kiến trúc **Elasticsearch-first**. M
 │                                                              │
 │  ┌─────────────────────┐  ┌──────────────────────────────┐  │
 │  │ Elasticsearch       │  │ MinIO Object Storage         │  │
-│  │ Single-node         │  │ Bucket: dms-documents        │  │
-│  │ Port: 9200          │  │                              │  │
+│  │ Single-node         │  │ Dev bucket: dms-documents    │  │
+│  │ Port: 9200          │  │ S3-compatible API            │  │
 │  └─────────────────────┘  └──────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -44,8 +44,8 @@ Elasticsearch được triển khai theo kiến trúc **Elasticsearch-first**. M
                           ┌────────────────────────┼────────────┐
                           ▼                        ▼            ▼
                   ┌──────────────┐          ┌──────────┐  ┌────────────┐
-                  │   MySQL      │          │  Redis   │  │    S3 /    │
-                  │   Primary    │          │  Cluster │  │   MinIO    │
+                  │   MySQL      │          │  Redis   │  │ Cloudflare │
+                  │   Primary    │          │  Cluster │  │     R2     │
                   └──────┬───────┘          └──────────┘  └────────────┘
                          │
                   ┌──────▼───────┐
@@ -101,10 +101,12 @@ services:
             - JWT_SECRET=your-256-bit-secret-key-here
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000
-            - MINIO_ENDPOINT=http://minio:9000
-            - MINIO_BUCKET=dms-documents
-            - MINIO_ACCESS_KEY=dms_minio
-            - MINIO_SECRET_KEY=dms_minio_password
+            - STORAGE_ENDPOINT=http://minio:9000
+            - STORAGE_BUCKET=dms-documents
+            - STORAGE_ACCESS_KEY=dms_minio
+            - STORAGE_SECRET_KEY=dms_minio_password
+            - STORAGE_REGION=auto
+            - STORAGE_PATH_STYLE_ACCESS=true
             - FILE_MAX_SIZE=52428800
             - CORS_ORIGINS=http://localhost:3000
             - PROCESSING_THREAD_POOL_SIZE=4
@@ -254,11 +256,13 @@ app:
         access-expiration: ${JWT_ACCESS_EXPIRATION:900000}
         refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
     storage:
-        minio:
-            endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
-            bucket: ${MINIO_BUCKET:dms-documents}
-            access-key: ${MINIO_ACCESS_KEY}
-            secret-key: ${MINIO_SECRET_KEY}
+        s3:
+            endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+            bucket: ${STORAGE_BUCKET:dms-documents}
+            access-key: ${STORAGE_ACCESS_KEY}
+            secret-key: ${STORAGE_SECRET_KEY}
+            region: ${STORAGE_REGION:auto}
+            path-style-access: ${STORAGE_PATH_STYLE_ACCESS:true}
         max-file-size: ${FILE_MAX_SIZE:52428800}
     cors:
         allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
@@ -276,8 +280,8 @@ app:
 | Profile | Mô tả                  | Database                     | Search                       | Object Storage                       |
 | ------- | ---------------------- | ---------------------------- | ---------------------------- | ------------------------------------ |
 | `dev`   | Development local      | MySQL container/localhost    | Elasticsearch single-node    | MinIO container                      |
-| `test`  | Unit/Integration tests | H2 hoặc Testcontainers MySQL | Testcontainers Elasticsearch | Testcontainers MinIO hoặc MinIO mock |
-| `prod`  | Production             | MySQL managed/cluster        | Elasticsearch cluster        | MinIO / S3-compatible object storage |
+| `test`  | Unit/Integration tests | H2 hoặc Testcontainers MySQL | Testcontainers Elasticsearch | Testcontainers MinIO hoặc S3 mock    |
+| `prod`  | Production             | MySQL managed/cluster        | Elasticsearch cluster        | Cloudflare R2 qua S3-compatible API  |
 
 ### Async Processing & Scheduler
 
@@ -376,9 +380,11 @@ EXPOSE 80
 
 ## 6. Storage Configuration
 
-### MinIO Object Key Structure
+Storage layer chuẩn hóa theo S3-compatible API: môi trường dev/local dùng MinIO container; production dùng Cloudflare R2. Backend chỉ phụ thuộc `StorageService`, không phụ thuộc trực tiếp nhà cung cấp storage.
 
-Object key dùng UUID, không dùng trực tiếp tên file user nhập. Version mới không ghi đè version cũ.
+### S3-compatible Object Key Structure
+
+Object key dùng UUID, không dùng trực tiếp tên file user nhập. Version mới không ghi đè version cũ. Cùng một cấu trúc key được dùng cho MinIO dev và Cloudflare R2 production.
 
 ```text
 Bucket: dms-documents
@@ -401,10 +407,10 @@ public interface StorageService {
 }
 ```
 
-| Môi trường                  | Implementation        | Mô tả                                                                     |
-| --------------------------- | --------------------- | ------------------------------------------------------------------------- |
-| Development / single server | `MinioStorageService` | Lưu object vào MinIO container                                            |
-| Production scale            | `MinioStorageService` | Lưu object vào MinIO hoặc S3-compatible object storage với pre-signed URL |
+| Môi trường                  | Implementation        | Mô tả                                                        |
+| --------------------------- | --------------------- | ------------------------------------------------------------ |
+| Development / single server | `S3StorageService`    | Kết nối MinIO container qua S3-compatible API                |
+| Production scale            | `S3StorageService`    | Kết nối Cloudflare R2 qua S3-compatible API và pre-signed URL |
 
 ---
 

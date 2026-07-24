@@ -111,7 +111,7 @@ Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload
 ```text
 Document Management
   ├── FileUploadHandler             — Validate MIME type, extension, size
-  ├── MinioStorageService           — Lưu/xóa object trong MinIO bucket
+  ├── S3StorageService              — Lưu/xóa object qua S3-compatible API (MinIO dev, Cloudflare R2 production)
   ├── DocumentAccessPolicyService   — Dùng chung cho detail, preview, download và search filter
   ├── ContentExtractorService       — Trích xuất text từ file
   │     ├── PdfTextExtractor        (Apache PDFBox)

@@ -87,7 +87,9 @@ Admin chọn "Upload tài liệu"
   ├── ❌ Thiếu rule phân quyền → 400 Bad Request
   └── ✅ Hợp lệ
         ↓
-[MinioStorageService] — Lưu file gốc vào MinIO bucket
+[S3StorageService] — Lưu file gốc vào object storage
+  • Dev/local: MinIO bucket
+  • Production: Cloudflare R2 bucket qua S3-compatible API
   • Tạo UUID object key → tránh trùng lặp
   • Lưu vào bucket `dms-documents` theo key `documents/YYYY/MM/{documentUuid}/versions/{versionUuid}/original.ext`
         ↓
@@ -328,7 +330,7 @@ Admin click "Upload phiên bản mới"
 [DocumentController] — POST /documents/{id}/versions
       ↓
 [DocumentService]
-  ├── Lưu file mới vào MinIO bucket
+  ├── Lưu file mới vào object storage qua S3-compatible API
   ├── Tạo record mới trong document_versions
   ├── Cập nhật current_version trong documents
   ├── Status = PROCESSING

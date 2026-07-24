@@ -34,7 +34,7 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 
 ### Ngoài phạm vi (Out of Scope)
 
-Không có hạng mục bị loại do chia giai đoạn; các năng lực OCR, MinIO object storage và hardening production nằm trong phạm vi thiết kế hệ thống hiện tại.
+Không có hạng mục bị loại do chia giai đoạn; các năng lực OCR, S3-compatible object storage và hardening production nằm trong phạm vi thiết kế hệ thống hiện tại. Môi trường dev dùng MinIO; production dùng Cloudflare R2.
 
 ---
 
@@ -172,7 +172,7 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 | 4   | **Security**           | Tất cả API trừ login/refresh yêu cầu JWT; mật khẩu hash bằng BCrypt; Refresh Token lưu HttpOnly Cookie |
 | 5   | **Authorization**      | Search, preview, download và metadata detail phải kiểm tra quyền truy cập tài liệu                     |
 | 6   | **Availability**       | Hệ thống hoạt động 99% uptime trong giờ làm việc                                                       |
-| 7   | **Scalability**        | Kiến trúc Elasticsearch-first, cho phép mở rộng cluster search và MinIO/S3-compatible object storage   |
+| 7   | **Scalability**        | Kiến trúc Elasticsearch-first, cho phép mở rộng cluster search và Cloudflare R2/S3-compatible object storage |
 | 8   | **Data Integrity**     | Soft delete cho mọi entity chính, không mất dữ liệu; version cũ không bị ghi đè                        |
 | 9   | **API Standard**       | RESTful API, OpenAPI 3 / Swagger documentation                                                         |
 | 10  | **Response Format**    | Tất cả endpoint trả JSON thống nhất qua `ApiResponse<T>`                                               |
