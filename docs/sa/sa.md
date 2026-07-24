@@ -182,9 +182,15 @@ Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu.
 └─────────────────────────────────────────────────────┘
 ```
 
-**Sync Strategy (MySQL → Elasticsearch):**
-- **After-commit event**: Indexing/re-indexing chạy sau khi transaction MySQL commit thành công.
-- **Failure handling**: Nếu extraction hoặc indexing thất bại, tài liệu chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng.
+**Consistency & Sync Strategy (MySQL ↔ Object Storage → Elasticsearch):**
+- **Source of truth**: MySQL là nguồn chính cho metadata, ACL, lifecycle, current version và object key được tham chiếu.
+- **Object storage**: MinIO/R2 chỉ lưu binary/artifact theo UUID object key; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
+- **Derived index**: Elasticsearch là index dẫn xuất, có thể rebuild từ MySQL + extracted content/object storage.
+- **Upload ordering**: Backend tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu object upload thành công nhưng DB transaction fail, tạo cleanup task hoặc để scheduled orphan cleanup xóa object không được DB tham chiếu.
+- **After-commit event**: Extraction, preview conversion và indexing/re-indexing chỉ chạy sau khi transaction MySQL commit thành công.
+- **Failure handling**: Nếu extraction hoặc indexing thất bại sau DB commit, tài liệu/version chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng; không rollback metadata đã commit.
+- **Delete/archive/restore**: Ghi MySQL trước, đồng bộ Elasticsearch async sau commit. Soft delete không xóa file vật lý ngay lập tức.
+- **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được MySQL tham chiếu.
 - **Retry**: Scheduled job retry mỗi 30 phút cho lỗi extraction/indexing tạm thời.
 - **Batch Re-index**: Scheduled job chạy hàng đêm để self-heal lệch index giữa MySQL và Elasticsearch.
 

@@ -105,7 +105,7 @@ Admin chọn "Upload tài liệu"
   ├── DOCX             → Apache POI (XWPF)
   ├── DOC (cũ)         → Apache POI (HWPF)
   ├── XLS/XLSX         → Apache POI
-  └── Image/PDF scan   → Tesseract OCR, vẫn preview nếu có quyền
+  └── Image/PDF scan   → Tesseract OCR
         ↓
   Lưu extracted_content vào bảng `document_contents`
         ↓
@@ -117,10 +117,18 @@ Cập nhật status = "INDEXED" (hoặc "EXTRACTION_FAILED" nếu lỗi xử lý
         ↓
 Response ApiResponse<DocumentUploadResult> → {
   success: true,
-  data: { documentId: 42, status: "PROCESSING" },
-  message: null,
+  message: "Document upload accepted",
+  data: {
+    id: 42,
+    status: "PROCESSING",
+    versionId: 101,
+    versionNumber: "1.0",
+    createdAt: "2026-07-21T10:30:00"
+  },
   errors: null
 }
+
+Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau upload. Các field phụ thuộc xử lý async như preview artifact, extracted content và searchable chỉ sẵn sàng sau khi tài liệu chuyển `INDEXED`.
 ```
 
 ### Sơ đồ trạng thái tài liệu
@@ -145,8 +153,10 @@ Response ApiResponse<DocumentUploadResult> → {
 
 Business rules:
 
-- Tài liệu ảnh/PDF scan dùng OCR; nếu OCR thất bại nhưng metadata index thành công thì Admin có thể retry xử lý thủ công.
-- Auto retry áp dụng cho lỗi trích xuất hoặc lỗi index tạm thời; Admin vẫn có thể retry thủ công từ màn hình quản trị tài liệu lỗi.
+- Với tài liệu ảnh hoặc PDF scan, hệ thống dùng OCR để trích xuất text phục vụ full-text search.
+- Nếu OCR thất bại nhưng metadata đã lưu thành công, tài liệu chuyển `EXTRACTION_FAILED`; Admin có thể xem trong màn hình tài liệu lỗi và retry xử lý. Tài liệu chưa xuất hiện trong search/preview/download cho User cho đến khi extraction/indexing thành công.
+- Hệ thống tự retry với các lỗi tạm thời như OCR timeout, lỗi kết nối Elasticsearch hoặc Elasticsearch quá tải.
+- Admin có thể retry thủ công từ màn hình quản trị tài liệu lỗi, đặc biệt khi cần xử lý ngay hoặc khi auto retry đã vượt số lần tối đa.
 
 ---
 
@@ -331,12 +341,12 @@ Admin click "Upload phiên bản mới"
       ↓
 [DocumentService]
   ├── Lưu file mới vào object storage qua S3-compatible API
-  ├── Tạo record mới trong document_versions
-  ├── Cập nhật current_version trong documents
-  ├── Status = PROCESSING
-  ├── Trích xuất nội dung mới
-  ├── Re-index Elasticsearch theo version hiện hành
-  ├── Cập nhật status = INDEXED hoặc EXTRACTION_FAILED
+  ├── Tạo record mới trong document_versions với status = PROCESSING
+  ├── Giữ current_version hiện tại để User vẫn search/preview/download version cũ
+  ├── Trích xuất nội dung mới và tạo preview artifact cần thiết
+  ├── Index Elasticsearch theo version mới sau khi xử lý thành công
+  ├── Nếu thành công: cập nhật current_version trong documents sang version mới và status = INDEXED
+  ├── Nếu thất bại: version mới = EXTRACTION_FAILED, current_version không đổi
   └── File cũ được giữ lại trong lịch sử
 
 ─── Restore phiên bản cũ ──────────────────────
@@ -345,10 +355,10 @@ Admin chọn version cũ làm version hiện hành
 [DocumentController] — POST /documents/{id}/versions/{versionId}/restore
       ↓
 [DocumentService]
-  ├── Cập nhật current_version trong documents
-  ├── Status = PROCESSING
-  ├── Trích xuất lại nội dung nếu cần
-  └── Re-index Elasticsearch theo version được restore
+  ├── Validate version cũ còn file/content hợp lệ và chưa bị xóa mềm
+  ├── Re-index Elasticsearch theo version được restore
+  ├── Nếu re-index thành công: cập nhật current_version trong documents
+  └── Nếu re-index thất bại: current_version không đổi và ghi retry task
 ```
 
 ---
@@ -478,25 +488,25 @@ Response ApiResponse<AuditLogPage>
 
 ### Admin Flows
 
-| # | Luồng | Tần suất |
-|---|-------|----------|
-| 1 | Đăng nhập | Hàng ngày |
-| 2 | Upload tài liệu mới | Thường xuyên |
-| 3 | Cập nhật metadata tài liệu | Thỉnh thoảng |
-| 4 | Upload/restore phiên bản | Thỉnh thoảng |
-| 5 | Archive/soft delete/restore tài liệu | Thỉnh thoảng |
-| 6 | Quản lý danh mục/phòng ban/tags | Ít khi |
-| 7 | Quản lý user | Ít khi |
-| 8 | Xem dashboard thống kê | Hàng ngày |
-| 9 | Xem audit log | Khi cần truy vết |
+| #   | Luồng                                | Tần suất         |
+| --- | ------------------------------------ | ---------------- |
+| 1   | Đăng nhập                            | Hàng ngày        |
+| 2   | Upload tài liệu mới                  | Thường xuyên     |
+| 3   | Cập nhật metadata tài liệu           | Thỉnh thoảng     |
+| 4   | Upload/restore phiên bản             | Thỉnh thoảng     |
+| 5   | Archive/soft delete/restore tài liệu | Thỉnh thoảng     |
+| 6   | Quản lý danh mục/phòng ban/tags      | Ít khi           |
+| 7   | Quản lý user                         | Ít khi           |
+| 8   | Xem dashboard thống kê               | Hàng ngày        |
+| 9   | Xem audit log                        | Khi cần truy vết |
 
 ### User Flows
 
-| # | Luồng | Tần suất |
-|---|-------|----------|
-| 1 | Đăng nhập | Hàng ngày |
-| 2 | Tìm kiếm tài liệu | Rất thường xuyên |
-| 3 | Xem chi tiết tài liệu | Thường xuyên |
-| 4 | Preview tài liệu | Thường xuyên |
-| 5 | Download tài liệu | Thường xuyên |
-| 6 | Xem/sửa profile cá nhân | Ít khi |
+| #   | Luồng                   | Tần suất         |
+| --- | ----------------------- | ---------------- |
+| 1   | Đăng nhập               | Hàng ngày        |
+| 2   | Tìm kiếm tài liệu       | Rất thường xuyên |
+| 3   | Xem chi tiết tài liệu   | Thường xuyên     |
+| 4   | Preview tài liệu        | Thường xuyên     |
+| 5   | Download tài liệu       | Thường xuyên     |
+| 6   | Xem/sửa profile cá nhân | Ít khi           |

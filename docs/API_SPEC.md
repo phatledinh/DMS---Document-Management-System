@@ -178,6 +178,19 @@ Upload rules:
 Set-Cookie: refresh_token=eyJ...; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; Max-Age=604800
 ```
 
+**Token Storage & Browser Flow:**
+
+- Frontend lưu access token trong memory, không lưu LocalStorage/SessionStorage.
+- Khi reload tab, access token trong memory mất; frontend gọi `POST /auth/refresh` để khôi phục session.
+- Nếu refresh thất bại do cookie hết hạn/revoked/user inactive, frontend redirect về login.
+
+**Cookie, CORS & CSRF Decisions:**
+
+- Production ưu tiên deploy frontend/backend cùng site/domain và dùng `SameSite=Strict; Secure; HttpOnly`.
+- Nếu frontend/backend khác site, chỉ cho phép credentialed CORS với allowlist origin cụ thể, không dùng wildcard `*`, và refresh cookie phải dùng `SameSite=None; Secure`.
+- `POST /auth/refresh` và `POST /auth/logout` phải có CSRF protection khi cookie refresh token được gửi cross-site. Cơ chế đề xuất: double-submit CSRF token hoặc custom CSRF header.
+- Logout phải revoke refresh token phía server và xóa cookie bằng `Set-Cookie` có cùng `Path`, `SameSite`, `Secure` với cookie đã set.
+
 ### `POST /auth/refresh` 🔓
 
 Đọc Refresh Token từ HttpOnly Cookie và cấp Access Token mới.
@@ -375,35 +388,24 @@ Admin upload tài liệu mới. Sử dụng `multipart/form-data`.
 - `RESTRICTED`: `ownerId` hoặc `sharedUserIds` phải có ít nhất một user; owner luôn có quyền xem.
 
 **Success Response (201):**
+
+Upload là async operation, nên endpoint này trả contract gọn `DocumentUploadResult`. Frontend cần detail đầy đủ thì gọi tiếp `GET /documents/{id}`.
+
 ```json
 {
   "success": true,
-  "message": "Document uploaded successfully",
+  "message": "Document upload accepted",
   "data": {
     "id": 42,
-    "title": "Quy trình ISO 9001 - Quản lý chất lượng",
-    "slug": "quy-trinh-iso-9001-quan-ly-chat-luong",
-    "documentCode": "SOP-QA-001",
-    "fileName": "ISO_9001_QA_Process.pdf",
-    "fileType": "PDF",
-    "mimeType": "application/pdf",
-    "fileSize": 2048576,
     "status": "PROCESSING",
-    "accessLevel": "DEPARTMENT",
+    "versionId": 101,
     "versionNumber": "1.0",
-    "category": { "id": 1, "name": "Quy trình ISO" },
-    "department": { "id": 3, "name": "Phòng QA", "code": "QA" },
-    "owner": { "id": 10, "name": "Nguyễn Văn C" },
-    "departmentAccesses": [ { "id": 3, "name": "Phòng QA", "code": "QA" } ],
-    "sharedUsers": [],
-    "tags": [ { "id": 1, "name": "ISO" } ],
-    "uploadedBy": { "id": 1, "name": "Admin" },
     "createdAt": "2026-07-21T10:30:00"
   }
 }
 ```
 
-Sau khi upload, extraction/indexing chạy background. `status` ban đầu là `PROCESSING`, chuyển sang `INDEXED` hoặc `EXTRACTION_FAILED`.
+Sau khi upload, extraction/indexing chạy background. `status` ban đầu là `PROCESSING`, chuyển sang `INDEXED` hoặc `EXTRACTION_FAILED`. Các field phụ thuộc xử lý async như preview artifact, extracted content, indexedAt hoặc searchable chỉ được xem là sẵn sàng sau khi status chuyển `INDEXED`.
 
 ### `GET /documents` 🔒
 

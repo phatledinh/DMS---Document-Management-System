@@ -503,7 +503,7 @@ Elasticsearch index có thể rebuild từ MySQL + `document_contents`; nên c�
 
 - Không commit secrets; `JWT_SECRET`, database password và object storage keys lấy từ `.env`, Docker secrets hoặc secret manager.
 - `JWT_SECRET` phải đủ mạnh cho HMAC 256-bit trở lên; không dùng placeholder ở production.
-- Refresh Token lưu HttpOnly Cookie; production bật `Secure`, `SameSite=Lax` hoặc `Strict`, domain/path rõ ràng.
+- Refresh Token lưu HttpOnly Cookie; production cùng site/domain ưu tiên `Secure`, `SameSite=Strict`, domain/path rõ ràng. Nếu frontend/backend khác site, dùng `SameSite=None; Secure` kèm credentialed CORS allowlist và CSRF protection.
 - Chỉ expose 80/443 ra public; MySQL, Redis và Elasticsearch chỉ nằm trong private network.
 - CORS giới hạn theo domain thật, không dùng wildcard cho credentialed requests.
 - Bật HTTPS/TLS và redirect HTTP sang HTTPS.
