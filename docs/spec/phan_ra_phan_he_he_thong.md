@@ -78,42 +78,44 @@ Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload
 | `DocumentUserAccess` | ACL theo user được chia sẻ trực tiếp cho tài liệu `RESTRICTED` |
 
 ### Chức năng chính
-- Upload tài liệu (multipart/form-data, max 50MB)
+- Upload tài liệu bằng presigned URL init/complete, max 50MB
 - Validate MIME type thực tế, extension, kích thước và extension bị chặn
 - Trích xuất nội dung file (Content Extraction Pipeline)
 - Lưu metadata, ACL và phiên bản tài liệu
 - Cập nhật metadata tài liệu
 - Archive, soft delete, restore tài liệu
-- Preview tài liệu (PDF stream, convert Word/Excel → PDF hoặc HTML đã sanitize)
-- Download file gốc
+- Preview tài liệu bằng presigned GET URL; PDF/image dùng object gốc, Word/Excel dùng preview artifact PDF/HTML đã sanitize
+- Download file gốc bằng presigned GET URL
 - Quản lý phiên bản (upload version mới, xem lịch sử, restore version cũ)
-- Retry extraction/indexing thủ công cho tài liệu `EXTRACTION_FAILED`
+- Retry extraction/search refresh thủ công cho tài liệu `EXTRACTION_FAILED`
 
 ### API Endpoints
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| POST | `/documents` | Upload tài liệu |
+| POST | `/documents/upload-init` | Khởi tạo upload tài liệu, trả presigned PUT URL |
+| POST | `/documents/{id}/upload-complete` | Xác nhận upload xong, validate object và publish xử lý nền |
 | GET | `/documents` | Danh sách (pagination, filters) |
 | GET | `/documents/{id}` | Chi tiết tài liệu, có kiểm tra quyền truy cập |
 | PUT | `/documents/{id}` | Cập nhật metadata và ACL |
 | DELETE | `/documents/{id}` | Xóa mềm |
 | POST | `/documents/{id}/archive` | Archive tài liệu |
 | POST | `/documents/{id}/restore` | Restore tài liệu đã archive/delete |
-| POST | `/documents/{id}/retry-indexing` | Retry extraction/indexing thủ công |
-| GET | `/documents/{id}/preview` | Preview, có kiểm tra quyền truy cập |
-| GET | `/documents/{id}/download` | Download, có kiểm tra quyền truy cập |
+| POST | `/documents/{id}/retry-indexing` | Retry extraction/search refresh thủ công |
+| GET | `/documents/{id}/preview-url` | Lấy presigned URL preview, có kiểm tra quyền truy cập |
+| GET | `/documents/{id}/download-url` | Lấy presigned URL download, có kiểm tra quyền truy cập |
 | GET | `/documents/{id}/versions` | Lịch sử phiên bản |
-| POST | `/documents/{id}/versions` | Upload version mới |
+| POST | `/documents/{id}/versions/init` | Khởi tạo upload version mới |
+| POST | `/documents/{id}/versions/{versionId}/complete` | Xác nhận upload version xong |
 | POST | `/documents/{id}/versions/{versionId}/restore` | Chọn version cũ làm version hiện hành |
 
 ### Sub-components
 
 ```text
 Document Management
-  ├── FileUploadHandler             — Validate MIME type, extension, size
-  ├── S3StorageService              — Lưu/xóa object qua S3-compatible API (MinIO dev, Cloudflare R2 production)
+  ├── UploadInit/CompleteUseCase     — Validate metadata, ký presigned URL, HEAD object, Tika validate MIME thực tế
+  ├── S3StorageService              — Ký presigned PUT/GET URL, HEAD/delete object qua S3-compatible API
   ├── DocumentAccessPolicyService   — Dùng chung cho detail, preview, download và search filter
-  ├── ContentExtractorService       — Trích xuất text từ file
+  ├── RabbitMQ Worker               — Consume extract/OCR/preview/index tasks
   │     ├── PdfTextExtractor        (Apache PDFBox)
   │     ├── DocxExtractor           (Apache POI - XWPF)
   │     ├── DocExtractor            (Apache POI - HWPF)
@@ -137,10 +139,10 @@ Document Management
 ## PH3: Search Engine — Tìm kiếm Full-text (Core Feature)
 
 ### Mô tả
-Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô tả, mã tài liệu, tags và nội dung file đã trích xuất, đồng thời áp dụng filter quyền truy cập ngay trong Elasticsearch query.
+Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô tả, mã tài liệu, tags và nội dung file đã trích xuất, đồng thời áp dụng filter quyền truy cập ngay trong PostgreSQL FTS query.
 
 ### Chức năng chính
-- Full-text search bằng Elasticsearch trên `title`, `description`, `extracted_content`, `document_code`, `tags`
+- Full-text search bằng PostgreSQL FTS trên `title`, `description`, `extracted_content`, `document_code`, `tags`
 - Exact match và boost cao cho `document_code`
 - Boost theo thứ tự ưu tiên: document code → title → tags → description → extracted content
 - Filter kết quả theo: category, department, tag, file type, owner/uploader, date range, document status, access level
@@ -156,7 +158,7 @@ Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô t�
 
 | Công nghệ | Vai trò | Mô tả |
 |-----------|---------|-------|
-| Elasticsearch | Full-text search engine | Multi-match query, exact/boosted document_code, fuzzy search, synonym, faceted filters, highlight, relevance scoring |
+| PostgreSQL FTS | Full-text search engine | Multi-match query, exact/boosted document_code, fuzzy search, synonym, faceted filters, highlight, relevance scoring |
 
 ### API Endpoints
 | Method | Endpoint | Mô tả |
@@ -168,9 +170,9 @@ Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô t�
 
 ```text
 Search Engine
-  ├── SearchService                 — Xây dựng & thực thi Elasticsearch query
-  ├── ElasticsearchSearchEngine     — Adapter thực thi full-text search
-  ├── SearchIndexService            — Đồng bộ index khi create/update/delete/version restore
+  ├── SearchService                 — Xây dựng & thực thi PostgreSQL FTS query
+  ├── PostgresSearchEngine     — Adapter thực thi full-text search
+  ├── SearchRefreshService          — Refresh search row/vector khi create/update/delete/version restore
   ├── SearchPermissionService       — Build filter quyền từ DocumentAccessPolicyService
   ├── SuggestionService             — Autocomplete/suggestion
   └── SearchResultMapper            — Chuẩn hóa highlight, facets, score và pagination
@@ -196,7 +198,7 @@ Quản lý dữ liệu danh mục dùng chung cho toàn hệ thống: danh mục
 - CRUD Tag (slug tự động sinh từ name)
 - Soft delete cho tất cả entity
 - Cache danh mục/phòng ban/tags phổ biến
-- Re-index tài liệu bị ảnh hưởng khi metadata search/filter thay đổi
+- Refresh search row cho tài liệu bị ảnh hưởng khi metadata search/filter thay đổi
 
 ### API Endpoints
 | Method | Endpoint | Mô tả |
@@ -307,7 +309,7 @@ Audit & Access Log
 |----|-----|---------|
 | Document → Identity | Document thuộc về User (owner/uploader), dùng department/role để kiểm tra quyền |
 | Document → Master Data | Document gắn với Category, Department, Tags |
-| Document → Search | Document phát sinh index/re-index/deactivate khi create/update/delete/version restore |
+| Document → Search | Document phát sinh refresh search/deactivate khi create/update/delete/version restore |
 | Search → Document | Search dùng metadata, status và ACL của Document để build query/filter |
 | Search → Audit Log | Search ghi keyword, filters, resultCount, searchTime |
 | Document → Audit Log | Document ghi upload, metadata update, archive, delete, restore, preview, download |
@@ -319,7 +321,7 @@ Audit & Access Log
 
 ### Ghi chú coupling giữa Document và Search
 - PH2 phát sinh indexing action khi tài liệu hoặc metadata thay đổi.
-- PH3 chịu trách nhiệm build Elasticsearch document, query và permission filter.
+- PH3 chịu trách nhiệm build PostgreSQL search row, query và permission filter.
 - Khi triển khai có thể dùng domain event nội bộ như `DocumentUploaded`, `DocumentMetadataUpdated`, `DocumentDeleted`, `DocumentVersionRestored` để tránh coupling trực tiếp hai chiều.
 
 ---

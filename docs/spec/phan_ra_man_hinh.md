@@ -458,8 +458,8 @@ Batch actions bổ sung:
 
 [⋮] Menu: Xem chi tiết | Sửa metadata/ACL | Preview | Download
           | Upload version | Xem versions
-          | Archive | Restore | Retry indexing* | Xóa (soft)
-   (* Retry indexing chỉ hiển thị khi status = EXTRACTION_FAILED)
+          | Archive | Restore | Retry processing/search refresh* | Xóa (soft)
+   (* Retry processing/search refresh chỉ hiển thị khi status = EXTRACTION_FAILED)
 ```
 
 ### Filters
@@ -551,7 +551,7 @@ Tương tự MH09 nhưng:
 - Các field đã điền sẵn data hiện tại.
 - Cho phép sửa: `title`, `description`, `categoryId`, `tagIds`, `effectiveDate`, `expiryDate`, `accessLevel` và ACL tương ứng (`departmentIds` / `ownerId` / `sharedUserIds`). `documentCode` chỉ hiển thị read-only vì backend tự sinh.
 - Nút "LƯU THAY ĐỔI" thay vì "UPLOAD".
-- Cảnh báo: thay đổi `accessLevel`/ACL ảnh hưởng đến visibility trong search/detail/preview/download và sẽ re-index Elasticsearch.
+- Cảnh báo: thay đổi `accessLevel`/ACL ảnh hưởng đến visibility trong search/detail/preview/download và sẽ refresh PostgreSQL search vector.
 
 ---
 
@@ -581,7 +581,7 @@ Tương tự MH09 nhưng:
 └──────────┴───────────────────────────────────────────────┘
 
 [Modal Upload version]: file *, versionNumber *, changelog
-[♻️ Restore]: chọn version cũ làm current → re-extract + re-index
+[♻️ Restore]: chọn version cũ làm current → re-extract + refresh search vector
 ```
 
 ### Business rules UI
@@ -621,7 +621,7 @@ Tương tự MH09 nhưng:
 └──────────┴───────────────────────────────────────────────┘
 ```
 
-> Hỗ trợ parent/child, sort_order, icon; soft delete. Thay đổi ảnh hưởng filter search sẽ re-index tài liệu liên quan.
+> Hỗ trợ parent/child, sort_order, icon; soft delete. Thay đổi ảnh hưởng filter search sẽ refresh search row cho tài liệu liên quan.
 
 ---
 
@@ -636,7 +636,7 @@ Tương tự MH09 nhưng:
 
 Hiển thị dạng bảng đơn giản: Tên, Mã (code unique), Mô tả, Trạng thái (is_active), Actions.
 
-> Phòng ban dùng cho access level `DEPARTMENT`; thay đổi ACL/filter sẽ re-index tài liệu liên quan.
+> Phòng ban dùng cho access level `DEPARTMENT`; thay đổi ACL/filter sẽ refresh search row cho tài liệu liên quan.
 
 ---
 
@@ -757,11 +757,11 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 │         │  │ 2  │ Scan HĐ  │ TIFF │No OCR │ 0     │[🔁]││
 │         │  └────┴──────────┴──────┴────────┴───────┴────┘│
 │         │                                                │
-│         │  [Modal xác nhận Retry indexing]               │
+│         │  [Modal xác nhận Retry processing/search refresh]               │
 └──────────┴───────────────────────────────────────────────┘
 ```
 
-> Hiển thị error message, retry count, last retry time; nút Retry indexing (F2.15) với modal xác nhận.
+> Hiển thị error message, retry count, last retry time; nút Retry processing/search refresh (F2.15) với modal xác nhận.
 > Có thể triển khai như quick tab "Lỗi xử lý" của MH08 thay vì màn riêng.
 
 ---
@@ -824,7 +824,7 @@ Business rules:
 | MH02 | Trang tìm kiếm | `/` | Home — search + autocomplete + tài liệu mới |
 | MH03 | Kết quả tìm kiếm | `/search?q=...` | Kết quả + facets + sort |
 | MH04 | Chi tiết tài liệu | `/documents/{id}` | Metadata + preview/download + versions |
-| MH05 | Preview | `/documents/{id}/preview` | PDF/HTML/Image viewer |
+| MH05 | Preview | `/documents/{id}/preview` | PDF/HTML/Image viewer dùng presigned preview URL |
 | MH06 | Profile | `/profile` | Xem/sửa thông tin cá nhân |
 
 ### Admin Screens (12 màn hình)
@@ -841,7 +841,7 @@ Business rules:
 | MH14 | Quản lý tags | `/admin/tags` | CRUD bảng |
 | MH15 | Quản lý users | `/admin/users` | CRUD bảng |
 | MH16 | Audit & Access Log | `/admin/audit-logs` | Tra cứu log |
-| MH17 | Tài liệu lỗi xử lý | `/admin/documents/processing-errors` | Retry indexing (hoặc tab MH08) |
+| MH17 | Tài liệu lỗi xử lý | `/admin/documents/processing-errors` | Retry processing/search refresh (hoặc tab MH08) |
 | MH18 | Search & Access Analytics | `/admin/analytics` | Thống kê chuyên sâu (hoặc tab MH07) |
 | MH19 | Thùng rác tài liệu | `/admin/trash` | Restore/permanent delete tài liệu đã xóa mềm |
 

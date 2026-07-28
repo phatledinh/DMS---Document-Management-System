@@ -13,9 +13,9 @@
 │  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
 │  │   FRONTEND     │  │   BACKEND      │  │   DATABASE    │  │
 │  │                │  │                │  │               │  │
-│  │  React 18+     │  │  Spring Boot 3 │  │  MySQL 8.0+   │  │
-│  │  Vite          │  │  Java 17+      │  │  Redis        │  │
-│  │  JavaScript    │  │  Spring Sec 6  │  │  Elasticsearch │  │
+│  │  React 18+     │  │  Spring Boot 3 │  │  PostgreSQL 17+ │  │
+│  │  Vite          │  │  Java 25       │  │  Redis          │  │
+│  │  JavaScript    │  │  Spring Sec 6  │  │  FTS + pg_trgm  │  │
 │  └────────────────┘  └────────────────┘  └───────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -86,7 +86,14 @@ frontend/
 │   │   ├── FileUploadZone/
 │   │   └── ...
 │   ├── features/               ← Feature-based modules
-│   │   ├── auth/
+│   │   ├── auth/               ← Ví dụ chi tiết cấu trúc bên trong 1 feature
+│   │   │   ├── api/            ← Định nghĩa các API requests (login, refresh token,...)
+│   │   │   ├── components/     ← UI components dùng riêng trong feature (LoginForm,...)
+│   │   │   ├── hooks/          ← Custom hooks xử lý logic cục bộ (useAuth, useLogin,...)
+│   │   │   ├── routes/         ← Định nghĩa các route thuộc nhánh auth
+│   │   │   ├── store/          ← State management cục bộ (ví dụ: Zustand slice)
+│   │   │   ├── utils/          ← Các helper functions nội bộ
+│   │   │   └── index.js        ← Public API export (chỉ export những gì các module khác được dùng)
 │   │   ├── documents/
 │   │   ├── search/
 │   │   ├── categories/
@@ -96,7 +103,7 @@ frontend/
 │   │   ├── dashboard/
 │   │   ├── audit/              ← MH16 Audit & Access Log
 │   │   └── profile/            ← MH06 Profile cá nhân
-│   ├── hooks/                  ← Custom hooks
+│   ├── hooks/                  ← Custom hooks global
 │   ├── pages/                  ← Route pages
 │   ├── store/                  ← Global state
 │   ├── utils/                  ← Utility functions
@@ -113,10 +120,12 @@ frontend/
 
 ### Core Framework
 
+> Chuẩn runtime backend là **Java 25**. Cấu hình build nên đặt `maven.compiler.release=25` (Maven) hoặc `java.toolchain.languageVersion = JavaLanguageVersion.of(25)` (Gradle) để bytecode, CI và container image dùng cùng một phiên bản JDK.
+
 | Công nghệ | Version | Mô tả |
 |-----------|---------|-------|
-| **Java** | 17+ | Ngôn ngữ chính |
-| **Spring Boot** | 3.x | Framework chính |
+| **Java** | 25 | Ngôn ngữ chính; dùng JDK 25 cho build/runtime |
+| **Spring Boot** | 3.x | Framework chính, chạy trên Java 25 |
 | **Spring Web** | — | REST API |
 | **Spring Security** | 6.x | Authentication & Authorization |
 | **Spring Data JPA** | — | ORM / Database access |
@@ -140,25 +149,40 @@ frontend/
 | **JODConverter + LibreOffice (headless)** | Convert Word/Excel → PDF/HTML cho Preview (F2.7, MH05) |
 | **Tesseract OCR** | OCR cho scanned PDF & images |
 
-> **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho Elasticsearch. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image backend phải cài sẵn LibreOffice. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
+> **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho PostgreSQL FTS. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image worker phải cài sẵn LibreOffice; API image có thể bỏ LibreOffice/Tesseract nếu tách image runtime. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
 
-### Content Sanitizer & Async Processing
+### Object Storage & Presigned URL
 
 | Thư viện | Mô tả |
 |----------|-------|
+| **AWS SDK for Java v2** (`software.amazon.awssdk:s3`) | S3-compatible client cho MinIO (dev) / Cloudflare R2 (prod): put/get/head/delete object |
+| **S3 Presigner** (`software.amazon.awssdk:s3` presigner) | Ký **presigned PUT/GET URL** cho upload & download/preview trực tiếp client ↔ storage (xem [presigned-url.md](./presigned-url.md)) |
+
+> **Luồng file dùng Presigned URL**: client PUT/GET byte **trực tiếp** với object storage; backend chỉ ký URL sau khi check ACL, không nằm trên đường truyền byte. Bucket private hoàn toàn + CORS cho origin frontend. Flow này là contract chính của docs gốc: `upload-init`/`upload-complete`, `download-url`, `preview-url`; [presigned-url.md](./presigned-url.md) giữ vai trò ADR tham khảo.
+
+### Messaging & Async Processing
+
+| Thư viện | Mô tả |
+|----------|-------|
+| **RabbitMQ** + **Spring AMQP** (`spring-boot-starter-amqp`) | Message broker điều phối tác vụ nền nặng (extraction, OCR, LibreOffice convert, indexing) tới **worker process riêng** (xem [worker-architecture.md](./worker-architecture.md)) |
+| **Spring `@Async` + `ThreadPoolTaskExecutor`** | Chỉ còn cho tác vụ **cực nhẹ** trong request (VD publish message, invalidate cache). Tác vụ nặng đã chuyển sang RabbitMQ worker |
 | **OWASP Java HTML Sanitizer** / **Jsoup** | Sanitize HTML preview & search highlight chống XSS (NFR#11, `HtmlSanitizer`) |
-| **Spring `@Async` + `ThreadPoolTaskExecutor`** | Chạy content extraction / indexing nền (F2.2) |
-| **Spring `@Scheduled`** (+ **ShedLock** nếu multi-instance) | Auto retry `EXTRACTION_FAILED` mỗi 30 phút, purge Trash sau 30 ngày, batch re-index nightly |
+| **Spring `@Scheduled`** + **ShedLock** | Retry `EXTRACTION_FAILED` mỗi 30 phút, search refresh batch hàng đêm — job = publish message vào queue; ShedLock đảm bảo chỉ 1 instance chạy scheduler khi multi-instance |
+
+> **Worker & RabbitMQ**: Content extraction / OCR / preview convert / PostgreSQL search refresh không còn chạy `@Async` in-process mà được publish vào RabbitMQ (queue theo loại task: `dms.extract`, `dms.ocr`, `dms.preview`, `dms.index`) và xử lý bởi worker tách biệt, scale độc lập với API server. Topology đã chốt gồm `dms.extract`, `dms.ocr`, `dms.preview`, `dms.index`, retry `30s -> 5m -> 30m`, `maxAttempts = 3`, DLQ giữ để admin xử lý; [worker-architecture.md](./worker-architecture.md) giữ vai trò ADR tham khảo.
 
 ### Data Access — Search, Cache & Migration
 
-| Thư viện | Mô tả |
+| Thư viện / Extension | Mô tả |
 |----------|-------|
-| **Elasticsearch Java Client** (`co.elastic.clients`) 8.x | Client chính cho ES: native query builder (multi-match, boosting, permission filter, facets, highlight) |
+| **PostgreSQL JDBC / JPA native query** | Thực thi query FTS nâng cao (`websearch_to_tsquery`, `ts_rank_cd`, `ts_headline`, filter ACL/facet) |
+| **PostgreSQL `pg_trgm`** | Fuzzy search, typo tolerance, autocomplete/typeahead bằng trigram index |
+| **PostgreSQL `unaccent`** | Chuẩn hóa dấu khi search tiếng Việt ở mức cơ bản |
+| **PostgreSQL `pgvector`** (optional) | Vector/semantic search cho giai đoạn RAG nếu cần |
 | **Spring Data Redis (Lettuce)** | Truy cập Redis cache (categories tree, tags, suggestions) |
-| **Flyway** | Version hóa & migrate schema MySQL |
+| **Flyway** | Version hóa schema PostgreSQL và tạo extension/index search |
 
-> **Lựa chọn ES client**: dùng **Elasticsearch Java Client 8.x** thay vì Spring Data Elasticsearch vì yêu cầu query phức tạp (permission-aware filter, boost theo thứ tự ưu tiên, faceted aggregation, native highlight) cần điều khiển query ở mức thấp. Kiểm tra ma trận tương thích client ↔ ES 8.11.
+> **Lựa chọn PostgreSQL-only**: không dùng Elasticsearch/OpenSearch trong MVP. PostgreSQL vừa là source of truth vừa xử lý search bằng FTS + GIN index + `pg_trgm`; query phức tạp được viết bằng SQL/native query để kiểm soát ranking, highlight, facet và permission filter.
 
 ### Mapping & Utilities
 
@@ -181,10 +205,10 @@ frontend/
 | **JUnit 5** | Unit testing |
 | **Mockito** | Mocking framework |
 | **Spring Boot Test** | Integration testing |
-| **Testcontainers** (MySQL, Elasticsearch, Redis) | Integration test sát production cho ES query, cache, JPA |
-| **H2 Database** | In-memory DB cho unit test JPA nhanh (lưu ý lệch hành vi với MySQL 8) |
+| **Testcontainers** (PostgreSQL, Redis) | Integration test sát production cho FTS query, `pg_trgm`, cache, JPA |
+| **H2 Database** | In-memory DB cho unit test JPA nhanh (lưu ý lệch hành vi với PostgreSQL FTS/extensions) |
 
-> Logic cốt lõi (permission-aware ES query, faceted aggregation, Redis cache) không kiểm thử được bằng H2 — ưu tiên **Testcontainers** cho các test này; H2 chỉ dùng cho test JPA đơn giản.
+> Logic cốt lõi (permission-aware FTS query, ranking/highlight, faceted aggregation, Redis cache) không kiểm thử được bằng H2 — ưu tiên **Testcontainers PostgreSQL** cho các test này; H2 chỉ dùng cho test JPA đơn giản.
 
 ### Project Structure (BE)
 
@@ -241,12 +265,12 @@ backend/
 │       └── dto/
 ├── src/main/resources/
 │   ├── db/migration/                   ← Flyway migration scripts (V1__init.sql...)
-│   ├── application.yml                 ← cấu hình multipart max-file-size/max-request-size = 50MB
+│   ├── application.yml                 ← cấu hình presigned upload TTL + small multipart limit for non-file forms
 │   ├── application-dev.yml
 │   └── application-prod.yml
 ├── src/test/
-├── pom.xml (hoặc build.gradle)
-└── Dockerfile
+├── pom.xml (hoặc build.gradle)        ← target/release Java 25
+└── Dockerfile                         ← base image JDK/JRE 25
 ```
 
 ---
@@ -257,13 +281,14 @@ backend/
 
 | Công nghệ | Version | Mô tả |
 |-----------|---------|-------|
-| **MySQL** | 8.0+ | Relational database chính |
+| **PostgreSQL** | 17+ | Relational database chính + full-text search engine |
 
-**Lý do chọn MySQL:**
-- Lưu trữ dữ liệu quan hệ và metadata tài liệu
-- Ổn định, phổ biến, dễ quản lý
-- Tương thích tốt với Spring Data JPA / Hibernate
-- Hỗ trợ InnoDB (transactions, foreign keys)
+**Lý do chọn PostgreSQL:**
+- Lưu trữ dữ liệu quan hệ, metadata tài liệu, ACL, audit/access/search logs
+- Hỗ trợ transaction, foreign keys, JSONB, CTE/window functions và index phong phú
+- Tích hợp Full-Text Search với `tsvector`, `tsquery`, `ts_rank_cd`, `ts_headline`
+- Hỗ trợ `pg_trgm` cho fuzzy/typeahead và `pgvector` cho semantic search nếu cần
+- Giảm hạ tầng vận hành vì không cần Elasticsearch/OpenSearch riêng trong MVP
 
 ### Cache Layer
 
@@ -281,19 +306,25 @@ backend/
 
 | Công nghệ | Version | Mô tả |
 |-----------|---------|-------|
-| **Elasticsearch** | 8+ | Full-text search engine chính |
+| **PostgreSQL Full-Text Search** | built-in | Search keyword trên title, description, document code, tags, extracted content |
+| **GIN index** | built-in | Index cho `tsvector` và trigram để giữ hiệu năng query |
+| **pg_trgm** | extension | Fuzzy search, typo tolerance, autocomplete/typeahead |
+| **unaccent** | extension | Normalize dấu cho search tiếng Việt cơ bản |
+| **pgvector** | extension optional | Semantic/vector search cho RAG giai đoạn sau |
 
 **Sử dụng cho:**
 - Full-text search trên tiêu đề, mô tả và nội dung trích xuất
-- Fuzzy search, synonym, Vietnamese analyzer
-- Faceted aggregations theo danh mục, phòng ban, loại file, tags
-- Highlight matched snippets và relevance scoring
+- Ranking bằng `ts_rank_cd` với boost theo `document_code`, title, tags, description, extracted content
+- Highlight bằng `ts_headline` và sanitize HTML trước khi trả frontend
+- Fuzzy search/typeahead bằng `pg_trgm`
+- Faceted aggregations theo danh mục, phòng ban, loại file, tags bằng SQL `GROUP BY`
+- Permission-aware query bằng JOIN/EXISTS với ACL ngay trong SQL
 
 ### Database Schema Overview
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│                      MySQL Schema                            │
+│                      PostgreSQL Schema                            │
 │                                                              │
 │  Identity:                                                   │
 │  ├── users                    (thông tin người dùng)        │
@@ -326,7 +357,7 @@ backend/
 | **VS Code** | Frontend IDE |
 | **Git** | Version control |
 | **Postman** / **Swagger UI** | API testing |
-| **MySQL Workbench** / **DBeaver** | Database management |
+| **pgAdmin** / **DBeaver** | PostgreSQL database management |
 | **Redis Insight** | Redis GUI |
 
 ### Build & Package
@@ -351,13 +382,13 @@ backend/
 
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
-| Java | 17 | 21 |
+| Java | 25 | 25 |
 | Spring Boot | 3.0 | 3.2+ |
 | Node.js | 18 | 20 LTS |
 | React | 18 | 18.2+ |
-| MySQL | 8.0 | 8.0.33+ |
+| PostgreSQL | 17 | 17+ / managed latest stable |
 | Redis | 7.0 | 7.2+ |
-| Elasticsearch | 8.0 | 8.11+ |
-| Elasticsearch Java Client | 8.0 | khớp version ES đang chạy |
+| pg_trgm / unaccent | PostgreSQL built-in extensions | enabled by Flyway |
+| pgvector | 0.7+ | optional, enable khi cần semantic search |
 | LibreOffice (headless, cho JODConverter) | 7.4 | 7.6+ |
 | Flyway | 9.x | 10.x |

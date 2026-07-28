@@ -95,7 +95,7 @@ Tất cả JSON endpoint trả về format thống nhất.
 | `DANGEROUS_FILE_TYPE` | File thuộc nhóm extension bị chặn |
 | `MIME_TYPE_MISMATCH` | Extension và MIME thực tế không khớp |
 | `EXTRACTION_FAILED` | Trích xuất nội dung file thất bại |
-| `INDEXING_FAILED` | Đồng bộ Elasticsearch thất bại |
+| `INDEXING_FAILED` | Refresh PostgreSQL search vector thất bại |
 | `INVALID_CREDENTIALS` | Email hoặc mật khẩu sai |
 | `TOKEN_EXPIRED` | JWT đã hết hạn |
 | `ACCESS_DENIED` | Không có quyền truy cập |
@@ -106,12 +106,16 @@ Tất cả JSON endpoint trả về format thống nhất.
 | `BATCH_OPERATION_PARTIAL_FAILED` | Batch operation có một phần item thất bại |
 | `DOCUMENT_ALREADY_DELETED` | Tài liệu đã nằm trong Thùng rác |
 | `TRASH_ITEM_EXPIRED` | Tài liệu trong Thùng rác đã quá hạn hoặc đã bị purge |
+| `UPLOAD_NOT_COMPLETED` | Gọi complete nhưng object chưa tồn tại trên storage |
+| `UPLOAD_SIZE_MISMATCH` | Size object thực tế khác size đã khai/ký |
+| `PRESIGN_FAILED` | Không ký được presigned URL do lỗi cấu hình storage/credential |
+| `DOCUMENT_NOT_READY` | Xin download/preview URL khi document chưa sẵn sàng theo policy |
 
 ### Supported File Types & Upload Validation
 
 | MIME Type | Extension | Extraction | Preview |
 |-----------|-----------|:---:|:---:|
-| `application/pdf` | `.pdf` | PDFBox cho PDF text; Tesseract OCR cho scan | PDF stream |
+| `application/pdf` | `.pdf` | PDFBox cho PDF text; Tesseract OCR cho scan | Presigned inline PDF |
 | `application/msword` | `.doc` | POI HWPF | Convert PDF/HTML |
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | POI XWPF | Convert PDF/HTML |
 | `application/vnd.ms-excel` | `.xls` | POI | HTML table/PDF |
@@ -122,12 +126,13 @@ Tất cả JSON endpoint trả về format thống nhất.
 
 Upload rules:
 
-- `POST /documents` upload đúng 1 file; `POST /documents/batch-upload` nhận nhiều file qua field `files`.
-- File size tối đa `50MB` cho từng file.
-- Validate cả extension và MIME thực tế bằng Apache Tika.
+S- Upload dùng flow presigned URL: backend ký URL, client PUT file trực tiếp lên object storage, rồi gọi complete.
+- Mỗi flow upload xử lý đúng 1 file, file size tối đa `50MB`.
+- `upload-init` validate sơ bộ extension, MIME khai báo, kích thước và metadata; backend sinh `storage_path` UUID/generated key, client không được chọn object key.
+- `upload-complete` HEAD object, kiểm tra size thực tế và validate MIME thực tế bằng Apache Tika trước khi chuyển sang `PROCESSING`.
 - Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`, `.htm`, `.jar`, `.msi`, `.ps1`, `.vbs`.
-- `storage_path` dùng UUID/generated key; `file_name` chỉ là tên gốc đã sanitize để hiển thị/download.
-- Upload version mới phải đi qua cùng validation như upload tài liệu lần đầu.
+- `file_name` là tên gốc đã sanitize để hiển thị/download, không dùng để tạo path lưu trữ.
+- Upload version mới phải đi qua cùng flow init/complete và validation như upload tài liệu lần đầu.
 
 ### Shared Enums
 
@@ -135,7 +140,7 @@ Upload rules:
 |------|--------|
 | `Role` | `ADMIN`, `USER` |
 | `UserStatus` | `ACTIVE`, `INACTIVE`, `BANNED` |
-| `DocumentStatus` | `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `ARCHIVED`, `DELETED` |
+| `DocumentStatus` | `AWAITING_UPLOAD`, `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `ARCHIVED`, `DELETED` |
 | `AccessLevel` | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
 | `AccessLogAction` | `VIEW`, `PREVIEW`, `DOWNLOAD`, `VERSION_DOWNLOAD` |
 | `AuditTargetType` | `DOCUMENT`, `USER`, `CATEGORY`, `DEPARTMENT`, `TAG` |
@@ -383,37 +388,63 @@ Rules:
 }
 ```
 
-### `POST /documents` 👑
+### `POST /documents/upload-init` 👑
 
-Admin upload tài liệu mới. Sử dụng `multipart/form-data`.
+Admin khởi tạo upload tài liệu mới. Backend validate metadata và thông tin file khai báo, tạo row `documents` với `status = AWAITING_UPLOAD`, sinh `storage_path` UUID/generated key và trả presigned PUT URL để client upload byte trực tiếp lên object storage.
 
-**Request Fields:**
-
-| Field | Type | Required | Description |
-|-------|------|:---:|-------------|
-| `file` | File | Có | File tài liệu, max 50MB |
-| `title` | String | Có | Tiêu đề tài liệu |
-| `description` | String | Không | Mô tả ngắn |
-| `categoryId` | Long | Có | ID danh mục |
-| `departmentId` | Long | Không | Phòng ban sở hữu/chủ quản |
-| `tagIds` | Long[] | Không | Danh sách tag IDs |
-| `accessLevel` | String | Có | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
-| `departmentIds` | Long[] | Conditional | Bắt buộc nếu `accessLevel = DEPARTMENT` |
-| `ownerId` | Long | Conditional | Bắt buộc nếu `accessLevel = RESTRICTED`; khuyến nghị có với mọi tài liệu |
-| `sharedUserIds` | Long[] | Không | User được chia sẻ trực tiếp cho `RESTRICTED` |
-| `effectiveDate` | Date | Không | Ngày hiệu lực |
-| `expiryDate` | Date | Không | Ngày hết hiệu lực |
+**Request Body:**
+```json
+{
+  "fileName": "ISO_9001_QA_Process.pdf",
+  "fileSize": 2048576,
+  "contentType": "application/pdf",
+  "title": "Quy trình ISO 9001 - Quản lý chất lượng",
+  "description": "Tài liệu mô tả quy trình quản lý chất lượng",
+  "categoryId": 1,
+  "departmentId": 3,
+  "documentCode": "SOP-QA-001",
+  "tagIds": [1, 5],
+  "accessLevel": "DEPARTMENT",
+  "departmentIds": [3],
+  "ownerId": 10,
+  "sharedUserIds": [],
+  "effectiveDate": "2026-01-01",
+  "expiryDate": null
+}
+```
 
 **ACL Rules:**
 
-- `PUBLIC`: bỏ qua `departmentIds` và `sharedUserIds`; mọi user đăng nhập được xem.
+- `PUBLIC`: bỏ qua `departmentIds` và `sharedUserIds`; mọi user đăng nhập được xem sau khi tài liệu `INDEXED`.
 - `DEPARTMENT`: `departmentIds` phải có ít nhất 1 phần tử.
 - `RESTRICTED`: `ownerId` hoặc `sharedUserIds` phải có ít nhất một user; owner luôn có quyền xem.
 
 **Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Upload URL created",
+  "data": {
+    "documentId": 42,
+    "status": "AWAITING_UPLOAD",
+    "objectKey": "8f3b7b0c-uuid",
+    "uploadUrl": "https://storage.example.com/dms-documents/8f3b7b0c-uuid?X-Amz-Signature=...",
+    "method": "PUT",
+    "requiredHeaders": {
+      "Content-Type": "application/pdf"
+    },
+    "expiresIn": 300
+  }
+}
+```
 
-Upload là async operation, nên endpoint này trả contract gọn `DocumentUploadResult`. Frontend cần detail đầy đủ thì gọi tiếp `GET /documents/{id}`.
+Client phải PUT đúng file lên `uploadUrl` trong vòng 5 phút với `Content-Type` và `Content-Length` khớp thông tin đã khai báo. Bucket object storage là private; credential ký URL chỉ nằm ở backend.
 
+### `POST /documents/{id}/upload-complete` 👑
+
+Admin xác nhận client đã PUT file xong. Backend HEAD object để xác nhận tồn tại và đúng size, đọc object để Tika detect MIME thực tế, validate extension/MIME/dangerous type, rồi chuyển document sang `PROCESSING`. Sau transaction commit, backend publish message `EXTRACT` vào RabbitMQ queue `dms.extract`; API không chờ extraction/index hoàn tất.
+
+**Success Response (200):**
 ```json
 {
   "success": true,
@@ -429,7 +460,9 @@ Upload là async operation, nên endpoint này trả contract gọn `DocumentUpl
 }
 ```
 
-Sau khi upload, extraction/indexing chạy background. `status` ban đầu là `PROCESSING`, chuyển sang `INDEXED` hoặc `EXTRACTION_FAILED`. Các field phụ thuộc xử lý async như preview artifact, extracted content, indexedAt hoặc searchable chỉ được xem là sẵn sàng sau khi status chuyển `INDEXED`.
+Nếu object chưa tồn tại, size lệch, MIME thực tế không khớp hoặc thuộc loại nguy hiểm, backend xóa object nếu cần, giữ/xóa row theo cleanup policy và trả lỗi tương ứng (`UPLOAD_NOT_COMPLETED`, `UPLOAD_SIZE_MISMATCH`, `MIME_TYPE_MISMATCH`, `DANGEROUS_FILE_TYPE`).
+
+Sau khi complete thành công, extraction, preview artifact generation và refresh PostgreSQL search vector chạy trong worker RabbitMQ. `status` chuyển `INDEXED` hoặc `EXTRACTION_FAILED`. Các field phụ thuộc xử lý async như preview artifact, extracted content hoặc searchable chỉ sẵn sàng sau khi status chuyển `INDEXED`.
 
 ### `GET /documents` 🔒
 
@@ -521,8 +554,8 @@ Chi tiết tài liệu. Kiểm tra quyền trước khi trả metadata/URL. Khô
     ],
     "effectiveDate": "2026-01-01",
     "expiryDate": null,
-    "previewUrl": "/api/v1/documents/42/preview",
-    "downloadUrl": "/api/v1/documents/42/download",
+    "previewUrlEndpoint": "/api/v1/documents/42/preview-url",
+    "downloadUrlEndpoint": "/api/v1/documents/42/download-url",
     "createdAt": "2026-07-21T10:30:00",
     "updatedAt": null
   }
@@ -560,7 +593,7 @@ Soft delete tài liệu: set `status = DELETED`, `deleted_at`, `deleted_by`, `pu
 
 ### `POST /documents/{id}/archive` 👑
 
-Archive tài liệu đang sử dụng: set `status = ARCHIVED`, `archived_at`, cập nhật Elasticsearch.
+Archive tài liệu đang sử dụng: set `status = ARCHIVED`, `archived_at`; search query mặc định tự loại khỏi kết quả.
 
 **Success Response (200):**
 ```json
@@ -593,13 +626,13 @@ Restore tài liệu đã archive/delete. Nếu cần xử lý lại index/conten
 
 ### `POST /documents/{id}/retry-indexing` 👑
 
-Retry extraction/indexing cho tài liệu `EXTRACTION_FAILED` hoặc tài liệu có lỗi index gần nhất.
+Retry extraction hoặc refresh search vector cho tài liệu `EXTRACTION_FAILED` hoặc tài liệu có lỗi refresh search gần nhất.
 
 **Success Response (200):**
 ```json
 {
   "success": true,
-  "message": "Retry indexing started",
+  "message": "Retry search refresh started",
   "data": {
     "id": 42,
     "status": "PROCESSING",
@@ -808,34 +841,49 @@ Xóa vĩnh viễn file hiện tại, version files, extracted content và Elasti
 
 ## 4. Preview, Download & Versions
 
-### `GET /documents/{id}/preview` 🔒
+### `GET /documents/{id}/preview-url` 🔒
 
-Preview tài liệu trực tiếp trên trình duyệt. Kiểm tra quyền bằng cùng logic với detail/search/download. Chỉ tăng `view_count` và ghi `access_logs` khi truy cập thành công.
+Trả presigned GET URL để preview tài liệu trên trình duyệt. Backend kiểm tra quyền bằng cùng logic với detail/search/download, chỉ cấp URL khi tài liệu đủ điều kiện preview. User chỉ được cấp URL cho tài liệu `INDEXED`; Admin được preview thêm `ARCHIVED` nếu policy quản trị cho phép. Không cấp URL cho `AWAITING_UPLOAD`, `PROCESSING`, `EXTRACTION_FAILED` hoặc `DELETED`.
+
+Backend tăng `view_count` và ghi `access_logs` action `PREVIEW` tại thời điểm cấp URL thành công. Với presigned URL, log này mang nghĩa “đã cấp quyền preview”, không đảm bảo browser tải artifact thành công.
 
 **Response:**
 
-| File | Response |
-|------|----------|
-| PDF | `Content-Type: application/pdf`, inline stream |
-| DOC/DOCX | Convert bằng LibreOffice/JODConverter sang PDF hoặc HTML đã sanitize |
-| XLS/XLSX | HTML table đã sanitize hoặc PDF |
-| Image | `Content-Type: image/*`, inline stream |
+| File | Presigned target | Content-Disposition |
+|------|------------------|---------------------|
+| PDF | Object gốc | `inline` |
+| DOC/DOCX | Preview artifact PDF/HTML đã sanitize | `inline` |
+| XLS/XLSX | Preview artifact PDF/HTML đã sanitize | `inline` |
+| Image | Object gốc | `inline` |
 
-**Example Headers:**
-```http
-Content-Type: application/pdf
-Content-Disposition: inline; filename="ISO_9001_QA_Process.pdf"
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://storage.example.com/dms-documents/preview/8f3b7b0c.pdf?X-Amz-Signature=...",
+    "fileName": "ISO_9001_QA_Process.pdf",
+    "contentType": "application/pdf",
+    "expiresIn": 300
+  }
+}
 ```
 
-### `GET /documents/{id}/download` 🔒
+### `GET /documents/{id}/download-url` 🔒
 
-Tải file gốc. Kiểm tra quyền, tăng `download_count`, ghi `access_logs`.
+Trả presigned GET URL để tải file gốc. Backend kiểm tra quyền, kiểm tra trạng thái, tăng `download_count` và ghi `access_logs` action `DOWNLOAD` tại thời điểm cấp URL thành công. Với presigned URL, `download_count` mang nghĩa “lượt cấp URL tải”, không phải “lượt tải hoàn tất”.
 
-**Response Headers:**
-```http
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="ISO_9001_QA_Process.pdf"
-Content-Length: 2048576
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://storage.example.com/dms-documents/8f3b7b0c-uuid?X-Amz-Signature=...&response-content-disposition=attachment",
+    "fileName": "ISO_9001_QA_Process.pdf",
+    "contentType": "application/pdf",
+    "expiresIn": 300
+  }
+}
 ```
 
 ### `GET /documents/{id}/versions` 🔒
@@ -863,52 +911,79 @@ Lịch sử phiên bản. Kiểm tra quyền truy cập tài liệu trước khi
 }
 ```
 
-### `POST /documents/{id}/versions` 👑
+### `POST /documents/{id}/versions/init` 👑
 
-Admin upload phiên bản mới. File/version cũ giữ lại; version mới trở thành current version và trigger extraction/re-index.
+Admin khởi tạo upload phiên bản mới. Backend validate `versionNumber`, `changelog` và thông tin file khai báo, tạo `document_versions` ở trạng thái chờ complete theo policy version, sinh object key riêng và trả presigned PUT URL. Version mới chưa trở thành current version ở bước này.
 
-**Request Fields:**
-
-| Field | Type | Required | Description |
-|-------|------|:---:|-------------|
-| `file` | File | Có | File phiên bản mới, max 50MB |
-| `versionNumber` | String | Có | Số phiên bản, unique trong document |
-| `changelog` | String | Không | Ghi chú thay đổi |
+**Request Body:**
+```json
+{
+  "fileName": "ISO_9001_v1.3.pdf",
+  "fileSize": 2200000,
+  "contentType": "application/pdf",
+  "versionNumber": "1.3",
+  "changelog": "Cập nhật biểu mẫu kiểm tra"
+}
+```
 
 **Success Response (201):**
 ```json
 {
   "success": true,
-  "message": "New version uploaded successfully",
+  "message": "Version upload URL created",
+  "data": {
+    "documentId": 42,
+    "versionId": 4,
+    "objectKey": "version/8f3b7b0c-uuid",
+    "uploadUrl": "https://storage.example.com/dms-documents/version/8f3b7b0c-uuid?X-Amz-Signature=...",
+    "method": "PUT",
+    "requiredHeaders": {
+      "Content-Type": "application/pdf"
+    },
+    "expiresIn": 300
+  }
+}
+```
+
+### `POST /documents/{id}/versions/{versionId}/complete` 👑
+
+Xác nhận file version đã PUT xong. Backend HEAD object, validate size/MIME thực tế bằng Tika, chuyển tài liệu sang `PROCESSING` và publish `EXTRACT` vào RabbitMQ. Version mới chỉ được set làm current sau khi extraction, preview artifact cần thiết và refresh search vector thành công; nếu xử lý thất bại, current version cũ vẫn phục vụ User.
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "New version upload accepted",
   "data": {
     "id": 4,
     "documentId": 42,
     "versionNumber": "1.3",
-    "fileName": "ISO_9001_v1.3.pdf",
-    "fileSize": 2200000,
-    "mimeType": "application/pdf",
-    "changelog": "Cập nhật biểu mẫu kiểm tra",
-    "current": true,
     "documentStatus": "PROCESSING",
-    "uploadedBy": { "id": 1, "name": "Admin" },
     "createdAt": "2026-07-21T15:00:00"
   }
 }
 ```
 
-### `GET /documents/{id}/versions/{versionId}/download` 🔒
+### `GET /documents/{id}/versions/{versionId}/download-url` 🔒
 
-Tải file của một version cụ thể. Kiểm tra quyền truy cập document và ghi access log action `VERSION_DOWNLOAD`.
+Trả presigned GET URL để tải file của một version cụ thể. Backend kiểm tra quyền truy cập document và ghi access log action `VERSION_DOWNLOAD` tại thời điểm cấp URL.
 
-**Response Headers:**
-```http
-Content-Type: application/pdf
-Content-Disposition: attachment; filename="ISO_9001_v1.1.pdf"
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://storage.example.com/dms-documents/version/8f3b7b0c-uuid?X-Amz-Signature=...",
+    "fileName": "ISO_9001_v1.1.pdf",
+    "contentType": "application/pdf",
+    "expiresIn": 300
+  }
+}
 ```
 
 ### `POST /documents/{id}/versions/{versionId}/restore` 👑
 
-Khôi phục một version cũ thành current version. Không xóa version hiện tại; cập nhật `documents.version_number`, trích xuất lại content và re-index.
+Khôi phục một version cũ thành current version. Không xóa version hiện tại; cập nhật `documents.version_number`, trích xuất lại content và refresh search vector.
 
 **Success Response (200):**
 ```json
@@ -930,7 +1005,7 @@ Khôi phục một version cũ thành current version. Không xóa version hiệ
 
 ### `GET /documents/search` 🔒
 
-Full-text search qua Elasticsearch trên title, description, extracted content, document code và tags. Query phải áp permission filter trước khi trả kết quả.
+Full-text search qua PostgreSQL `tsvector`/`tsquery` trên title, description, extracted content, document code và tags. Query phải áp permission filter ngay trong SQL trước khi trả kết quả.
 
 **Query Params:**
 
@@ -1365,20 +1440,21 @@ API spec tương thích OpenAPI 3 / Swagger. Khi triển khai, `@RestController`
 | 10 | PUT | `/users/{id}` | 👑 | Cập nhật user |
 | 11 | DELETE | `/users/{id}` | 👑 | Xóa user soft/deactivate |
 | | | **Document** | | |
-| 12 | POST | `/documents` | 👑 | Upload tài liệu |
+| 12 | POST | `/documents/upload-init` | 👑 | Khởi tạo upload tài liệu, trả presigned PUT URL |
 | 13 | GET | `/documents` | 🔒 | Danh sách tài liệu theo quyền hiện tại |
 | 14 | GET | `/documents/{id}` | 🔒 | Chi tiết tài liệu |
 | 15 | PUT | `/documents/{id}` | 👑 | Cập nhật metadata, tags, ACL |
 | 16 | DELETE | `/documents/{id}` | 👑 | Xóa tài liệu soft delete |
 | 17 | POST | `/documents/{id}/archive` | 👑 | Archive tài liệu |
 | 18 | POST | `/documents/{id}/restore` | 👑 | Restore tài liệu đã archive/delete |
-| 19 | POST | `/documents/{id}/retry-indexing` | 👑 | Retry extraction/indexing |
-| 20 | GET | `/documents/{id}/preview` | 🔒 | Preview tài liệu |
-| 21 | GET | `/documents/{id}/download` | 🔒 | Tải tài liệu |
+| 19 | POST | `/documents/{id}/retry-indexing` | 👑 | Retry extraction/search refresh |
+| 20 | GET | `/documents/{id}/preview-url` | 🔒 | Lấy presigned URL preview |
+| 21 | GET | `/documents/{id}/download-url` | 🔒 | Lấy presigned URL tải tài liệu |
 | 22 | GET | `/documents/{id}/versions` | 🔒 | Lịch sử phiên bản |
-| 23 | POST | `/documents/{id}/versions` | 👑 | Upload phiên bản mới |
-| 24 | GET | `/documents/{id}/versions/{versionId}/download` | 🔒 | Tải phiên bản cũ |
-| 25 | POST | `/documents/{id}/versions/{versionId}/restore` | 👑 | Khôi phục version cũ làm current |
+| 23 | POST | `/documents/{id}/versions/init` | 👑 | Khởi tạo upload phiên bản mới |
+| 24 | GET | `/documents/{id}/versions/{versionId}/download-url` | 🔒 | Lấy presigned URL tải phiên bản cũ |
+| 25 | POST | `/documents/{id}/versions/{versionId}/complete` | 👑 | Xác nhận upload version xong |
+| 26 | POST | `/documents/{id}/versions/{versionId}/restore` | 👑 | Khôi phục version cũ làm current |
 | | | **Search** | | |
 | 26 | GET | `/documents/search` | 🔒 | Full-text search permission-aware |
 | 27 | GET | `/documents/search/suggestions` | 🔒 | Suggestions/autocomplete |

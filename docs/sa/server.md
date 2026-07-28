@@ -8,50 +8,35 @@
 
 ### Single Server — Development & MVP
 
-Elasticsearch được triển khai theo kiến trúc **Elasticsearch-first**. MySQL lưu metadata và dữ liệu quan hệ; Elasticsearch phục vụ full-text search, permission-aware filter, facets, highlight và suggestions. Hệ thống không dùng MySQL Full-text Search làm fallback.
+Hệ thống dùng **PostgreSQL-only**: PostgreSQL là source of truth cho metadata/ACL/lifecycle/log và đồng thời là search engine bằng Full-Text Search (`tsvector`/`tsquery`), GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Không triển khai Elasticsearch/OpenSearch trong MVP.
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│                    Single Server / VPS                       │
-│                                                              │
-│  ┌─────────────────────┐  ┌──────────────────────────────┐  │
-│  │  Frontend Container │  │  Backend Container           │  │
-│  │  (Nginx + React)    │  │  (Spring Boot + LibreOffice) │  │
-│  │  Port: 80/443       │  │  Port: 8080                  │  │
-│  └─────────────────────┘  └──────────────────────────────┘  │
-│                                                              │
-│  ┌─────────────────────┐  ┌──────────────────────────────┐  │
-│  │  MySQL Container    │  │  Redis Container             │  │
-│  │  Port: 3306         │  │  Port: 6379                  │  │
-│  └─────────────────────┘  └──────────────────────────────┘  │
-│                                                              │
-│  ┌─────────────────────┐  ┌──────────────────────────────┐  │
-│  │ Elasticsearch       │  │ MinIO Object Storage         │  │
-│  │ Single-node         │  │ Dev bucket: dms-documents    │  │
-│  │ Port: 9200          │  │ S3-compatible API            │  │
-│  └─────────────────────┘  └──────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────┘
+Single Server / VPS
+├── Frontend Container (Nginx + React): 80/443
+├── Backend API Container (Spring Boot profile=api): 8080
+│   └── REST API, auth, ACL, metadata, presigned URL signing, RabbitMQ publish
+├── Worker Container (Spring Boot profile=worker)
+│   └── RabbitMQ consumers, PDFBox/POI, LibreOffice, Tesseract, PostgreSQL FTS refresh
+├── RabbitMQ Container: 5672 / 15672
+│   └── dms.tasks, retry queues, DLQ
+├── PostgreSQL Container: 5432
+│   └── DB + Full-Text Search + pg_trgm + optional pgvector
+├── Redis Container: 6379
+│   └── Cache/suggestions
+└── MinIO Object Storage
+    └── Private dev bucket: dms-documents, S3-compatible API, CORS for frontend
 ```
 
 ### Separated Services — Production Scale
 
 ```text
-┌──────────┐     ┌──────────────────┐     ┌───────────────┐
-│  CDN /   │────→│   Load Balancer  │────→│  Backend xN   │
-│  Nginx   │     │   (Nginx)        │     │  Spring Boot  │
-└──────────┘     └──────────────────┘     └───────┬───────┘
-                                                   │
-                          ┌────────────────────────┼────────────┐
-                          ▼                        ▼            ▼
-                  ┌──────────────┐          ┌──────────┐  ┌────────────┐
-                  │   MySQL      │          │  Redis   │  │ Cloudflare │
-                  │   Primary    │          │  Cluster │  │     R2     │
-                  └──────┬───────┘          └──────────┘  └────────────┘
-                         │
-                  ┌──────▼───────┐
-                  │ Elasticsearch│
-                  │   Cluster    │
-                  └──────────────┘
+CDN / Nginx ──> Load Balancer ──> Backend API xN ──publish──> RabbitMQ
+       │                                      │                     │
+       └──────────── presigned PUT/GET ──────▶│                     ▼
+                                      ├── PostgreSQL managed/HA   Worker xN
+                                      ├── Redis cluster             │
+                                      └── Cloudflare R2 ◀───────────┘
+                                          (private S3-compatible object storage)
 ```
 
 ---
@@ -94,22 +79,66 @@ services:
         ports:
             - "8080:8080"
         depends_on:
-            mysql:
-                condition: service_healthy
-            redis:
-                condition: service_healthy
-            elasticsearch:
+
+    worker:
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        depends_on:
+            postgresql:
                 condition: service_healthy
             minio:
                 condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+        environment:
+            - SPRING_PROFILES_ACTIVE=worker,dev
+            - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
+            - SPRING_DATASOURCE_USERNAME=dms_user
+            - SPRING_DATASOURCE_PASSWORD=dms_password
+            - SPRING_RABBITMQ_HOST=rabbitmq
+            - SPRING_RABBITMQ_PORT=5672
+            - SPRING_RABBITMQ_USERNAME=dms
+            - SPRING_RABBITMQ_PASSWORD=dms_password
+            - STORAGE_ENDPOINT=http://minio:9000
+            - STORAGE_BUCKET=dms-documents
+            - STORAGE_ACCESS_KEY=dms_minio
+            - STORAGE_SECRET_KEY=dms_minio_password
+            - STORAGE_REGION=auto
+            - STORAGE_PATH_STYLE_ACCESS=true
+            - PROCESSING_MAX_ATTEMPTS=3
+
+    rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+            - "5672:5672"
+            - "15672:15672"
+        environment:
+            - RABBITMQ_DEFAULT_USER=dms
+            - RABBITMQ_DEFAULT_PASS=dms_password
+        volumes:
+            - rabbitmq-data:/var/lib/rabbitmq
+        healthcheck:
+            test: ["CMD", "rabbitmq-diagnostics", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+
+    postgresql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
         environment:
             - SPRING_PROFILES_ACTIVE=dev
-            - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/dms?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+            - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
             - SPRING_DATASOURCE_USERNAME=dms_user
             - SPRING_DATASOURCE_PASSWORD=dms_password
             - SPRING_REDIS_HOST=redis
             - SPRING_REDIS_PORT=6379
-            - ELASTICSEARCH_URL=http://elasticsearch:9200
             - JWT_SECRET=your-256-bit-secret-key-here
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000
@@ -127,44 +156,34 @@ services:
             - TRASH_RETENTION_DAYS=30
             - TRASH_PURGE_CRON=0 0 2 * * *
             - BATCH_UPLOAD_MAX_FILES=20
+            - STORAGE_PRESIGNED_UPLOAD_TTL=PT5M
+            - STORAGE_PRESIGNED_DOWNLOAD_TTL=PT5M
+            - SPRING_RABBITMQ_HOST=rabbitmq
+            - SPRING_RABBITMQ_PORT=5672
+            - SPRING_RABBITMQ_USERNAME=dms
+            - SPRING_RABBITMQ_PASSWORD=dms_password
+            - PROCESSING_MAX_ATTEMPTS=3
         healthcheck:
-            test:
-                [
-                    "CMD",
-                    "wget",
-                    "-qO-",
-                    "http://localhost:8080/api/v1/actuator/health",
-                ]
+            test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/actuator/health"]
             interval: 30s
             timeout: 10s
             retries: 5
             start_period: 60s
 
-    mysql:
-        image: mysql:8.0
+    postgresql:
+        image: pgvector/pgvector:pg17
         ports:
-            - "3306:3306"
+            - "5432:5432"
         environment:
-            - MYSQL_ROOT_PASSWORD=root_password
-            - MYSQL_DATABASE=dms
-            - MYSQL_USER=dms_user
-            - MYSQL_PASSWORD=dms_password
+            - POSTGRES_DB=dms
+            - POSTGRES_USER=dms_user
+            - POSTGRES_PASSWORD=dms_password
+            - TZ=Asia/Ho_Chi_Minh
         volumes:
-            - mysql-data:/var/lib/mysql
+            - postgresql-data:/var/lib/postgresql/data
             - ./backend/src/main/resources/db/migration:/docker-entrypoint-initdb.d
-        command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-time-zone='+07:00'
         healthcheck:
-            test:
-                [
-                    "CMD",
-                    "mysqladmin",
-                    "ping",
-                    "-h",
-                    "localhost",
-                    "-u",
-                    "dms_user",
-                    "-pdms_password",
-                ]
+            test: ["CMD-SHELL", "pg_isready -U dms_user -d dms"]
             interval: 10s
             timeout: 5s
             retries: 10
@@ -181,27 +200,6 @@ services:
             timeout: 5s
             retries: 10
 
-    elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4
-        ports:
-            - "9200:9200"
-        environment:
-            - discovery.type=single-node
-            - xpack.security.enabled=false
-            - ES_JAVA_OPTS=-Xms1g -Xmx1g
-        volumes:
-            - es-data:/usr/share/elasticsearch/data
-        healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "curl -fsS http://localhost:9200/_cluster/health || exit 1",
-                ]
-            interval: 30s
-            timeout: 10s
-            retries: 10
-            start_period: 60s
-
     minio:
         image: minio/minio:latest
         command: server /data --console-address ":9001"
@@ -214,25 +212,19 @@ services:
         volumes:
             - minio-data:/data
         healthcheck:
-            test:
-                [
-                    "CMD",
-                    "curl",
-                    "-fsS",
-                    "http://localhost:9000/minio/health/live",
-                ]
+            test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
             interval: 30s
             timeout: 10s
             retries: 5
 
 volumes:
-    mysql-data:
+    postgresql-data:
     redis-data:
-    es-data:
     minio-data:
+    rabbitmq-data:
 ```
 
-> Compose trên phục vụ development. Production không expose MySQL, Redis hoặc Elasticsearch ra public network.
+> Compose trên phục vụ development. Production không expose PostgreSQL, Redis, RabbitMQ management UI hoặc object storage nội bộ ra public network. Bucket object storage luôn private; browser chỉ truy cập bằng presigned URL và CORS allowlist theo frontend origin. PostgreSQL cần extension `unaccent`, `pg_trgm` và tùy chọn `vector` được tạo bằng Flyway migration.
 
 ---
 
@@ -249,8 +241,19 @@ server:
 spring:
     servlet:
         multipart:
-            max-file-size: 50MB
-            max-request-size: 50MB
+            max-file-size: 1MB
+            max-request-size: 1MB
+
+    rabbitmq:
+        host: ${SPRING_RABBITMQ_HOST:localhost}
+        port: ${SPRING_RABBITMQ_PORT:5672}
+        username: ${SPRING_RABBITMQ_USERNAME:dms}
+        password: ${SPRING_RABBITMQ_PASSWORD:dms_password}
+
+    datasource:
+        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dms}
+        username: ${SPRING_DATASOURCE_USERNAME:dms_user}
+        password: ${SPRING_DATASOURCE_PASSWORD:dms_password}
 
     jpa:
         hibernate:
@@ -259,7 +262,7 @@ spring:
         properties:
             hibernate:
                 format_sql: true
-                dialect: org.hibernate.dialect.MySQLDialect
+                dialect: org.hibernate.dialect.PostgreSQLDialect
 
     jackson:
         date-format: yyyy-MM-dd'T'HH:mm:ss
@@ -279,11 +282,15 @@ app:
             region: ${STORAGE_REGION:auto}
             path-style-access: ${STORAGE_PATH_STYLE_ACCESS:true}
         max-file-size: ${FILE_MAX_SIZE:52428800}
+        presigned-upload-ttl: ${STORAGE_PRESIGNED_UPLOAD_TTL:PT5M}
+        presigned-download-ttl: ${STORAGE_PRESIGNED_DOWNLOAD_TTL:PT5M}
     cors:
         allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
-    elasticsearch:
-        url: ${ELASTICSEARCH_URL:http://localhost:9200}
-        index-name: ${ELASTICSEARCH_INDEX_NAME:documents}
+    search:
+        language: ${SEARCH_LANGUAGE:simple}
+        enable-unaccent: true
+        enable-trigram: true
+        enable-vector-search: ${SEARCH_ENABLE_VECTOR:false}
     processing:
         thread-pool-size: ${PROCESSING_THREAD_POOL_SIZE:4}
         retry-interval: ${PROCESSING_RETRY_INTERVAL:PT30M}
@@ -292,16 +299,16 @@ app:
 
 ### Profiles
 
-| Profile | Mô tả                  | Database                     | Search                       | Object Storage                       |
-| ------- | ---------------------- | ---------------------------- | ---------------------------- | ------------------------------------ |
-| `dev`   | Development local      | MySQL container/localhost    | Elasticsearch single-node    | MinIO container                      |
-| `test`  | Unit/Integration tests | H2 hoặc Testcontainers MySQL | Testcontainers Elasticsearch | Testcontainers MinIO hoặc S3 mock    |
-| `prod`  | Production             | MySQL managed/cluster        | Elasticsearch cluster        | Cloudflare R2 qua S3-compatible API  |
+| Profile | Mô tả                  | Database/Search              | Object Storage                       |
+| ------- | ---------------------- | ---------------------------- | ------------------------------------ |
+| `dev`   | Development local      | PostgreSQL container + FTS   | MinIO container                      |
+| `test`  | Unit/Integration tests | Testcontainers PostgreSQL    | Testcontainers MinIO hoặc S3 mock    |
+| `prod`  | Production             | PostgreSQL managed/HA + FTS  | Cloudflare R2 qua S3-compatible API  |
 
 ### Async Processing & Scheduler
 
-- Content extraction và indexing chạy nền bằng Spring `@Async` + `ThreadPoolTaskExecutor`.
-- Retry job chạy mỗi 30 phút cho lỗi extraction/indexing tạm thời.
+- Content extraction, OCR, preview convert và refresh search vector chạy nền qua RabbitMQ worker riêng.
+- Retry job chạy mỗi 30 phút cho lỗi extraction/search refresh tạm thời.
 - Khi chạy nhiều backend instance, scheduler phải dùng locking như ShedLock để tránh nhiều node retry cùng một tài liệu.
 - Tài liệu lỗi tạm thời giữ `EXTRACTION_FAILED`, ghi retry count và cho phép Admin retry thủ công.
 
@@ -353,7 +360,7 @@ Swagger UI dùng đường dẫn theo SpringDoc + context path: `/api/v1/swagger
 
 ```dockerfile
 # backend/Dockerfile
-FROM eclipse-temurin:17-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 COPY mvnw .
 COPY .mvn .mvn
@@ -361,7 +368,7 @@ COPY pom.xml .
 COPY src ./src
 RUN chmod +x ./mvnw && ./mvnw clean package -DskipTests
 
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libreoffice libreoffice-writer libreoffice-calc fontconfig fonts-dejavu wget \
@@ -371,7 +378,7 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-Backend runtime cần LibreOffice headless để JODConverter convert Word/Excel sang PDF hoặc HTML preview. Nếu dùng Alpine, cần kiểm tra lại khả năng cài LibreOffice và font tiếng Việt.
+Backend build/runtime chuẩn hóa trên Java 25 (`eclipse-temurin:25-jdk` / `25-jre`) và project build phải target release 25. Runtime cần LibreOffice headless để JODConverter convert Word/Excel sang PDF hoặc HTML preview. Nếu dùng Alpine, cần kiểm tra lại khả năng cài LibreOffice, font tiếng Việt và availability của image JRE 25 phù hợp.
 
 ### Frontend Dockerfile
 
@@ -437,7 +444,7 @@ public interface StorageService {
 | ----------- | ----------------------------------------------------- |
 | **CPU**     | 2 vCPUs                                               |
 | **RAM**     | 6 GB                                                  |
-| **Storage** | 80 GB SSD (OS + App + Documents + Elasticsearch data) |
+| **Storage** | 80 GB SSD (OS + App + Documents + PostgreSQL data/indexes) |
 | **OS**      | Ubuntu 22.04 LTS / Debian 12                          |
 | **Network** | 100 Mbps                                              |
 
@@ -445,8 +452,8 @@ public interface StorageService {
 
 | Resource    | Yêu cầu                                                       |
 | ----------- | ------------------------------------------------------------- |
-| **CPU**     | 4+ vCPUs cho backend, tách node DB/Search khi tăng tải        |
-| **RAM**     | 8+ GB cho backend/app server, Elasticsearch node sizing riêng |
+| **CPU**     | 4+ vCPUs cho backend, tách managed PostgreSQL khi tăng tải     |
+| **RAM**     | 8+ GB cho backend/app server; PostgreSQL sizing riêng nếu managed/self-host |
 | **Storage** | 200 GB SSD + MinIO/S3-compatible object storage               |
 | **OS**      | Ubuntu 22.04 LTS                                              |
 | **Network** | 1 Gbps                                                        |
@@ -461,9 +468,8 @@ public interface StorageService {
 | --------------------- | :-----------: | :-----------: | ------------------------------- |
 | Nginx (Frontend)      |      80       |     3000      | Web UI dev                      |
 | Spring Boot (Backend) |     8080      |     8080      | REST API                        |
-| MySQL                 |     3306      |     3306      | Database dev                    |
+| PostgreSQL            |     5432      |     5432      | Database + search dev           |
 | Redis                 |     6379      |     6379      | Cache dev                       |
-| Elasticsearch         |     9200      |     9200      | Search dev                      |
 | Swagger UI            |     8080      |     8080      | `/api/v1/swagger-ui/index.html` |
 
 ### Production
@@ -472,9 +478,8 @@ public interface StorageService {
 | --------------------- | :----------: | ----------------------------------------------- |
 | Nginx / Load Balancer |    80/443    | Chỉ public entrypoint; HTTP redirect sang HTTPS |
 | Backend               | Không public | Private network sau Nginx/LB                    |
-| MySQL                 | Không public | Private network / managed database              |
+| PostgreSQL            | Không public | Private network / managed database + FTS        |
 | Redis                 | Không public | Private network                                 |
-| Elasticsearch         | Không public | Private network / protected cluster             |
 
 ---
 
@@ -493,7 +498,7 @@ public interface StorageService {
 GET /api/v1/actuator/health         → Application health
 GET /api/v1/actuator/info           → Application info
 GET /api/v1/actuator/metrics        → Application metrics
-GET /_cluster/health                → Elasticsearch health
+PostgreSQL health được kiểm tra qua datasource health indicator / `pg_isready`
 ```
 
 Actuator production chỉ nên expose endpoint cần thiết, không public toàn bộ metrics/env/config.
@@ -504,13 +509,12 @@ Actuator production chỉ nên expose endpoint cần thiết, không public toà
 
 | Đối tượng            | Tần suất                                                 | Phương pháp                                   | Retention |
 | -------------------- | -------------------------------------------------------- | --------------------------------------------- | --------- |
-| MySQL Database       | Hàng ngày (2:00 AM)                                      | `mysqldump`/snapshot + gzip                   | 30 ngày   |
-| MinIO Object Storage | Hàng ngày                                                | Bucket replication hoặc object storage backup | 90 ngày   |
-| Elasticsearch        | Snapshot khi index lớn hoặc rebuild không chấp nhận được | Re-index từ MySQL hoặc ES snapshot repository | 7–30 ngày |
-| Redis                | Không backup (cache)                                     | —                                             | —         |
+| PostgreSQL Database | Hàng ngày (2:00 AM) | `pg_dump`/managed snapshot + WAL backup; bao gồm search tables/index definitions | 30 ngày |
+| MinIO Object Storage | Hàng ngày | Bucket replication hoặc object storage backup | 90 ngày |
+| Redis | Không backup (cache) | — | — |
 | Application Logs     | Hàng ngày                                                | Logrotate / centralized logging               | 30 ngày   |
 
-Elasticsearch index có thể rebuild từ MySQL + `document_contents`; nên cấu hình snapshot nếu index lớn, analyzer/dictionary phức tạp hoặc thời gian rebuild không chấp nhận được.
+`document_search_index` có thể rebuild từ PostgreSQL source tables + `document_contents`; backup PostgreSQL vẫn cần giữ migration tạo extension/index để restore đầy đủ.
 
 ---
 
@@ -519,9 +523,9 @@ Elasticsearch index có thể rebuild từ MySQL + `document_contents`; nên c�
 - Không commit secrets; `JWT_SECRET`, database password và object storage keys lấy từ `.env`, Docker secrets hoặc secret manager.
 - `JWT_SECRET` phải đủ mạnh cho HMAC 256-bit trở lên; không dùng placeholder ở production.
 - Refresh Token lưu HttpOnly Cookie; production cùng site/domain ưu tiên `Secure`, `SameSite=Strict`, domain/path rõ ràng. Nếu frontend/backend khác site, dùng `SameSite=None; Secure` kèm credentialed CORS allowlist và CSRF protection.
-- Chỉ expose 80/443 ra public; MySQL, Redis và Elasticsearch chỉ nằm trong private network.
+- Chỉ expose 80/443 ra public; PostgreSQL, Redis và PostgreSQL FTS chỉ nằm trong private network.
 - CORS giới hạn theo domain thật, không dùng wildcard cho credentialed requests.
 - Bật HTTPS/TLS và redirect HTTP sang HTTPS.
 - Giới hạn upload ở cả Nginx và Spring Boot (`50MB`) để tránh timeout hoặc bypass validation.
-- HTML preview và Elasticsearch highlight phải được sanitize trước khi render để tránh XSS.
+- HTML preview và PostgreSQL FTS highlight phải được sanitize trước khi render để tránh XSS.
 - Backup dữ liệu nhạy cảm nên mã hóa và kiểm thử restore định kỳ.
