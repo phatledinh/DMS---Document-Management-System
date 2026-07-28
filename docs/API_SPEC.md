@@ -103,6 +103,9 @@ Tất cả JSON endpoint trả về format thống nhất.
 | `INVALID_ACL_RULE` | Thiếu department/user ACL tương ứng `accessLevel` |
 | `VERSION_NOT_FOUND` | Phiên bản tài liệu không tồn tại |
 | `VERSION_DUPLICATE` | Số phiên bản đã tồn tại |
+| `BATCH_OPERATION_PARTIAL_FAILED` | Batch operation có một phần item thất bại |
+| `DOCUMENT_ALREADY_DELETED` | Tài liệu đã nằm trong Thùng rác |
+| `TRASH_ITEM_EXPIRED` | Tài liệu trong Thùng rác đã quá hạn hoặc đã bị purge |
 
 ### Supported File Types & Upload Validation
 
@@ -119,8 +122,8 @@ Tất cả JSON endpoint trả về format thống nhất.
 
 Upload rules:
 
-- Mỗi request upload đúng 1 file.
-- File size tối đa `50MB`.
+- `POST /documents` upload đúng 1 file; `POST /documents/batch-upload` nhận nhiều file qua field `files`.
+- File size tối đa `50MB` cho từng file.
 - Validate cả extension và MIME thực tế bằng Apache Tika.
 - Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`, `.htm`, `.jar`, `.msi`, `.ps1`, `.vbs`.
 - `storage_path` dùng UUID/generated key; `file_name` chỉ là tên gốc đã sanitize để hiển thị/download.
@@ -330,6 +333,27 @@ User cập nhật profile cá nhân. Không được tự đổi `email`, `role`
 
 ## 3. Document Management
 
+
+### Document Code Generation
+
+`documentCode` là mã tài liệu do backend tự sinh, không phải field Admin nhập khi upload.
+
+Recommended format:
+
+```text
+DMS-{yyyyMM}-{sequence6}
+Ví dụ: DMS-202607-000001
+```
+
+Rules:
+
+- Sinh trong transaction khi tạo document metadata.
+- Sequence tăng đơn điệu theo tháng hoặc toàn hệ thống, miễn đảm bảo unique.
+- `document_code` vẫn có unique index để chống trùng khi concurrent upload.
+- Frontend hiển thị mã tài liệu sau khi upload thành công hoặc trong detail/list.
+- Admin không được sửa `documentCode` qua form upload/edit metadata; nếu sau này cần chỉnh mã thủ công phải là tính năng riêng có audit chặt.
+- Search vẫn exact/boosted match theo `documentCode` vì đây là mã tra cứu chính thức của hệ thống.
+
 ### Shared Document DTOs
 
 **DocumentSummaryDto:**
@@ -372,7 +396,6 @@ Admin upload tài liệu mới. Sử dụng `multipart/form-data`.
 | `description` | String | Không | Mô tả ngắn |
 | `categoryId` | Long | Có | ID danh mục |
 | `departmentId` | Long | Không | Phòng ban sở hữu/chủ quản |
-| `documentCode` | String | Không | Mã tài liệu, unique nếu có |
 | `tagIds` | Long[] | Không | Danh sách tag IDs |
 | `accessLevel` | String | Có | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
 | `departmentIds` | Long[] | Conditional | Bắt buộc nếu `accessLevel = DEPARTMENT` |
@@ -398,6 +421,7 @@ Upload là async operation, nên endpoint này trả contract gọn `DocumentUpl
   "data": {
     "id": 42,
     "status": "PROCESSING",
+    "documentCode": "DMS-202607-000001",
     "versionId": 101,
     "versionNumber": "1.0",
     "createdAt": "2026-07-21T10:30:00"
@@ -516,7 +540,6 @@ Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST
   "description": "Phiên bản cập nhật mới nhất",
   "categoryId": 1,
   "departmentId": 3,
-  "documentCode": "SOP-QA-001",
   "tagIds": [1, 5, 8],
   "accessLevel": "RESTRICTED",
   "ownerId": 10,
@@ -527,11 +550,11 @@ Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST
 }
 ```
 
-**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/ACL thay đổi phải re-index Elasticsearch và ghi `audit_logs`.
+**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/ACL thay đổi phải re-index Elasticsearch và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
 
 ### `DELETE /documents/{id}` 👑
 
-Soft delete tài liệu: set `status = DELETED` và `deleted_at`, cập nhật Elasticsearch để loại khỏi search mặc định.
+Soft delete tài liệu: set `status = DELETED`, `deleted_at`, `deleted_by`, `purge_after = deleted_at + 30 ngày`, lưu `previous_status`, cập nhật Elasticsearch để loại khỏi search mặc định và đưa tài liệu vào Thùng rác.
 
 **Success Response (204):** No Content
 
@@ -584,6 +607,202 @@ Retry extraction/indexing cho tài liệu `EXTRACTION_FAILED` hoặc tài liệu
   }
 }
 ```
+
+
+### `POST /documents/batch-upload` 👑
+
+Admin upload nhiều file trong một request. Mỗi file hợp lệ tạo một document riêng, version 1.0 riêng và chạy extraction/indexing độc lập.
+
+**Request Fields (`multipart/form-data`):**
+
+| Field | Type | Required | Description |
+|-------|------|:---:|-------------|
+| `files` | File[] | Có | Danh sách file, mỗi file max 50MB |
+| `categoryId` | Long | Có | Danh mục/folder mặc định cho tất cả file |
+| `departmentId` | Long | Không | Phòng ban sở hữu/chủ quản |
+| `tagIds` | Long[] | Không | Tags áp dụng chung |
+| `accessLevel` | String | Có | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
+| `departmentIds` | Long[] | Conditional | Bắt buộc nếu `accessLevel = DEPARTMENT` |
+| `ownerId` | Long | Conditional | Owner mặc định |
+| `sharedUserIds` | Long[] | Không | User được chia sẻ trực tiếp |
+| `effectiveDate` | Date | Không | Ngày hiệu lực mặc định |
+| `expiryDate` | Date | Không | Ngày hết hiệu lực mặc định |
+| `titlePattern` | String | Không | Quy tắc sinh title; mặc định lấy từ tên file |
+
+**Business Rules:**
+
+- Validate MIME, extension và size theo từng file.
+- Cho phép partial success; file lỗi không rollback file hợp lệ.
+- Response trả kết quả theo từng file, bao gồm `documentCode` tự sinh cho file upload thành công, để frontend hiển thị retry/failed list.
+- Ghi audit log cho từng document tạo thành công.
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Batch upload completed",
+  "data": {
+    "total": 3,
+    "succeeded": 2,
+    "failed": 1,
+    "items": [
+      { "fileName": "policy.pdf", "success": true, "documentId": 101, "documentCode": "DMS-202607-000001", "status": "PROCESSING" },
+      { "fileName": "manual.docx", "success": true, "documentId": 102, "documentCode": "DMS-202607-000002", "status": "PROCESSING" },
+      { "fileName": "script.exe", "success": false, "errorCode": "DANGEROUS_FILE_TYPE", "message": "File type is blocked" }
+    ]
+  }
+}
+```
+
+### `POST /documents/batch-delete` 👑
+
+Soft delete nhiều tài liệu và đưa vào Thùng rác.
+
+**Request Body:**
+```json
+{
+  "documentIds": [42, 43, 44],
+  "reason": "Remove outdated files"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Batch delete completed",
+  "data": {
+    "total": 3,
+    "succeeded": 2,
+    "failed": 1,
+    "items": [
+      { "documentId": 42, "success": true, "status": "DELETED" },
+      { "documentId": 43, "success": true, "status": "DELETED" },
+      { "documentId": 44, "success": false, "errorCode": "DOCUMENT_NOT_FOUND" }
+    ]
+  }
+}
+```
+
+### `POST /documents/{id}/move` 👑
+
+Chuyển một tài liệu sang category/folder khác. Đây là thao tác nghiệp vụ riêng dù về dữ liệu là cập nhật `documents.category_id`.
+
+**Request Body:**
+```json
+{
+  "targetCategoryId": 8
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Document moved successfully",
+  "data": {
+    "id": 42,
+    "previousCategory": { "id": 1, "name": "Quy trình ISO" },
+    "category": { "id": 8, "name": "Biểu mẫu QA" }
+  }
+}
+```
+
+Business rules: target category phải tồn tại, active và chưa soft delete; backend ghi audit log category cũ/mới và re-index metadata.
+
+### `POST /documents/batch-move` 👑
+
+Chuyển nhiều tài liệu sang cùng một category/folder.
+
+**Request Body:**
+```json
+{
+  "documentIds": [42, 43, 44],
+  "targetCategoryId": 8
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Batch move completed",
+  "data": {
+    "total": 3,
+    "succeeded": 3,
+    "failed": 0,
+    "targetCategory": { "id": 8, "name": "Biểu mẫu QA" },
+    "items": [
+      { "documentId": 42, "success": true },
+      { "documentId": 43, "success": true },
+      { "documentId": 44, "success": true }
+    ]
+  }
+}
+```
+
+### Trash / Recycle Bin APIs 👑
+
+Trash list chỉ lấy từ MySQL vì tài liệu `DELETED` bị loại khỏi Elasticsearch search mặc định.
+
+#### `GET /documents/trash`
+
+**Query Params:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `categoryId` | Long | Lọc theo danh mục/folder |
+| `deletedBy` | Long | Lọc theo người xóa |
+| `deletedFrom` | DateTime | Xóa từ thời điểm |
+| `deletedTo` | DateTime | Xóa đến thời điểm |
+| `fileType` | String | Lọc theo loại file |
+| `page` | Int | Default `0` |
+| `size` | Int | Default `20`, max `100` |
+
+**Success Response item:**
+```json
+{
+  "id": 42,
+  "title": "Quy trình ISO 9001",
+  "fileName": "ISO_9001.pdf",
+  "fileType": "PDF",
+  "fileSize": 2048576,
+  "fileSizeMb": 1.95,
+  "status": "DELETED",
+  "category": { "id": 1, "name": "Quy trình ISO" },
+  "deletedBy": { "id": 1, "name": "Admin" },
+  "deletedAt": "2026-07-21T15:00:00",
+  "purgeAfter": "2026-08-20T15:00:00",
+  "daysUntilPurge": 30
+}
+```
+
+#### `POST /documents/trash/restore`
+
+```json
+{
+  "documentIds": [42, 43]
+}
+```
+
+Response dùng cùng partial success format như batch delete. Restore clear `deleted_at`, `deleted_by`, `purge_after`; status trở về `previous_status` nếu an toàn, hoặc `PROCESSING` nếu cần re-index.
+
+#### `DELETE /documents/trash/permanent-delete`
+
+```json
+{
+  "documentIds": [42, 43]
+}
+```
+
+Xóa vĩnh viễn file hiện tại, version files, extracted content và Elasticsearch document; audit logs vẫn được giữ. Endpoint này chỉ dành cho Admin.
+
+### Internal scheduled job: `purgeDeletedDocuments`
+
+- Frequency: daily.
+- Condition: `documents.status = DELETED AND documents.purge_after <= now()`.
+- Action: permanent delete storage/content/search artifacts theo cùng rule với `DELETE /documents/trash/permanent-delete`.
+- Job phải idempotent; lỗi xóa object storage được log và retry ở lần chạy sau.
 
 ---
 
@@ -892,6 +1111,38 @@ Autocomplete/suggestion cho title, document code và tags. Không gợi ý tài 
 
 ## 7. Dashboard & Audit
 
+
+### `GET /admin/dashboard/storage` 👑
+
+Trả thống kê dung lượng lưu trữ cho dashboard Admin.
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "activeStorageBytes": 524288000,
+    "activeStorageMb": 500.0,
+    "trashStorageBytes": 104857600,
+    "trashStorageMb": 100.0,
+    "versionStorageBytes": 209715200,
+    "versionStorageMb": 200.0,
+    "totalStorageBytes": 838860800,
+    "totalStorageMb": 800.0,
+    "documentCount": 1200,
+    "trashDocumentCount": 45
+  }
+}
+```
+
+Calculation rules:
+
+- `activeStorageBytes`: `SUM(documents.file_size)` với `status != DELETED`.
+- `trashStorageBytes`: `SUM(documents.file_size)` với `status = DELETED`.
+- `versionStorageBytes`: `SUM(document_versions.file_size)` nếu historical versions lưu file riêng.
+- MB = bytes / 1024 / 1024, làm tròn 2 chữ số.
+
+
 Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng quan; các số liệu chuyên biệt nằm ở endpoint con.
 
 ### `GET /admin/dashboard/summary` 👑
@@ -919,9 +1170,12 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
       "DOC": 30,
       "JPG": 20
     },
+    "totalStorageMb": 800.0,
     "totalPreviewCount": 15000,
     "totalDownloadCount": 5200,
     "totalSearchCount": 8700,
+    "totalLoginCount": 2400,
+    "activeUserCount": 65,
     "processingErrorCount": 40
   }
 }
@@ -935,6 +1189,7 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
 | `GET` | `/admin/dashboard/recent-uploads` | Tài liệu upload gần đây |
 | `GET` | `/admin/dashboard/top-search-keywords` | Từ khóa tìm kiếm phổ biến |
 | `GET` | `/admin/dashboard/access-stats` | Thống kê preview/download/view theo thời gian |
+| `GET` | `/admin/dashboard/system-access` | Tổng quan dữ liệu truy cập hệ thống |
 | `GET` | `/admin/dashboard/processing-errors` | Danh sách lỗi extraction/indexing |
 
 **Common Query Params:** `dateFrom`, `dateTo`, `limit`, `page`, `size` tùy endpoint.
@@ -959,6 +1214,60 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
   ]
 }
 ```
+
+
+### `GET /admin/dashboard/system-access` 👑
+
+Trả dữ liệu truy cập hệ thống cho Admin, phục vụ dashboard tổng quan mức độ sử dụng DMS.
+
+**Query Params:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `dateFrom` | DateTime | Bắt đầu khoảng thống kê |
+| `dateTo` | DateTime | Kết thúc khoảng thống kê |
+| `granularity` | String | `day`, `week`, `month`; default `day` |
+| `departmentId` | Long | Lọc user theo phòng ban |
+| `userId` | Long | Lọc theo user cụ thể |
+| `action` | String | `LOGIN`, `VIEW`, `PREVIEW`, `DOWNLOAD`, `VERSION_DOWNLOAD`, `SEARCH`, `DENIED` |
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "totalLogins": 2400,
+    "activeUsers": 65,
+    "uniqueAccessUsers": 58,
+    "viewCount": 3200,
+    "previewCount": 15000,
+    "downloadCount": 5200,
+    "searchCount": 8700,
+    "deniedAccessCount": 34,
+    "accessByAction": {
+      "VIEW": 3200,
+      "PREVIEW": 15000,
+      "DOWNLOAD": 5200,
+      "VERSION_DOWNLOAD": 310,
+      "SEARCH": 8700
+    },
+    "accessTrend": [
+      { "date": "2026-07-21", "logins": 120, "previews": 820, "downloads": 240, "searches": 410, "uniqueUsers": 38 }
+    ],
+    "topUsersByAccess": [
+      { "userId": 12, "name": "Nguyễn Văn A", "department": "QA", "accessCount": 420 }
+    ]
+  }
+}
+```
+
+Data sources:
+
+- `audit_logs`: login/logout và hành động quản trị.
+- `access_logs`: metadata view, preview, download, version download, denied access.
+- `search_logs`: search/suggestions usage.
+
+Không trả token/cookie hoặc dữ liệu nhạy cảm trong dashboard; IP/User-Agent chỉ dùng ở màn Audit nếu Admin cần điều tra chi tiết.
 
 ### `GET /admin/dashboard/processing-errors` 👑
 
@@ -1096,7 +1405,17 @@ API spec tương thích OpenAPI 3 / Swagger. Khi triển khai, `@RestController`
 | 46 | GET | `/admin/dashboard/top-search-keywords` | 👑 | Từ khóa tìm kiếm phổ biến |
 | 47 | GET | `/admin/dashboard/access-stats` | 👑 | Thống kê preview/download/view |
 | 48 | GET | `/admin/dashboard/processing-errors` | 👑 | Lỗi extraction/indexing |
-| 49 | GET | `/admin/audit-logs` | 👑 | Tra cứu audit/access/search logs |
+| 49 | GET | `/admin/dashboard/system-access` | 👑 | Dữ liệu truy cập hệ thống |
+| 50 | GET | `/admin/audit-logs` | 👑 | Tra cứu audit/access/search logs |
+| | | **Batch & Trash** | | |
+| 51 | POST | `/documents/batch-upload` | 👑 | Upload nhiều file với partial success |
+| 52 | POST | `/documents/batch-delete` | 👑 | Xóa mềm nhiều tài liệu vào Thùng rác |
+| 53 | POST | `/documents/{id}/move` | 👑 | Chuyển một tài liệu sang category/folder khác |
+| 54 | POST | `/documents/batch-move` | 👑 | Chuyển nhiều tài liệu sang category/folder khác |
+| 55 | GET | `/documents/trash` | 👑 | Danh sách tài liệu trong Thùng rác |
+| 56 | POST | `/documents/trash/restore` | 👑 | Restore nhiều tài liệu từ Thùng rác |
+| 57 | DELETE | `/documents/trash/permanent-delete` | 👑 | Xóa vĩnh viễn tài liệu trong Thùng rác |
+| 58 | GET | `/admin/dashboard/storage` | 👑 | Thống kê dung lượng lưu trữ theo MB |
 
 ---
 

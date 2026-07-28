@@ -9,12 +9,12 @@
 | Phân hệ | Số tính năng | Ưu tiên |
 |----------|:---:|:---:|
 | PH1: Identity | 6 | Cao |
-| PH2: Document Management | 15 | Cao (Core) |
+| PH2: Document Management | 20 | Cao (Core) |
 | PH3: Search Engine | 8 | Cao (Core) |
 | PH4: Master Data | 9 | Trung bình |
-| PH5: Dashboard | 6 | Thấp |
+| PH5: Dashboard | 8 | Thấp |
 | PH6: Audit & Access Log | 5 | Trung bình |
-| **Tổng** | **49** | |
+| **Tổng** | **56** | |
 
 ---
 
@@ -88,10 +88,10 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Upload một file tài liệu mới kèm metadata, ACL và version đầu tiên |
-| Input | `file` (required, max 50MB), `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
+| Mô tả | Upload một file tài liệu mới kèm metadata, ACL và version đầu tiên; upload nhiều file dùng F2.16 |
+| Input | `file` (required, max 50MB), `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
 | Output | Document record với status = `PROCESSING` |
-| Business Rules | - Mỗi request chỉ upload 1 file<br>- Validate MIME type thực tế, extension và file size ≤ 50MB<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` phải unique nếu có<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
+| Business Rules | - Mỗi request chỉ upload 1 file<br>- Validate MIME type thực tế, extension và file size ≤ 50MB<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- Backend tự sinh `documentCode` unique khi tạo document<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
 | API | `POST /documents` 👑 (multipart/form-data) |
 
 ### F2.2: Trích xuất nội dung file (Content Extraction)
@@ -131,8 +131,8 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và ACL |
-| Input | `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- `documentCode` phải unique nếu thay đổi<br>- Cập nhật metadata/ACL phải đồng bộ lại Elasticsearch index<br>- Ghi audit log các field thay đổi |
+| Input | `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
+| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` trong form metadata vì mã này do hệ thống tự sinh<br>- Cập nhật metadata/ACL phải đồng bộ lại Elasticsearch index<br>- Ghi audit log các field thay đổi |
 | API | `PUT /documents/{id}` 👑 |
 
 ### F2.6: Xóa tài liệu
@@ -140,8 +140,8 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Xóa mềm tài liệu, set status `DELETED` hoặc `deleted_at` |
-| Business Rules | - Soft delete, có thể restore<br>- Tài liệu `DELETED` không xuất hiện trong search, preview, download hoặc danh sách User<br>- Xóa khỏi search index hoặc cập nhật index để loại khỏi kết quả<br>- Không xóa file vật lý ngay lập tức<br>- Ghi audit log |
+| Mô tả | Xóa mềm tài liệu, đưa vào Thùng rác và đặt lịch purge sau 30 ngày |
+| Business Rules | - Soft delete, có thể restore trước `purge_after`<br>- Set `status = DELETED`, `deleted_at = now()`, `deleted_by = current_user`, `purge_after = now() + 30 ngày`, lưu `previous_status`<br>- Tài liệu `DELETED` không xuất hiện trong search, preview, download hoặc danh sách User<br>- Xóa khỏi search index hoặc cập nhật index để loại khỏi kết quả<br>- Không xóa file vật lý ngay lập tức<br>- Ghi audit log |
 | API | `DELETE /documents/{id}` 👑 |
 
 ### F2.7: Preview tài liệu
@@ -226,6 +226,60 @@
 | Mô tả | Cho phép Admin retry xử lý tài liệu đang `EXTRACTION_FAILED` |
 | Business Rules | - Chỉ áp dụng cho lỗi extraction/indexing có thể retry<br>- Cập nhật status sang `PROCESSING` trong lúc chạy lại<br>- Thành công chuyển `INDEXED`, thất bại giữ `EXTRACTION_FAILED`<br>- Ghi audit log |
 | API | `POST /documents/{id}/retry-indexing` 👑 |
+
+
+### F2.16: Upload nhiều tài liệu cùng lúc
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Upload nhiều file trong một thao tác với metadata/ACL mặc định dùng chung |
+| Input | `files[]` (required, mỗi file max 50MB), `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`, `titlePattern` |
+| Output | Kết quả tổng hợp gồm `total`, `succeeded`, `failed` và danh sách kết quả theo từng file |
+| Business Rules | - Validate size/type/MIME từng file độc lập<br>- Mỗi file hợp lệ tạo một document record, một `documentCode` tự sinh và version 1.0 riêng<br>- Cho phép partial success: file lỗi không làm rollback các file hợp lệ<br>- Extraction/indexing chạy độc lập theo từng document<br>- Ghi audit log cho từng document upload thành công |
+| API | `POST /documents/batch-upload` 👑 (multipart/form-data) |
+
+### F2.17: Xóa nhiều tài liệu cùng lúc
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Chọn nhiều tài liệu và đưa vào Thùng rác trong một thao tác |
+| Input | `documentIds[]`, `reason` |
+| Output | Kết quả partial success theo từng document |
+| Business Rules | - Dùng cùng semantics với F2.6 cho từng tài liệu<br>- Tài liệu đã xóa hoặc không tồn tại trả lỗi theo item, không chặn toàn bộ batch<br>- Cập nhật search index để loại khỏi kết quả mặc định<br>- Ghi audit log cho từng document |
+| API | `POST /documents/batch-delete` 👑 |
+
+### F2.18: Chuyển tài liệu giữa danh mục/folder
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Chuyển một hoặc nhiều tài liệu từ category/folder hiện tại sang category/folder khác |
+| Input | `documentIds[]` hoặc `{id}`, `targetCategoryId` |
+| Output | Category cũ/mới với kết quả theo từng document nếu batch |
+| Business Rules | - Category hiện có được dùng như folder, không tạo entity folder riêng<br>- Validate target category tồn tại, active và chưa soft delete<br>- Cập nhật `documents.category_id` và re-index metadata category trong Elasticsearch<br>- Ghi audit log với category cũ và mới |
+| API | `POST /documents/{id}/move`, `POST /documents/batch-move` 👑 |
+
+### F2.19: Thùng rác tài liệu
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Xem, lọc, khôi phục hoặc xóa vĩnh viễn tài liệu đã soft delete |
+| Filters | `categoryId`, `deletedBy`, `deletedFrom`, `deletedTo`, `fileType`, pagination |
+| Output | Danh sách tài liệu `DELETED` kèm `deletedAt`, `purgeAfter`, `daysUntilPurge`, `fileSizeMb` |
+| Business Rules | - Trash list lấy từ MySQL, không lấy từ Elasticsearch<br>- Admin có thể restore một/nhiều tài liệu trước hạn purge<br>- Permanent delete xóa object storage, extracted content và search index; audit logs vẫn được giữ<br>- Tài liệu quá hạn `purge_after` có thể không restore được nếu purge job đã xử lý |
+| API | `GET /documents/trash`, `POST /documents/trash/restore`, `DELETE /documents/trash/permanent-delete` 👑 |
+
+### F2.20: Tự động xóa vĩnh viễn sau 30 ngày
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | System (Scheduler) |
+| Mô tả | Tự động purge tài liệu trong Thùng rác khi `purge_after <= now()` |
+| Business Rules | - Job chạy hằng ngày, idempotent và ghi log kết quả<br>- Chỉ xử lý document `status = DELETED` đã quá hạn purge<br>- Xóa file hiện tại và version files trong object storage theo retention policy<br>- Xóa extracted content và Elasticsearch document<br>- Nếu xóa object storage thất bại, ghi lỗi và retry ở lần chạy sau |
+| API | Internal scheduled job `purgeDeletedDocuments` |
 
 ---
 
@@ -345,9 +399,9 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Hiển thị thống kê tổng quan |
-| Metrics | - Tổng documents, users, categories, departments<br>- Documents theo status<br>- Documents theo file type<br>- Tổng lượt preview/download/search |
-| API | `GET /admin/dashboard` 👑 |
+| Mô tả | Hiển thị thống kê tổng quan cho Admin |
+| Metrics | - Tổng documents, users, categories, departments<br>- Tổng dung lượng file toàn hệ thống theo MB<br>- Documents theo status/file type<br>- Tổng lượt preview/download/search/login và unique users |
+| API | `GET /admin/dashboard/summary` 👑 |
 
 ### F5.2: Top tài liệu phổ biến
 
@@ -393,6 +447,29 @@
 | Mô tả | Theo dõi tài liệu `PROCESSING` lâu hoặc `EXTRACTION_FAILED` |
 | Metrics | Số tài liệu lỗi, loại file lỗi, retry count, lỗi gần nhất |
 | API | `GET /admin/dashboard/processing-errors` 👑 |
+
+
+### F5.7: Thống kê dung lượng lưu trữ
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Hiển thị tổng dung lượng file/tài liệu trên toàn hệ thống theo MB |
+| Output | `activeStorageMb`, `trashStorageMb`, `versionStorageMb`, `totalStorageMb`, `documentCount`, `trashDocumentCount` |
+| Business Rules | - Active storage tính từ `documents.file_size` với `status != DELETED`<br>- Trash storage tính từ `documents.file_size` với `status = DELETED`<br>- Version storage tính từ `document_versions.file_size` nếu version lưu file riêng<br>- MB = bytes / 1024 / 1024, làm tròn 2 chữ số |
+| API | `GET /admin/dashboard/storage` 👑 |
+
+
+### F5.8: Dữ liệu truy cập hệ thống
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| Actor | Admin |
+| Mô tả | Hiển thị dữ liệu truy cập hệ thống để Admin theo dõi mức độ sử dụng DMS |
+| Metrics | `totalLogins`, `activeUsers`, `uniqueAccessUsers`, `previewCount`, `downloadCount`, `viewCount`, `searchCount`, `deniedAccessCount`, `accessByAction`, `accessTrend`, `topUsersByAccess` |
+| Filters | `dateFrom`, `dateTo`, `granularity=day|week|month`, `departmentId`, `userId`, `action` |
+| Business Rules | - Login/logout lấy từ `audit_logs`<br>- Preview/download/view/denied access lấy từ `access_logs`<br>- Search count lấy từ `search_logs`<br>- Chỉ Admin được xem dữ liệu tổng hợp; không expose chi tiết nhạy cảm không cần thiết như token/cookie/IP nếu không phục vụ audit |
+| API | `GET /admin/dashboard/system-access` 👑 |
 
 ---
 

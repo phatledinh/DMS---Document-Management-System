@@ -56,7 +56,7 @@
 
 ### 2.1 Clean Architecture (Application Layer + Domain Services)
 
-- **Domain Services**: (`DocumentService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
+- **Domain Services**: (`DocumentService`, `DocumentBatchService`, `DocumentLifecycleService`, `DocumentStorageStatsService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
 - **Application Layer** (Use Cases): (`DocumentUploadUseCase`, `DocumentSearchUseCase`). Điều phối nhiều Domain Services.
   - Ví dụ: `DocumentUploadUseCase` sẽ gọi `S3StorageService` (lưu object qua S3-compatible API; dev dùng MinIO, production dùng Cloudflare R2) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
 
@@ -134,6 +134,30 @@ Response
 
 Sử dụng **MapStruct** cho toàn bộ chuyển đổi Entity ↔ DTO. Không dùng Manual Mapping.
 
+
+### 2.8 Document Lifecycle, Batch & Storage Stats Services
+
+```text
+DocumentBatchService
+  ├── batchUpload(files[], sharedMetadata)
+  ├── batchDelete(documentIds[])
+  └── batchMove(documentIds[], targetCategoryId)
+
+DocumentLifecycleService
+  ├── softDelete(documentId)
+  ├── restore(documentIds[])
+  ├── permanentDelete(documentIds[])
+  └── purgeDeletedDocuments()
+
+DocumentStorageStatsService
+  └── calculate active/trash/version/total storage from MySQL
+```
+
+- Batch operations dùng partial success response để lỗi từng file/tài liệu không rollback toàn bộ batch.
+- `DocumentLifecycleService` là nơi duy nhất set/clear `deleted_at`, `deleted_by`, `purge_after`, `previous_status`.
+- `DocumentStorageStatsService` tính dung lượng từ `documents.file_size` và `document_versions.file_size`, không phụ thuộc Elasticsearch.
+- Trash list lấy từ MySQL vì Elasticsearch mặc định không giữ document `DELETED` trong kết quả search.
+
 ---
 
 ## 3. Search Engine Architecture
@@ -189,9 +213,10 @@ Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu.
 - **Upload ordering**: Backend tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu object upload thành công nhưng DB transaction fail, tạo cleanup task hoặc để scheduled orphan cleanup xóa object không được DB tham chiếu.
 - **After-commit event**: Extraction, preview conversion và indexing/re-indexing chỉ chạy sau khi transaction MySQL commit thành công.
 - **Failure handling**: Nếu extraction hoặc indexing thất bại sau DB commit, tài liệu/version chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng; không rollback metadata đã commit.
-- **Delete/archive/restore**: Ghi MySQL trước, đồng bộ Elasticsearch async sau commit. Soft delete không xóa file vật lý ngay lập tức.
-- **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được MySQL tham chiếu.
+- **Delete/archive/restore/move**: Ghi MySQL trước, đồng bộ Elasticsearch async sau commit. Soft delete chỉ đưa vào Trash và đặt `purge_after`, không xóa file vật lý ngay lập tức. Move document cập nhật `category_id` và re-index metadata category.
+- **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy; orphan cleanup chỉ xóa object không còn được MySQL tham chiếu, còn trash purge xóa object của document `DELETED` đã quá `purge_after`.
 - **Retry**: Scheduled job retry mỗi 30 phút cho lỗi extraction/indexing tạm thời.
+- **Trash purge**: Scheduled job chạy hằng ngày, xử lý `status = DELETED AND purge_after <= now()`, xóa storage/content/search artifacts và ghi log idempotent.
 - **Batch Re-index**: Scheduled job chạy hàng đêm để self-heal lệch index giữa MySQL và Elasticsearch.
 
 ---
@@ -346,12 +371,14 @@ Dashboard dùng nhóm endpoint Admin thống nhất với phân rã tính năng 
 
 | Endpoint | Mục đích |
 |----------|----------|
-| `GET /admin/dashboard` | Thống kê tổng quan: documents, users, categories, departments, preview/download/search totals |
+| `GET /admin/dashboard/summary` | Thống kê tổng quan: documents, users, categories, departments, preview/download/search totals |
+| `GET /admin/dashboard/storage` | Tổng dung lượng file toàn hệ thống theo MB, tách active/trash/version |
 | `GET /admin/dashboard/top-documents` | Top tài liệu xem/tải nhiều |
 | `GET /admin/dashboard/recent-uploads` | Tài liệu upload gần đây |
 | `GET /admin/dashboard/top-search-keywords` | Top keyword tìm kiếm, resultCount trung bình, searchTime trung bình |
 | `GET /admin/dashboard/access-stats` | Thống kê preview/download theo ngày/tuần/tháng, unique users |
-| `GET /admin/dashboard/processing-errors` | Tài liệu `PROCESSING` lâu hoặc `EXTRACTION_FAILED` |
+| `GET /admin/dashboard/system-access` | Dữ liệu truy cập hệ thống: login, active users, unique access users, preview/download/search/denied access |
+| `GET /admin/dashboard/processing-errors` | Tài liệu `PROCESSING` lâu hoặc `EXTRACTION_FAILED`, gồm errorCode/errorMessage/stage lỗi |
 | `GET /admin/audit-logs` | Tra cứu audit/access/search logs với filters |
 | `GET /admin/analytics/**` | Optional nếu triển khai MH18 như màn riêng thay vì tab trong dashboard |
 
@@ -381,6 +408,9 @@ backend/
 │   │   ├── controller/
 │   │   ├── service/
 │   │   │   ├── DocumentService.java
+│   │   │   ├── DocumentBatchService.java
+│   │   │   ├── DocumentLifecycleService.java
+│   │   │   ├── DocumentStorageStatsService.java
 │   │   │   ├── DocumentAccessPolicyService.java
 │   │   │   ├── StorageService.java
 │   │   │   ├── ContentExtractorService.java

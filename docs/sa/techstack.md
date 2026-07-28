@@ -148,7 +148,7 @@ frontend/
 |----------|-------|
 | **OWASP Java HTML Sanitizer** / **Jsoup** | Sanitize HTML preview & search highlight chống XSS (NFR#11, `HtmlSanitizer`) |
 | **Spring `@Async` + `ThreadPoolTaskExecutor`** | Chạy content extraction / indexing nền (F2.2) |
-| **Spring `@Scheduled`** (+ **ShedLock** nếu multi-instance) | Auto retry `EXTRACTION_FAILED` mỗi 30 phút (spec §7, F2.2) |
+| **Spring `@Scheduled`** (+ **ShedLock** nếu multi-instance) | Auto retry `EXTRACTION_FAILED` mỗi 30 phút, purge Trash sau 30 ngày, batch re-index nightly |
 
 ### Data Access — Search, Cache & Migration
 
@@ -208,6 +208,9 @@ backend/
 │   │   ├── controller/
 │   │   ├── service/
 │   │   │   ├── DocumentService.java
+│   │   │   ├── DocumentBatchService.java
+│   │   │   ├── DocumentLifecycleService.java
+│   │   │   ├── DocumentStorageStatsService.java
 │   │   │   ├── StorageService.java
 │   │   │   ├── ContentExtractorService.java
 │   │   │   └── PreviewService.java     ← JODConverter/LibreOffice + HtmlSanitizer

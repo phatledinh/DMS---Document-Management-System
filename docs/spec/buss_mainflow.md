@@ -63,11 +63,10 @@ Access Token hết hạn (401 Unauthorized)
 Admin chọn "Upload tài liệu"
       ↓
 [Màn hình Upload] — Điền form:
-  • Chọn file (max 50MB)
+  • Chọn một hoặc nhiều file (mỗi file max 50MB)
   • Nhập tiêu đề, mô tả
   • Chọn danh mục
   • Gắn tags
-  • Nhập mã tài liệu (optional)
   • Chọn ngày hiệu lực (optional)
   • Chọn access level: PUBLIC / DEPARTMENT / RESTRICTED
   • Nếu DEPARTMENT: chọn một hoặc nhiều phòng ban được phép xem
@@ -79,7 +78,7 @@ Admin chọn "Upload tài liệu"
   • Kiểm tra required fields
   • Kiểm tra dữ liệu phân quyền tương ứng access level
       ↓
-[DocumentController] — POST /documents (multipart/form-data)
+[DocumentController] — POST /documents hoặc POST /documents/batch-upload (multipart/form-data)
       ↓
 [FileUploadHandler] — Server-side validation
   ├── ❌ File type không hợp lệ → 415 Unsupported Media Type
@@ -94,6 +93,7 @@ Admin chọn "Upload tài liệu"
   • Lưu vào bucket `dms-documents` theo key `documents/YYYY/MM/{documentUuid}/versions/{versionUuid}/original.ext`
         ↓
 [DocumentService] — Lưu metadata vào MySQL
+  • Sinh `document_code` tự động, ví dụ DMS-202607-000001
   • Tạo record trong bảng `documents`
   • Tạo record trong `document_tags` (N:N)
   • Tạo record trong `document_versions` (v1.0)
@@ -115,12 +115,13 @@ Admin chọn "Upload tài liệu"
         ↓
 Cập nhật status = "INDEXED" (hoặc "EXTRACTION_FAILED" nếu lỗi xử lý/index)
         ↓
-Response ApiResponse<DocumentUploadResult> → {
+Response ApiResponse<DocumentUploadResult> hoặc BatchUploadResult → {
   success: true,
   message: "Document upload accepted",
   data: {
     id: 42,
     status: "PROCESSING",
+    documentCode: "DMS-202607-000001",
     versionId: 101,
     versionNumber: "1.0",
     createdAt: "2026-07-21T10:30:00"
@@ -146,9 +147,11 @@ Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau
 
   [INDEXED] ──── Admin archive ────→ [ARCHIVED]
       │                                │
-      └──── Admin soft delete ────→ [DELETED]
+      └──── Admin soft delete ────→ [DELETED / TRASH]
                                        │
-                             Admin restore → [PROCESSING] hoặc [INDEXED]
+                    Admin restore trước purge_after → [PROCESSING] hoặc [INDEXED]
+                                       │
+                    Sau 30 ngày / permanent delete → [PURGED]
 ```
 
 Business rules:
@@ -510,3 +513,123 @@ Response ApiResponse<AuditLogPage>
 | 4   | Preview tài liệu        | Thường xuyên     |
 | 5   | Download tài liệu       | Thường xuyên     |
 | 6   | Xem/sửa profile cá nhân | Ít khi           |
+
+---
+
+## Flow 8: Xóa vào Thùng rác và tự purge sau 30 ngày (Admin/System)
+
+```text
+Admin chọn một hoặc nhiều tài liệu trong MH08
+      ↓
+[Frontend] — Confirm delete
+      ↓
+[DocumentController] — DELETE /documents/{id} hoặc POST /documents/batch-delete
+      ↓
+[DocumentLifecycleService]
+  • Lưu previous_status
+  • Set status = DELETED
+  • Set deleted_at = now()
+  • Set deleted_by = current_user
+  • Set purge_after = now() + 30 ngày
+      ↓
+[SearchIndexService] — Loại khỏi search mặc định
+      ↓
+[Màn hình Thùng rác MH19] — Hiển thị deletedAt, purgeAfter, daysUntilPurge
+      ↓
+Admin có thể restore trước hạn
+  ├── POST /documents/trash/restore → clear deleted fields, restore status/re-index nếu cần
+  └── DELETE /documents/trash/permanent-delete → xóa vĩnh viễn ngay
+      ↓
+[Scheduler purgeDeletedDocuments] — Chạy hằng ngày
+  • Tìm status = DELETED AND purge_after <= now()
+  • Xóa object storage current file + version files theo retention policy
+  • Xóa document_contents và Elasticsearch document
+  • Hard delete row hoặc giữ tombstone permanently_deleted_at theo policy
+  • Ghi audit/maintenance log
+```
+
+Business rules:
+
+- Soft delete không xóa file vật lý ngay để còn restore.
+- Tài liệu trong Thùng rác không được search/preview/download theo luồng User.
+- Purge job phải idempotent; lỗi xóa storage được log và retry ở lần chạy sau.
+
+---
+
+## Flow 9: Chuyển tài liệu giữa folder/danh mục (Admin)
+
+```text
+Admin chọn một hoặc nhiều tài liệu trong MH08
+      ↓
+[MoveDocumentModal] — Chọn target category/folder từ category tree
+      ↓
+[DocumentController] — POST /documents/{id}/move hoặc POST /documents/batch-move
+      ↓
+[DocumentService]
+  • Validate target category tồn tại, active, chưa soft delete
+  • Lưu category cũ để audit
+  • Cập nhật documents.category_id
+      ↓
+[SearchIndexService] — Re-index metadata category/folder
+      ↓
+[AuditLogService] — Ghi old/new category
+      ↓
+[Frontend] — Refresh list và hiển thị kết quả partial success nếu batch
+```
+
+Business rules:
+
+- Category hiện có được dùng như folder; không tạo bảng `folders` riêng.
+- Batch move cho phép partial success để tài liệu lỗi không chặn các tài liệu hợp lệ.
+
+---
+
+## Flow 10: Thống kê tổng dung lượng tài liệu (Admin)
+
+```text
+Admin mở Dashboard MH07
+      ↓
+[DashboardController] — GET /admin/dashboard/storage
+      ↓
+[DocumentStorageStatsService]
+  • activeStorageBytes = SUM(documents.file_size) WHERE status != DELETED
+  • trashStorageBytes = SUM(documents.file_size) WHERE status = DELETED
+  • versionStorageBytes = SUM(document_versions.file_size)
+  • totalStorageBytes = active + trash + version
+      ↓
+[Frontend] — Hiển thị MB đã làm tròn 2 chữ số
+```
+
+Business rules:
+
+- Dashboard hiển thị tách active/trash/version để tránh hiểu nhầm tổng dung lượng.
+- Số liệu dung lượng lấy từ MySQL, không lấy từ Elasticsearch.
+
+
+---
+
+## Flow 11: Dashboard dữ liệu truy cập hệ thống (Admin)
+
+```text
+Admin mở Dashboard MH07 hoặc Analytics MH18
+      ↓
+[DashboardController] — GET /admin/dashboard/system-access?dateFrom&dateTo&granularity
+      ↓
+[DashboardService]
+  • Đếm login/logout từ audit_logs
+  • Đếm view/preview/download/version download/denied access từ access_logs
+  • Đếm search/suggestion từ search_logs
+  • Tính activeUsers, uniqueAccessUsers, topUsersByAccess
+  • Group trend theo day/week/month
+      ↓
+[Frontend]
+  • Hiển thị stat cards: totalLogins, activeUsers, uniqueAccessUsers
+  • Hiển thị chart preview/download/search theo thời gian
+  • Hiển thị bảng top users by access
+```
+
+Business rules:
+
+- Dashboard chỉ hiển thị aggregate cho Admin.
+- Dữ liệu nhạy cảm như token/cookie không bao giờ được log hoặc trả về dashboard.
+- IP/User-Agent nếu cần điều tra chi tiết thì xem ở MH16 Audit & Access Log, không đưa vào card tổng quan.

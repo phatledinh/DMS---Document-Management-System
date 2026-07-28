@@ -8,9 +8,10 @@
 
 Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, cho phép:
 
-- **Admin**: Upload, phân loại, quản lý tài liệu nội bộ (SOP, quy trình, biểu mẫu, hướng dẫn...).
-- **User (Nhân viên)**: Tìm kiếm, đọc online (preview) và tải tài liệu.
-- **Chức năng cốt lõi**: **Search Engine** mạnh mẽ, hỗ trợ tìm kiếm full-text nội dung bên trong file.
+- **Admin**: Upload một/nhiều tài liệu, phân loại theo danh mục/folder, quản lý metadata/ACL/version/lifecycle, theo dõi dashboard, xử lý tài liệu lỗi và thùng rác.
+- **User (Nhân viên)**: Tìm kiếm, đọc online (preview) và tải tài liệu được cấp quyền.
+- **Chức năng cốt lõi**: **Search Engine** mạnh mẽ, hỗ trợ tìm kiếm full-text nội dung bên trong file và luôn áp dụng permission filter trước khi trả kết quả.
+- **Vận hành tài liệu**: Tự sinh mã tài liệu, thống kê dung lượng theo MB, ghi nhận dữ liệu truy cập, tự purge tài liệu trong thùng rác sau 30 ngày.
 
 ---
 
@@ -20,7 +21,7 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 
 | #   | Chức năng               | Mô tả                                                                             |
 | --- | ----------------------- | --------------------------------------------------------------------------------- |
-| 1   | Quản lý tài liệu        | CRUD tài liệu (upload, sửa metadata, xóa mềm)                                     |
+| 1   | Quản lý tài liệu        | Upload, sửa metadata/ACL, archive, restore, move, soft delete và permanent delete |
 | 2   | Phân loại tài liệu      | Quản lý danh mục (cây phân cấp), phòng ban, tags                                  |
 | 3   | Tìm kiếm full-text      | Tìm kiếm qua Elasticsearch trong tiêu đề + mô tả + nội dung file                  |
 | 4   | Permission-aware Search | Kết quả tìm kiếm chỉ bao gồm tài liệu user hiện tại có quyền xem                  |
@@ -28,9 +29,13 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 | 6   | Download tài liệu       | Tải file gốc theo quyền truy cập                                                  |
 | 7   | Quản lý phiên bản       | Lịch sử phiên bản, upload version mới, chọn version hiện hành                     |
 | 8   | Quản lý người dùng      | CRUD user, phân quyền Admin/User                                                  |
-| 9   | Dashboard thống kê      | Thống kê tài liệu, lượt xem, lượt tải, từ khóa tìm kiếm                           |
+| 9   | Dashboard thống kê      | Thống kê tài liệu, tổng MB lưu trữ, dữ liệu truy cập, lỗi xử lý, từ khóa tìm kiếm |
 | 10  | Xác thực & Phân quyền   | JWT + Refresh Token, RBAC (Admin/User), phân quyền truy cập tài liệu              |
-| 11  | Audit & Access Log      | Ghi nhận upload, update metadata, delete, preview, download và search keyword     |
+| 11  | Audit & Access Log      | Ghi nhận upload, update metadata, delete, restore, move, batch action và search   |
+| 12  | Thùng rác tài liệu      | Quản lý tài liệu đã xóa mềm, restore hoặc xóa vĩnh viễn sau thời hạn              |
+| 13  | Batch operations        | Upload nhiều file, xóa nhiều file, chuyển nhiều file giữa các danh mục/folder     |
+| 14  | Mã tài liệu tự sinh     | Backend tự sinh `document_code` unique khi upload, không nhập/sửa thủ công        |
+| 15  | Theo dõi lỗi xử lý      | Admin xem tài liệu lỗi kèm lý do lỗi, retry extraction/indexing                   |
 
 ### Ngoài phạm vi (Out of Scope)
 
@@ -53,12 +58,12 @@ Mục tiêu: chứng minh luồng quản lý tài liệu và tìm kiếm full-te
 | ---- | ------- |
 | Auth | Login, refresh token, RBAC `ADMIN`/`USER` |
 | User/Department | CRUD user, CRUD department mức cơ bản, mỗi user thuộc một department chính |
-| Document Upload | Admin upload 1 file/request, validate size/type, lưu object vào MinIO/dev object storage, lưu metadata MySQL |
+| Document Upload | Admin upload 1 file/request, validate size/type, backend tự sinh `document_code`, lưu object vào MinIO/dev object storage, lưu metadata MySQL |
 | File support | PDF text và DOCX; chưa bắt buộc OCR scan/image và Excel preview |
 | Processing | Async extraction, lưu extracted content, index Elasticsearch |
 | Search | Search title/description/content/document code/tags, filter `status = INDEXED`, permission-aware filter |
 | Preview/Download | Preview PDF trực tiếp; DOCX có thể download bản gốc, preview nâng cao có thể để milestone sau |
-| Lifecycle | `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `DELETED`; soft delete cơ bản |
+| Lifecycle | `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `DELETED`; soft delete cơ bản, chưa bắt buộc trash UI đầy đủ |
 | Audit | Ghi log upload, search, preview, download ở mức tối thiểu |
 
 Done criteria:
@@ -77,17 +82,21 @@ Mục tiêu: hoàn thiện trải nghiệm quản trị và đọc tài liệu s
 | ---- | ------- |
 | File support | PDF scanned/image OCR, XLS/XLSX extraction, DOC/DOCX/XLS/XLSX preview qua PDF/HTML đã sanitize |
 | Versioning | Upload version mới, version history, chọn current version, re-index khi current version đổi |
-| Lifecycle | Archive/restore, retry thủ công cho `EXTRACTION_FAILED`, rule rõ cho trạng thái sau restore |
-| Metadata | Quản lý category tree, tags, filter nâng cao |
-| Dashboard | Thống kê cơ bản số tài liệu, lượt preview/download, top search keywords |
-| Audit | Mở rộng audit log cho update metadata, delete/restore, version changes |
+| Lifecycle | Archive/restore, retry thủ công cho `EXTRACTION_FAILED`, thùng rác, permanent delete và tự purge sau 30 ngày |
+| Metadata | Quản lý category tree như folder, tags, filter nâng cao, chuyển tài liệu giữa danh mục |
+| Batch operations | Upload nhiều file, xóa nhiều file, chuyển nhiều file với partial success theo từng item |
+| Dashboard | Thống kê số tài liệu, tổng dung lượng active/trash/version/total theo MB, dữ liệu truy cập hệ thống, lỗi xử lý, top search keywords |
+| Audit | Mở rộng audit log cho update metadata, delete/restore, permanent delete, move, batch action, version changes |
 
 Done criteria:
 
 1. Admin xem được lịch sử version và đổi current version mà không mất version cũ.
 2. Office/image/scanned PDF có extraction hoặc preview theo rule đã định, failure được ghi nhận và retry được.
-3. Dashboard lấy số liệu từ log/aggregate phù hợp, không query trực tiếp log thô cho thống kê nặng.
-4. Archive/restore có rule trạng thái rõ và nhất quán với search/preview/download.
+3. Dashboard hiển thị tổng dung lượng file toàn hệ thống theo MB, dữ liệu truy cập hệ thống và lấy số liệu từ log/aggregate phù hợp, không query trực tiếp log thô cho thống kê nặng.
+4. Archive/restore/delete có rule trạng thái rõ và nhất quán với search/preview/download.
+5. Tài liệu bị xóa mềm xuất hiện trong Thùng rác, có `purgeAfter`, restore được trước hạn và bị purge vĩnh viễn sau 30 ngày.
+6. Admin upload/xóa/chuyển nhiều tài liệu cùng lúc và nhận kết quả partial success theo từng file/tài liệu.
+7. Admin xem được danh sách tài liệu lỗi xử lý kèm `errorCode`, `errorMessage`, stage lỗi và có thể retry.
 
 #### Milestone 3 — Production Readiness
 
@@ -95,7 +104,7 @@ Mục tiêu: chuẩn bị vận hành production và khả năng phục hồi d�
 
 | Nhóm | Bao gồm |
 | ---- | ------- |
-| Object storage | Cloudflare R2 qua S3-compatible API, lifecycle cleanup orphan object |
+| Object storage | Cloudflare R2 qua S3-compatible API, lifecycle cleanup orphan object và purge file trong Trash quá 30 ngày |
 | Security | CORS/CSRF decision, cookie SameSite theo deployment topology, malware scan, hardening headers |
 | Reliability | Retry queue rõ ràng, batch reindex nightly, rebuild Elasticsearch từ MySQL/object storage |
 | Observability | Metrics, structured logs, alert cho extraction/indexing failure |
@@ -125,7 +134,7 @@ Done criteria:
 
 | Actor     | Vai trò       | Quyền hạn                                                                                                       |
 | --------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
-| **ADMIN** | Quản trị viên | Upload, Edit, Delete tài liệu; Quản lý categories/tags/departments/users; Xem dashboard thống kê; xem audit log |
+| **ADMIN** | Quản trị viên | Upload/batch upload, edit metadata/ACL, move, archive, delete/restore/permanent delete tài liệu; quản lý categories/tags/departments/users; xem dashboard dung lượng/truy cập/lỗi xử lý; xem audit log |
 | **USER**  | Nhân viên     | Tìm kiếm, Đọc (preview), Tải (download) tài liệu được cấp quyền; Xem & sửa profile cá nhân                      |
 
 ---
@@ -211,13 +220,24 @@ Business decisions:
 | Ràng buộc              | Giá trị                                                              |
 | ---------------------- | -------------------------------------------------------------------- |
 | Kích thước file tối đa | 50 MB                                                                |
-| Số file mỗi request    | 1                                                                    |
+| Số file mỗi request    | `POST /documents` nhận 1 file; `POST /documents/batch-upload` nhận nhiều file, mỗi file tối đa 50 MB |
+| Metadata bắt buộc      | File, title, category, access level và ACL tương ứng; `document_code` do backend tự sinh |
 | Đặt tên file lưu trữ   | UUID-based, không dùng tên file user nhập làm storage path trực tiếp |
 | Kiểm tra định dạng     | Validate MIME type thực tế và extension                              |
 | File bị chặn           | Không cho phép upload `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`  |
 | Nội dung độc hại       | Virus/Malware scan nâng cao thuộc production hardening               |
 
 ---
+
+
+### Quy tắc mã tài liệu
+
+- `document_code` là mã tài liệu chính thức do backend tự sinh khi upload, không nhập thủ công trên form.
+- Format đề xuất: `DMS-{yyyyMM}-{sequence6}`, ví dụ `DMS-202607-000001`.
+- Upload nhiều file tạo nhiều document và mỗi document có mã riêng.
+- Mã tài liệu là immutable trong luồng metadata thông thường; Admin chỉ xem, không nhập/sửa trên form upload/edit.
+- Mã tài liệu vẫn là field search quan trọng, được ưu tiên exact match/boost trong Elasticsearch.
+- Backend phải xử lý concurrency bằng transaction/sequence và unique index để không sinh trùng mã khi nhiều Admin upload cùng lúc.
 
 ## 6. Search Engine Requirements
 
@@ -253,11 +273,13 @@ Relevance priority:
 | `INDEXED`           | Tài liệu đã sẵn sàng để search, preview, download                     | Có, nếu có quyền  |
 | `EXTRACTION_FAILED` | Lỗi trích xuất nội dung hoặc index                                    |       Không       |
 | `ARCHIVED`          | Tài liệu ngưng sử dụng nhưng vẫn giữ lịch sử                          |  Không mặc định   |
-| `DELETED`           | Xóa mềm, có thể restore bởi Admin                                     |       Không       |
+| `DELETED`           | Xóa mềm trong Thùng rác, có thể restore trước `purge_after`           |       Không       |
 
 Business rules:
 
 - Search mặc định chỉ trả về tài liệu `INDEXED`.
+- Tài liệu `DELETED` nằm trong Thùng rác, có thể restore trước `purge_after`; hệ thống tự xóa vĩnh viễn sau 30 ngày.
+- Khi soft delete, hệ thống lưu trạng thái trước đó để restore về trạng thái phù hợp hoặc chuyển `PROCESSING` nếu cần re-index.
 - Tài liệu `DELETED` không xuất hiện trong search, preview hoặc download.
 - Hệ thống tự động retry extraction/indexing mỗi 30 phút cho tài liệu `EXTRACTION_FAILED` do lỗi xử lý/index tạm thời.
 - Admin có thể xem tài liệu lỗi xử lý để retry extraction/indexing thủ công.
@@ -265,7 +287,82 @@ Business rules:
 
 ---
 
-## 8. Quản lý phiên bản tài liệu
+
+## 8. Thùng rác, batch operations và di chuyển tài liệu
+
+### Thùng rác tài liệu
+
+| Rule | Mô tả |
+| ---- | ----- |
+| Soft delete | Admin xóa tài liệu thì hệ thống set `status = DELETED`, `deleted_at`, `deleted_by`, `purge_after = deleted_at + 30 ngày`, lưu `previous_status`. |
+| Visibility | Tài liệu `DELETED` không xuất hiện trong search/list/preview/download mặc định của User. |
+| Trash list | Admin xem được danh sách tài liệu trong thùng rác với title/fileName/fileSize/category/deletedBy/deletedAt/purgeAfter/daysUntilPurge. |
+| Restore | Admin có thể restore một/nhiều tài liệu trước khi purge; hệ thống clear deleted fields và re-index nếu cần. |
+| Permanent delete | Admin có thể xóa vĩnh viễn thủ công; hệ thống xóa object storage, extracted content và Elasticsearch document, giữ audit logs. |
+| Auto purge | Scheduled job hằng ngày tự purge tài liệu `DELETED` khi `purge_after <= now()`. |
+
+### Batch operations
+
+| Operation | Rule |
+| --------- | ---- |
+| Batch upload | Nhận nhiều file, validate từng file, mỗi file hợp lệ tạo document/version/mã tài liệu riêng. |
+| Batch delete | Nhận `documentIds[]`, đưa từng tài liệu hợp lệ vào thùng rác, trả kết quả theo từng item. |
+| Batch move | Nhận `documentIds[]` và `targetCategoryId`, chuyển từng tài liệu hợp lệ sang danh mục/folder mới. |
+| Error model | Batch operations dùng partial success; lỗi một item không rollback toàn bộ batch. |
+
+### Di chuyển tài liệu giữa folder/danh mục
+
+- Hệ thống dùng `categories.parent_id` như cây folder/danh mục, không tạo entity `folders` riêng.
+- Move document là cập nhật `documents.category_id`, nhưng phải có API/action riêng để ghi audit rõ category cũ/mới.
+- Khi move thành công, hệ thống re-index metadata category trong Elasticsearch.
+- Target category phải tồn tại, active và chưa soft delete.
+
+---
+
+## 9. Dashboard, dữ liệu truy cập và lỗi xử lý
+
+### Dashboard dung lượng
+
+| Metric | Công thức |
+| ------ | --------- |
+| Active storage | `SUM(documents.file_size)` với `status != DELETED` |
+| Trash storage | `SUM(documents.file_size)` với `status = DELETED` |
+| Version storage | `SUM(document_versions.file_size)` nếu version lưu object riêng |
+| Total storage | Active + Trash + Version |
+
+- Dashboard Admin phải hiển thị **Tổng MB** toàn hệ thống (`totalStorageMb`).
+- MB = bytes / 1024 / 1024, làm tròn 2 chữ số.
+- Dung lượng lấy từ MySQL metadata, không lấy từ Elasticsearch.
+
+### Dữ liệu truy cập hệ thống
+
+Admin dashboard cần hiển thị dữ liệu truy cập tổng hợp:
+
+| Metric | Nguồn |
+| ------ | ----- |
+| `totalLogins`, active users | `audit_logs` |
+| `viewCount`, `previewCount`, `downloadCount`, `deniedAccessCount` | `access_logs` |
+| `searchCount`, top keywords | `search_logs` |
+| `accessTrend`, `topUsersByAccess` | Aggregate từ audit/access/search logs |
+
+- Chỉ Admin được xem dữ liệu tổng hợp này.
+- Dashboard không trả token/cookie hoặc dữ liệu nhạy cảm không cần thiết.
+- IP/User-Agent chỉ dùng ở màn audit chi tiết khi cần điều tra.
+
+### Tài liệu lỗi xử lý
+
+Admin phải xem được danh sách tài liệu `PROCESSING` quá lâu hoặc `EXTRACTION_FAILED` với các thông tin:
+
+| Field | Mô tả |
+| ----- | ----- |
+| Document/file | Title, fileName, fileType, documentCode |
+| Error reason | `errorCode`, `errorMessage`, stage lỗi: upload validation, extraction, OCR, preview conversion hoặc indexing |
+| Retry info | `retryCount`, updatedAt, last error time |
+| Action | Retry extraction/indexing, xem chi tiết, tải file gốc để kiểm tra nếu có quyền |
+
+---
+
+## 10. Quản lý phiên bản tài liệu
 
 | Rule                 | Mô tả                                                                                                 |
 | -------------------- | ----------------------------------------------------------------------------------------------------- |
@@ -286,22 +383,24 @@ Business rules:
 
 ---
 
-## 9. Audit & Access Log
+## 11. Audit & Access Log
 
 Hệ thống cần ghi nhận các hành động quan trọng để phục vụ dashboard, truy vết và kiểm toán nội bộ.
 
 | Action                  | Actor      | Dữ liệu cần ghi nhận                                         |
 | ----------------------- | ---------- | ------------------------------------------------------------ |
-| Upload document         | Admin      | userId, documentId, fileName, fileType, fileSize, timestamp  |
+| Upload document         | Admin      | userId, documentId, documentCode, fileName, fileType, fileSize, timestamp |
 | Update metadata         | Admin      | userId, documentId, changedFields, timestamp                 |
-| Delete/Restore document | Admin      | userId, documentId, action, timestamp                        |
+| Delete/Restore/Move/Permanent delete document | Admin | userId, documentId, action, old/new category nếu move, timestamp |
 | Preview document        | Admin/User | userId, documentId, timestamp                                |
 | Download document       | Admin/User | userId, documentId, timestamp                                |
 | Search                  | Admin/User | userId, keyword, filters, resultCount, searchTime, timestamp |
+| Batch action            | Admin      | batchId, action, total/succeeded/failed, item results, timestamp |
+| Processing failure      | System     | documentId, stage, errorCode, errorMessage, retryCount, timestamp |
 
 ---
 
-## 10. Yêu cầu phi chức năng
+## 12. Yêu cầu phi chức năng
 
 | #   | Yêu cầu                | Chi tiết                                                                                                     |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -312,10 +411,12 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 | 5   | **Authorization**      | Search, preview, download và metadata detail phải kiểm tra quyền truy cập tài liệu                           |
 | 6   | **Availability**       | Hệ thống hoạt động 99% uptime trong giờ làm việc                                                             |
 | 7   | **Scalability**        | Kiến trúc Elasticsearch-first, cho phép mở rộng cluster search và Cloudflare R2/S3-compatible object storage |
-| 8   | **Data Integrity**     | Soft delete cho mọi entity chính, không mất dữ liệu; version cũ không bị ghi đè                              |
+| 8   | **Data Integrity**     | Soft delete cho mọi entity chính, documentCode unique tự sinh; version cũ không bị ghi đè                    |
 | 9   | **API Standard**       | RESTful API, OpenAPI 3 / Swagger documentation                                                               |
 | 10  | **Response Format**    | Tất cả endpoint trả JSON thống nhất qua `ApiResponse<T>`                                                     |
 | 11  | **Preview Safety**     | Nội dung preview phải được sanitize khi render HTML để tránh XSS                                             |
+| 12  | **Batch Robustness**    | Batch operations phải trả partial success theo từng item, không thất bại toàn bộ vì một item lỗi             |
+| 13  | **Retention**           | Tài liệu trong thùng rác tự purge sau 30 ngày; audit logs vẫn được giữ                                       |
 
 ### Auth, CSRF & CORS Decisions
 
@@ -335,31 +436,37 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 - Upload tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu upload object thành công nhưng MySQL transaction fail, hệ thống phải ghi nhận hoặc lên lịch cleanup orphan object.
 - Extraction/indexing chỉ chạy sau khi MySQL commit thành công bằng after-commit event hoặc retry queue.
 - Nếu extraction hoặc indexing fail sau khi DB commit, document/version giữ trạng thái `PROCESSING` hoặc chuyển `EXTRACTION_FAILED`; không rollback metadata đã commit.
-- Delete/archive/restore cập nhật MySQL trước, sau đó đồng bộ Elasticsearch async. Soft delete không xóa object vật lý ngay.
-- Object deletion vật lý chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được MySQL tham chiếu.
+- Delete/archive/restore/move cập nhật MySQL trước, sau đó đồng bộ Elasticsearch async. Soft delete không xóa object vật lý ngay.
+- Object deletion vật lý chạy bằng cleanup job theo retention policy; orphan cleanup xử lý object không còn được MySQL tham chiếu, trash purge xử lý document `DELETED` đã quá `purge_after`.
 - Batch reindex nightly dùng để self-heal lệch index; job này đọc MySQL/document content làm nguồn chính và ghi lại Elasticsearch.
 
 ---
 
-## 11. Acceptance Criteria
+## 13. Acceptance Criteria
 
-| #   | Tiêu chí nghiệm thu                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------ |
-| 1   | Admin có thể upload file hợp lệ, metadata được lưu và tài liệu được index vào Elasticsearch.           |
-| 2   | User có thể tìm tài liệu theo từ khóa trong title, description và extracted content.                   |
-| 3   | Kết quả search trả về trong P95 < 500ms với dưới 10k documents.                                        |
-| 4   | User không thấy tài liệu không có quyền truy cập trong search, preview, download hoặc metadata detail. |
-| 5   | Search result có highlight snippet cho nội dung khớp nếu Elasticsearch trả về highlight.               |
-| 6   | File không hợp lệ, file vượt quá 50 MB hoặc file thuộc extension bị chặn phải bị từ chối.              |
-| 7   | Tài liệu bị xóa mềm không xuất hiện trong search và không thể preview/download bởi User.               |
-| 8   | Upload version mới không làm mất version cũ và search mặc định dùng version hiện hành.                 |
-| 9   | Preview PDF hoạt động trực tiếp trên browser; Word/Excel có preview qua bản convert PDF/HTML.          |
-| 10  | Hệ thống ghi access log cho preview/download và search history cho truy vấn tìm kiếm.                  |
-| 11  | Admin có thể xem dashboard thống kê số tài liệu, lượt xem, lượt tải và từ khóa tìm kiếm.               |
+| #   | Tiêu chí nghiệm thu |
+| --- | ------------------- |
+| 1   | Admin upload được file hợp lệ; backend tự sinh `documentCode`, metadata được lưu, tài liệu chuyển `PROCESSING` và được index vào Elasticsearch khi xử lý thành công. |
+| 2   | Admin batch upload nhiều file; mỗi file hợp lệ tạo document/mã riêng, file lỗi trả lỗi theo item và không rollback file hợp lệ. |
+| 3   | User tìm được tài liệu theo title, description, extracted content, tags và mã tài liệu; kết quả search có highlight khi Elasticsearch trả về highlight. |
+| 4   | Kết quả search trả về trong P95 < 500ms với dưới 10k documents. |
+| 5   | User không thấy title/snippet/metadata/download URL của tài liệu không có quyền trong search, preview, download hoặc detail. |
+| 6   | File sai MIME/extension, vượt 50 MB hoặc thuộc extension bị chặn bị backend từ chối. |
+| 7   | Preview PDF hoạt động trực tiếp trên browser; Word/Excel có preview qua bản convert PDF/HTML đã sanitize. |
+| 8   | Download trả file gốc với quyền hợp lệ, tăng `download_count` và ghi access log. |
+| 9   | Upload version mới không làm mất version cũ; search/preview/download mặc định dùng current version hợp lệ. |
+| 10  | Admin xóa một/nhiều tài liệu thì tài liệu vào Thùng rác, có `deletedAt`, `deletedBy`, `purgeAfter`, không xuất hiện trong search/preview/download của User. |
+| 11  | Admin restore được tài liệu từ Thùng rác trước hạn purge; hệ thống clear deleted fields và re-index nếu cần. |
+| 12  | Hệ thống tự purge tài liệu trong Thùng rác sau 30 ngày hoặc khi Admin permanent delete; storage/content/search artifacts được xóa theo policy, audit logs được giữ. |
+| 13  | Admin chuyển một/nhiều tài liệu sang danh mục/folder khác; category cũ/mới được audit và Elasticsearch metadata được re-index. |
+| 14  | Dashboard MH07 hiển thị tổng dung lượng file toàn hệ thống theo MB, tách active/trash/version nếu cần. |
+| 15  | Dashboard MH07 hiển thị dữ liệu truy cập hệ thống: login, active users, unique access users, preview/download/search/denied access. |
+| 16  | Admin xem được tài liệu lỗi xử lý kèm lý do lỗi (`errorCode`, `errorMessage`, stage lỗi), retry count và action retry. |
+| 17  | Hệ thống ghi audit/access/search logs cho upload, update, delete/restore/move, batch action, preview/download và search. |
 
 ---
 
-## 12. Tài liệu liên quan
+## 14. Tài liệu liên quan
 
 | Tài liệu              | Đường dẫn                                                    |
 | --------------------- | ------------------------------------------------------------ |
