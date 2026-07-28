@@ -224,7 +224,7 @@ volumes:
     rabbitmq-data:
 ```
 
-> Compose trên phục vụ development. Production không expose PostgreSQL, Redis, RabbitMQ management UI hoặc object storage nội bộ ra public network. Bucket object storage luôn private; browser chỉ truy cập bằng presigned URL và CORS allowlist theo frontend origin. PostgreSQL cần extension `unaccent`, `pg_trgm` và tùy chọn `vector` được tạo bằng Flyway migration.
+> Compose trên phục vụ development. Production không expose PostgreSQL, Redis, RabbitMQ management UI hoặc object storage nội bộ ra public network. Bucket object storage luôn private; browser chỉ truy cập bằng presigned URL và CORS allowlist theo frontend origin. PostgreSQL cần extension `unaccent`, `pg_trgm` và tùy chọn `vector`; dev/local có thể tạo bằng Flyway migration, còn staging/production cần DBA/platform pre-provision hoặc cấp quyền tạo extension cho migration user trước khi chạy migration.
 
 ---
 

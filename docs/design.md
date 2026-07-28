@@ -449,6 +449,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
+Dev/local có thể tạo các extension này bằng Flyway migration. Với staging/production, cần DBA/platform pre-provision extension hoặc cấp quyền tạo extension cho migration user trước khi chạy migration, vì một số cấu hình PostgreSQL không cho application user tạo extension.
+
 ### Table: `document_search_index`
 
 | Column | Type | Constraints | Usage |

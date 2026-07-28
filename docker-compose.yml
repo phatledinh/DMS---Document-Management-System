@@ -1,0 +1,159 @@
+services:
+    # frontend:
+    #     build:
+    #         context: ./frontend
+    #         dockerfile: Dockerfile
+    #     ports:
+    #         - "3000:80"
+    #     depends_on:
+    #         backend:
+    #             condition: service_healthy
+    #     environment:
+    #         - VITE_API_URL=http://localhost:8080/api/v1
+
+
+    backend:
+        image: qlktl-backend:latest
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        ports:
+            - "8080:8080"
+        depends_on:
+            postgresql:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+        environment:
+            - SPRING_PROFILES_ACTIVE=dev
+            - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
+            - SPRING_DATASOURCE_USERNAME=postgres
+            - SPRING_DATASOURCE_PASSWORD=123456
+            - SPRING_REDIS_HOST=redis
+            - SPRING_REDIS_PORT=6379
+            - JWT_SECRET=your-256-bit-secret-key-here
+            - JWT_ACCESS_EXPIRATION=900000
+            - JWT_REFRESH_EXPIRATION=604800000
+            - STORAGE_ENDPOINT=http://minio:9000
+            - STORAGE_BUCKET=dms-documents
+            - STORAGE_ACCESS_KEY=dms_minio
+            - STORAGE_SECRET_KEY=dms_minio_password
+            - STORAGE_REGION=auto
+            - STORAGE_PATH_STYLE_ACCESS=true
+            - FILE_MAX_SIZE=52428800
+            - CORS_ORIGINS=http://localhost:3000
+            - STORAGE_PRESIGNED_UPLOAD_TTL=PT5M
+            - STORAGE_PRESIGNED_DOWNLOAD_TTL=PT5M
+            - SPRING_RABBITMQ_HOST=rabbitmq
+            - SPRING_RABBITMQ_PORT=5672
+            - SPRING_RABBITMQ_USERNAME=dms
+            - SPRING_RABBITMQ_PASSWORD=dms_password
+            - PROCESSING_MAX_ATTEMPTS=3
+        healthcheck:
+            test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/actuator/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 60s
+
+    worker:
+        image: qlktl-worker:latest
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        depends_on:
+            postgresql:
+                condition: service_healthy
+            minio:
+                condition: service_healthy
+            rabbitmq:
+                condition: service_healthy
+        environment:
+            - SPRING_PROFILES_ACTIVE=worker,dev
+            - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
+            - SPRING_DATASOURCE_USERNAME=postgres
+            - SPRING_DATASOURCE_PASSWORD=123456
+            - SPRING_RABBITMQ_HOST=rabbitmq
+            - SPRING_RABBITMQ_PORT=5672
+            - SPRING_RABBITMQ_USERNAME=dms
+            - SPRING_RABBITMQ_PASSWORD=dms_password
+            - STORAGE_ENDPOINT=http://minio:9000
+            - STORAGE_BUCKET=dms-documents
+            - STORAGE_ACCESS_KEY=dms_minio
+            - STORAGE_SECRET_KEY=dms_minio_password
+            - STORAGE_REGION=auto
+            - STORAGE_PATH_STYLE_ACCESS=true
+            - PROCESSING_MAX_ATTEMPTS=3
+
+    rabbitmq:
+        image: rabbitmq:3-management
+        ports:
+            - "5672:5672"
+            - "15672:15672"
+        environment:
+            - RABBITMQ_DEFAULT_USER=dms
+            - RABBITMQ_DEFAULT_PASS=dms_password
+        volumes:
+            - rabbitmq-data:/var/lib/rabbitmq
+        healthcheck:
+            test: ["CMD", "rabbitmq-diagnostics", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+
+    postgresql:
+        image: pgvector/pgvector:pg17
+        ports:
+            - "5432:5432"
+        environment:
+            - POSTGRES_DB=dms
+            - POSTGRES_USER=postgres
+            - POSTGRES_PASSWORD=123456
+            - TZ=Asia/Ho_Chi_Minh
+        volumes:
+            - postgresql-data:/var/lib/postgresql/data
+            - ./backend/src/main/resources/db/migration:/docker-entrypoint-initdb.d
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres -d dms"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+
+    redis:
+        image: redis:7-alpine
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis-data:/data
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+
+    minio:
+        image: minio/minio:latest
+        command: server /data --console-address ":9001"
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        environment:
+            - MINIO_ROOT_USER=dms_minio
+            - MINIO_ROOT_PASSWORD=dms_minio_password
+        volumes:
+            - minio-data:/data
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+
+volumes:
+    postgresql-data:
+    redis-data:
+    minio-data:
+    rabbitmq-data:

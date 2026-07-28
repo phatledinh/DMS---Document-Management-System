@@ -1,0 +1,62 @@
+server:
+    port: 8080
+    servlet:
+        context-path: /api/v1
+
+spring:
+    servlet:
+        multipart:
+            max-file-size: 1MB
+            max-request-size: 1MB
+
+    rabbitmq:
+        host: ${SPRING_RABBITMQ_HOST:localhost}
+        port: ${SPRING_RABBITMQ_PORT:5672}
+        username: ${SPRING_RABBITMQ_USERNAME:dms}
+        password: ${SPRING_RABBITMQ_PASSWORD:dms_password}
+
+    datasource:
+        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dms}
+        username: ${SPRING_DATASOURCE_USERNAME:postgres}
+        password: ${SPRING_DATASOURCE_PASSWORD:123456}
+
+    jpa:
+        hibernate:
+            ddl-auto: validate
+        show-sql: false
+        properties:
+            hibernate:
+                format_sql: true
+                dialect: org.hibernate.dialect.PostgreSQLDialect
+
+    jackson:
+        date-format: yyyy-MM-dd'T'HH:mm:ss
+        time-zone: Asia/Ho_Chi_Minh
+
+app:
+    jwt:
+        secret: ${JWT_SECRET}
+        access-expiration: ${JWT_ACCESS_EXPIRATION:900000}
+        refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+    storage:
+        s3:
+            endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+            bucket: ${STORAGE_BUCKET:dms-documents}
+            access-key: ${STORAGE_ACCESS_KEY}
+            secret-key: ${STORAGE_SECRET_KEY}
+            region: ${STORAGE_REGION:auto}
+            path-style-access: ${STORAGE_PATH_STYLE_ACCESS:true}
+        max-file-size: ${FILE_MAX_SIZE:52428800}
+        presigned-upload-ttl: ${STORAGE_PRESIGNED_UPLOAD_TTL:PT5M}
+        presigned-download-ttl: ${STORAGE_PRESIGNED_DOWNLOAD_TTL:PT5M}
+    cors:
+        allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+    search:
+        language: ${SEARCH_LANGUAGE:simple}
+        enable-unaccent: true
+        enable-trigram: true
+        enable-vector-search: ${SEARCH_ENABLE_VECTOR:false}
+    processing:
+        thread-pool-size: ${PROCESSING_THREAD_POOL_SIZE:4}
+        retry-interval: ${PROCESSING_RETRY_INTERVAL:PT30M}
+        max-retry-count: ${PROCESSING_MAX_RETRY_COUNT:5}

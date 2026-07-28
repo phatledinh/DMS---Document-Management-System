@@ -13,7 +13,7 @@
 │  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
 │  │   FRONTEND     │  │   BACKEND      │  │   DATABASE    │  │
 │  │                │  │                │  │               │  │
-│  │  React 18+     │  │  Spring Boot 3 │  │  PostgreSQL 17+ │  │
+│  │  React 18+     │  │  Spring Boot 4 │  │  PostgreSQL 17+ │  │
 │  │  Vite          │  │  Java 25       │  │  Redis          │  │
 │  │  JavaScript    │  │  Spring Sec 6  │  │  FTS + pg_trgm  │  │
 │  └────────────────┘  └────────────────┘  └───────────────┘  │
@@ -125,7 +125,7 @@ frontend/
 | Công nghệ | Version | Mô tả |
 |-----------|---------|-------|
 | **Java** | 25 | Ngôn ngữ chính; dùng JDK 25 cho build/runtime |
-| **Spring Boot** | 3.x | Framework chính, chạy trên Java 25 |
+| **Spring Boot** | 4.1.x | Framework chính, chạy trên Java 25 |
 | **Spring Web** | — | REST API |
 | **Spring Security** | 6.x | Authentication & Authorization |
 | **Spring Data JPA** | — | ORM / Database access |
@@ -383,7 +383,7 @@ backend/
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
 | Java | 25 | 25 |
-| Spring Boot | 3.0 | 3.2+ |
+| Spring Boot | 4.1.0 | 4.1+ |
 | Node.js | 18 | 20 LTS |
 | React | 18 | 18.2+ |
 | PostgreSQL | 17 | 17+ / managed latest stable |
