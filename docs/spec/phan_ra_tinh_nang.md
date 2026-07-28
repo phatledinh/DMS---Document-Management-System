@@ -88,11 +88,11 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Upload một file tài liệu mới kèm metadata, ACL và version đầu tiên |
-| Input | `file` (required, max 50MB), `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Output | Document record với status = `PROCESSING` |
-| Business Rules | - Mỗi request chỉ upload 1 file<br>- Validate MIME type thực tế, extension và file size ≤ 50MB<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` phải unique nếu có<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
-| API | `POST /documents` 👑 (multipart/form-data) |
+| Mô tả | Khởi tạo upload bằng presigned URL, client PUT file trực tiếp lên object storage, complete để validate và tạo version đầu tiên |
+| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
+| Output | `upload-init` trả document `AWAITING_UPLOAD` + presigned PUT URL; `upload-complete` chuyển document sang `PROCESSING` |
+| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` phải unique nếu có<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
+| API | `POST /documents/upload-init` 👑, `POST /documents/{id}/upload-complete` 👑 |
 
 ### F2.2: Trích xuất nội dung file (Content Extraction)
 
@@ -102,7 +102,7 @@
 | Mô tả | Tự động trích xuất text từ file sau khi upload |
 | Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → Tesseract OCR |
 | Output | `extracted_content` lưu trong `document_contents` |
-| Business Rules | - Chạy async/background<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan phải chạy OCR để tạo `extracted_content` khi có thể<br>- Retry tự động mỗi 30 phút cho lỗi extraction/index tạm thời |
+| Business Rules | - Chạy trong RabbitMQ worker, không chạy in-process trong API server<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan publish task `dms.ocr` để tạo `extracted_content` khi có thể<br>- Retry qua RabbitMQ delay queues `30s -> 5m -> 30m`, vượt `maxAttempts = 3` thì vào DLQ và alert |
 
 ### F2.3: Danh sách tài liệu
 
@@ -122,7 +122,7 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Xem chi tiết metadata tài liệu |
-| Business Rules | - Kiểm tra quyền trước khi trả metadata, `previewUrl`, `downloadUrl`<br>- User không có quyền không được thấy title, snippet, metadata hoặc URL tải file<br>- Tài liệu `DELETED` không được trả cho User<br>- Chỉ tăng `view_count` khi người dùng preview, không tăng khi chỉ xem metadata |
+| Business Rules | - Kiểm tra quyền trước khi trả metadata và endpoint lấy `preview-url`/`download-url`; không trả object key thô<br>- User không có quyền không được thấy title, snippet, metadata hoặc URL tải file<br>- Tài liệu `DELETED` không được trả cho User<br>- Chỉ tăng `view_count` khi người dùng preview, không tăng khi chỉ xem metadata |
 | API | `GET /documents/{id}` 🔒 |
 
 ### F2.5: Cập nhật metadata và ACL tài liệu
@@ -132,7 +132,7 @@
 | Actor | Admin |
 | Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và ACL |
 | Input | `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- `documentCode` phải unique nếu thay đổi<br>- Cập nhật metadata/ACL phải đồng bộ lại Elasticsearch index<br>- Ghi audit log các field thay đổi |
+| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- `documentCode` phải unique nếu thay đổi<br>- Cập nhật metadata/ACL phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
 | API | `PUT /documents/{id}` 👑 |
 
 ### F2.6: Xóa tài liệu
@@ -150,9 +150,9 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Xem tài liệu trực tiếp trên trình duyệt |
-| Processing | - PDF → Stream trực tiếp<br>- DOCX/DOC → Convert → PDF hoặc HTML preview<br>- XLS/XLSX → Convert → HTML table hoặc PDF<br>- Image → Stream trực tiếp |
-| Business Rules | - Kiểm tra quyền bằng cùng logic với search/detail/download<br>- User chỉ preview tài liệu `INDEXED` và không `DELETED`<br>- HTML preview phải sanitize để tránh XSS<br>- Tăng `view_count` và ghi access log preview |
-| API | `GET /documents/{id}/preview` 🔒 |
+| Processing | - PDF/image → presigned GET URL inline tới object gốc<br>- DOCX/DOC → worker convert preview artifact PDF/HTML rồi presigned GET URL inline<br>- XLS/XLSX → worker convert HTML/PDF preview artifact rồi presigned GET URL inline |
+| Business Rules | - Kiểm tra quyền bằng cùng logic với search/detail/download<br>- User chỉ preview tài liệu `INDEXED` và không `DELETED`<br>- HTML preview phải sanitize để tránh XSS<br>- Tăng `view_count` và ghi access log preview tại thời điểm cấp presigned URL |
+| API | `GET /documents/{id}/preview-url` 🔒 |
 
 ### F2.8: Download tài liệu
 
@@ -160,18 +160,18 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Tải file gốc về máy |
-| Business Rules | - Kiểm tra quyền bằng cùng logic với search/detail/preview<br>- User chỉ download tài liệu `INDEXED` và không `DELETED`<br>- Tự động tăng `download_count`<br>- Trả file với `Content-Disposition: attachment`<br>- Ghi access log download |
-| API | `GET /documents/{id}/download` 🔒 |
+| Business Rules | - Kiểm tra quyền bằng cùng logic với search/detail/preview<br>- User chỉ download tài liệu `INDEXED` và không `DELETED`<br>- Tự động tăng `download_count` tại thời điểm cấp presigned URL<br>- Presigned URL set `Content-Disposition: attachment`<br>- Ghi access log download tại thời điểm cấp URL |
+| API | `GET /documents/{id}/download-url` 🔒 |
 
 ### F2.9: Upload phiên bản mới
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Upload file phiên bản mới cho tài liệu đã tồn tại |
-| Input | `file` (required), `versionNumber` (required), `changelog` |
-| Business Rules | - File/version cũ giữ lại trong lịch sử, không ghi đè<br>- Version mới trở thành current version mặc định<br>- Cập nhật `version_number` trong documents<br>- Trích xuất nội dung mới và re-index Elasticsearch<br>- Ghi audit log |
-| API | `POST /documents/{id}/versions` 👑 |
+| Mô tả | Khởi tạo presigned upload cho file phiên bản mới và complete sau khi client PUT xong |
+| Input | `fileName`, `fileSize`, `contentType`, `versionNumber`, `changelog` |
+| Business Rules | - File/version cũ giữ lại trong lịch sử, không ghi đè<br>- Version mới trở thành current version mặc định<br>- Cập nhật `version_number` trong documents<br>- Trích xuất nội dung mới và refresh PostgreSQL search vector<br>- Ghi audit log |
+| API | `POST /documents/{id}/versions/init` 👑, `POST /documents/{id}/versions/{versionId}/complete` 👑 |
 
 ### F2.10: Xem lịch sử phiên bản
 
@@ -189,7 +189,7 @@
 | Actor | Admin, User |
 | Mô tả | Tải file của một phiên bản cụ thể |
 | Business Rules | - Kiểm tra quyền truy cập tài liệu trước khi tải<br>- Ghi access log download version nếu cần thống kê chi tiết |
-| API | `GET /documents/{id}/versions/{versionId}/download` 🔒 |
+| API | `GET /documents/{id}/versions/{versionId}/download-url` 🔒 |
 
 ### F2.12: Khôi phục phiên bản cũ làm current version
 
@@ -197,7 +197,7 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Chọn một phiên bản cũ làm phiên bản hiện hành |
-| Business Rules | - Không xóa version hiện tại<br>- Cập nhật current version<br>- Trích xuất lại nội dung và re-index Elasticsearch theo version được restore<br>- Ghi audit log |
+| Business Rules | - Không xóa version hiện tại<br>- Cập nhật current version<br>- Trích xuất lại nội dung và refresh PostgreSQL search vector theo version được restore<br>- Ghi audit log |
 | API | `POST /documents/{id}/versions/{versionId}/restore` 👑 |
 
 ### F2.13: Archive tài liệu
@@ -215,16 +215,16 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Khôi phục tài liệu đã archive/delete |
-| Business Rules | - Restore từ `ARCHIVED` hoặc `DELETED` về `PROCESSING` hoặc `INDEXED` tùy trạng thái file/index<br>- Nếu cần, chạy lại extraction/indexing trước khi tài liệu xuất hiện với User<br>- Ghi audit log |
+| Business Rules | - Restore từ `ARCHIVED` hoặc `DELETED` về `PROCESSING` hoặc `INDEXED` tùy trạng thái file/index<br>- Nếu cần, chạy lại extraction/search refresh trước khi tài liệu xuất hiện với User<br>- Ghi audit log |
 | API | `POST /documents/{id}/restore` 👑 |
 
-### F2.15: Retry extraction/indexing thủ công
+### F2.15: Retry extraction/search refresh thủ công
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Cho phép Admin retry xử lý tài liệu đang `EXTRACTION_FAILED` |
-| Business Rules | - Chỉ áp dụng cho lỗi extraction/indexing có thể retry<br>- Cập nhật status sang `PROCESSING` trong lúc chạy lại<br>- Thành công chuyển `INDEXED`, thất bại giữ `EXTRACTION_FAILED`<br>- Ghi audit log |
+| Business Rules | - Chỉ áp dụng cho lỗi extraction/search refresh có thể retry<br>- Cập nhật status sang `PROCESSING` trong lúc chạy lại<br>- Thành công chuyển `INDEXED`, thất bại giữ `EXTRACTION_FAILED`<br>- Ghi audit log |
 | API | `POST /documents/{id}/retry-indexing` 👑 |
 
 ---
@@ -247,7 +247,7 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | System |
-| Mô tả | Lọc quyền truy cập ngay trong Elasticsearch query |
+| Mô tả | Lọc quyền truy cập ngay trong PostgreSQL FTS query |
 | Business Rules | - Search query phải filter theo quyền trước khi trả kết quả<br>- User không có quyền không được thấy title, snippet, metadata hoặc download URL<br>- Search, metadata detail, preview và download dùng cùng logic phân quyền |
 
 ### F3.3: Highlight kết quả
@@ -256,7 +256,7 @@
 |------------|----------|
 | Actor | System |
 | Mô tả | Đánh dấu `<em>` tại vị trí match trong tiêu đề, mô tả và nội dung |
-| Business Rules | - Sử dụng Elasticsearch native highlight cho `title`, `description`, `extracted_content`<br>- Backend sanitize highlight trước khi trả về frontend |
+| Business Rules | - Sử dụng PostgreSQL ts_headline highlight cho `title`, `description`, `extracted_content`<br>- Backend sanitize highlight trước khi trả về frontend |
 
 ### F3.4: Sắp xếp kết quả
 
@@ -300,7 +300,7 @@
 |------------|----------|
 | Actor | System |
 | Mô tả | Cải thiện chất lượng tìm kiếm tiếng Việt và lỗi chính tả |
-| Business Rules | - Ưu tiên relevance: exact `document_code` → title → tags → description → extracted_content<br>- Hỗ trợ fuzzy search cho lỗi chính tả<br>- Hỗ trợ synonym và Vietnamese analyzer nếu cấu hình Elasticsearch cho phép<br>- Boost nhẹ tài liệu mới hơn hoặc có lượt xem/tải cao hơn |
+| Business Rules | - Ưu tiên relevance: exact `document_code` → title → tags → description → extracted_content<br>- Hỗ trợ fuzzy search cho lỗi chính tả<br>- Hỗ trợ synonym và Vietnamese analyzer nếu cấu hình PostgreSQL FTS cho phép<br>- Boost nhẹ tài liệu mới hơn hoặc có lượt xem/tải cao hơn |
 
 ---
 
@@ -313,7 +313,7 @@
 | Actor | Admin (write), User (read) |
 | Mô tả | Quản lý danh mục phân loại tài liệu |
 | Đặc biệt | - Hỗ trợ cây phân cấp (parent_id)<br>- Có `sort_order` để sắp xếp<br>- Có `icon` hoặc class hiển thị<br>- Trả về `documentCount` theo quyền người xem nếu dùng cho User |
-| Business Rules | - Soft delete category<br>- Re-index tài liệu bị ảnh hưởng khi metadata search/filter thay đổi |
+| Business Rules | - Soft delete category<br>- Refresh search row cho tài liệu bị ảnh hưởng khi metadata search/filter thay đổi |
 | API | `GET/POST/PUT/DELETE /categories`, `/categories/{id}` |
 
 ### F4.4–F4.6: CRUD Department (Phòng ban)
@@ -323,7 +323,7 @@
 | Actor | Admin (write), User (read) |
 | Mô tả | Quản lý phòng ban |
 | Đặc biệt | - Có `code` unique (HR, IT, FIN...)<br>- Có `is_active` flag |
-| Business Rules | - Gán phòng ban cho user phục vụ access level `DEPARTMENT`<br>- Re-index tài liệu bị ảnh hưởng khi department ACL/filter thay đổi |
+| Business Rules | - Gán phòng ban cho user phục vụ access level `DEPARTMENT`<br>- Refresh search row cho tài liệu bị ảnh hưởng khi department ACL/filter thay đổi |
 | API | `GET/POST/PUT/DELETE /departments`, `/departments/{id}` |
 
 ### F4.7–F4.9: CRUD Tag (Nhãn)
@@ -333,7 +333,7 @@
 | Actor | Admin (write), User (read) |
 | Mô tả | Quản lý nhãn gắn cho tài liệu |
 | Đặc biệt | - `slug` tự động sinh từ `name`<br>- Trả về `documentCount` theo quyền người xem nếu dùng cho User |
-| Business Rules | - Soft delete tag<br>- Re-index tài liệu bị ảnh hưởng khi tag metadata thay đổi |
+| Business Rules | - Soft delete tag<br>- Refresh search row cho tài liệu bị ảnh hưởng khi tag metadata thay đổi |
 | API | `GET/POST/PUT/DELETE /tags`, `/tags/{id}` |
 
 ---
@@ -385,7 +385,7 @@
 | Metrics | Preview count, download count, unique users |
 | API | `GET /admin/dashboard/access-stats` 👑 |
 
-### F5.6: Thống kê lỗi processing/indexing
+### F5.6: Thống kê lỗi processing/search refresh
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
@@ -411,7 +411,7 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | System |
-| Mô tả | Ghi nhận hành động preview và download tài liệu |
+| Mô tả | Ghi nhận hành động cấp presigned URL preview và download tài liệu |
 | Data | `userId`, `documentId`, `action`, `timestamp` |
 
 ### F6.3: Ghi search log
@@ -458,20 +458,22 @@
 | 9 | PUT | `/users/{id}` | 👑 | F1.6 — Cập nhật user |
 | 10 | DELETE | `/users/{id}` | 👑 | F1.6 — Xóa mềm/deactivate user |
 | | | **Document** | | |
-| 11 | POST | `/documents` | 👑 | F2.1 — Upload tài liệu |
+| 11 | POST | `/documents/upload-init` | 👑 | F2.1 — Khởi tạo upload tài liệu |
+| 12 | POST | `/documents/{id}/upload-complete` | 👑 | F2.1 — Xác nhận upload tài liệu |
 | 12 | GET | `/documents` | 🔒 | F2.3 — Danh sách |
 | 13 | GET | `/documents/{id}` | 🔒 | F2.4 — Chi tiết |
 | 14 | PUT | `/documents/{id}` | 👑 | F2.5 — Cập nhật metadata và ACL |
 | 15 | DELETE | `/documents/{id}` | 👑 | F2.6 — Xóa mềm |
-| 16 | GET | `/documents/{id}/preview` | 🔒 | F2.7 — Preview |
-| 17 | GET | `/documents/{id}/download` | 🔒 | F2.8 — Download |
+| 16 | GET | `/documents/{id}/preview-url` | 🔒 | F2.7 — Lấy URL preview |
+| 17 | GET | `/documents/{id}/download-url` | 🔒 | F2.8 — Lấy URL download |
 | 18 | GET | `/documents/{id}/versions` | 🔒 | F2.10 — Lịch sử phiên bản |
-| 19 | POST | `/documents/{id}/versions` | 👑 | F2.9 — Upload version mới |
-| 20 | GET | `/documents/{id}/versions/{versionId}/download` | 🔒 | F2.11 — Tải version cũ |
-| 21 | POST | `/documents/{id}/versions/{versionId}/restore` | 👑 | F2.12 — Restore version cũ |
+| 19 | POST | `/documents/{id}/versions/init` | 👑 | F2.9 — Khởi tạo upload version mới |
+| 20 | GET | `/documents/{id}/versions/{versionId}/download-url` | 🔒 | F2.11 — Lấy URL tải version cũ |
+| 21 | POST | `/documents/{id}/versions/{versionId}/complete` | 👑 | F2.9 — Xác nhận upload version mới |
+| 22 | POST | `/documents/{id}/versions/{versionId}/restore` | 👑 | F2.12 — Restore version cũ |
 | 22 | POST | `/documents/{id}/archive` | 👑 | F2.13 — Archive tài liệu |
 | 23 | POST | `/documents/{id}/restore` | 👑 | F2.14 — Restore tài liệu |
-| 24 | POST | `/documents/{id}/retry-indexing` | 👑 | F2.15 — Retry extraction/indexing |
+| 24 | POST | `/documents/{id}/retry-indexing` | 👑 | F2.15 — Retry extraction/search refresh |
 | | | **Search** | | |
 | 25 | GET | `/documents/search` | 🔒 | F3.1 — Tìm kiếm full-text |
 | 26 | GET | `/documents/search/suggestions` | 🔒 | F3.7 — Suggestions/autocomplete |
@@ -485,7 +487,7 @@
 | 44 | GET | `/admin/dashboard/recent-uploads` | 👑 | F5.3 — Tài liệu upload gần đây |
 | 45 | GET | `/admin/dashboard/top-search-keywords` | 👑 | F5.4 — Top từ khóa tìm kiếm |
 | 46 | GET | `/admin/dashboard/access-stats` | 👑 | F5.5 — Thống kê preview/download |
-| 47 | GET | `/admin/dashboard/processing-errors` | 👑 | F5.6 — Lỗi processing/indexing |
+| 47 | GET | `/admin/dashboard/processing-errors` | 👑 | F5.6 — Lỗi processing/search refresh |
 | | | **Audit & Access Log** | | |
 | 48 | GET | `/admin/audit-logs` | 👑 | F6.4 — Xem audit/access log |
 

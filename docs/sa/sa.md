@@ -10,45 +10,33 @@
                          ┌──────────────────────┐
                          │   Client (SPA/Web)    │
                          │   React + Vite        │
-                         └──────────┬────────────┘
-                                    │ HTTPS
+                         └───────┬────────┬──────┘
+                                 │ HTTPS  │ Presigned PUT/GET
+                                 ▼        ▼
+                         ┌──────────────────────┐        ┌──────────────┐
+                         │   API Gateway /       │        │ S3-compatible│
+                         │   Spring Boot API     │        │ Object Store │
+                         │   (profile=api)       │        │ MinIO / R2   │
+                         └──────────┬───────────┘        └──────┬───────┘
+                                    │ publish after commit       │ pull file / write artifact
+                                    ▼                            │
+                              ┌──────────┐                       │
+                              │ RabbitMQ │                       │
+                              │ dms.tasks│                       │
+                              └────┬─────┘                       │
+                                   ▼                             │
+                         ┌──────────────────────┐                │
+                         │ Spring Boot Worker   │◀───────────────┘
+                         │ (profile=worker)     │
+                         │ extract/ocr/preview/ │
+                         │ index consumers      │
+                         └──────────┬───────────┘
                                     ▼
-                         ┌──────────────────────┐
-                         │   API Gateway /       │
-                         │   Spring Boot App     │
-                         └──────────┬────────────┘
-                                    │
-          ┌────────────────────┬────┴────┬─────────────────────┐
-          ▼                    ▼         ▼                     ▼
- ┌─────────────────┐  ┌────────────┐  ┌────────────────┐  ┌──────────────┐
- │   Controller    │  │  Security  │  │  Exception     │  │  File Upload │
- │   (REST API)    │  │  (JWT)     │  │  Handler       │  │  Handler     │
- └────────┬────────┘  └────────────┘  └────────────────┘  └──────────────┘
-          │
-          ▼
- ┌───────────────────────────────┐
- │     Application Layer         │ (Use Cases / Orchestration)
- │  DocumentUploadUseCase        │
- │  DocumentSearchUseCase        │
- │  ContentExtractionUseCase     │
- └──────────────┬────────────────┘
-                │
-                ▼
- ┌───────────────────────────────┐
- │     Domain Services           │ (Business Logic)
- │  DocumentService              │
- │  CategoryService              │
- │  SearchService                │
- │  ContentExtractorService      │
- └──────────────┬────────────────┘
-                │
-    ┌───────────┼────────────────┐
-    ▼           ▼                ▼
-┌────────┐ ┌──────────────┐ ┌──────────────────┐
-│ MySQL  │ │ S3-compatible│ │ Elasticsearch    │
-│ (Meta) │ │ Object Store │ │ (Full-text)      │
-└────────┘ └──────────────┘ └──────────────────┘
+        ┌────────────────────────────────────────────────────────────┐
+        │ PostgreSQL DB + FTS + ACL + lifecycle + document contents  │
+        └────────────────────────────────────────────────────────────┘
 ```
+
 
 ---
 
@@ -58,7 +46,7 @@
 
 - **Domain Services**: (`DocumentService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
 - **Application Layer** (Use Cases): (`DocumentUploadUseCase`, `DocumentSearchUseCase`). Điều phối nhiều Domain Services.
-  - Ví dụ: `DocumentUploadUseCase` sẽ gọi `S3StorageService` (lưu object qua S3-compatible API; dev dùng MinIO, production dùng Cloudflare R2) → `ContentExtractorService` (trích xuất text) → `DocumentService` (lưu metadata) → `SearchIndexService` (đánh index).
+  - Ví dụ: `DocumentUploadUseCase` điều phối `upload-init`/`upload-complete`: lưu metadata `AWAITING_UPLOAD`, ký presigned URL bằng `S3StorageService`, validate object ở complete, chuyển `PROCESSING`, rồi publish RabbitMQ message sau commit. `ContentExtractorService` và `SearchRefreshService` chạy trong worker profile, không nằm trên request path của API server.
 
 ### 2.2 Strategy Pattern — Content Extraction
 
@@ -83,31 +71,31 @@ public interface ContentExtractor {
 
 `ContentExtractorService` tự chọn đúng `ContentExtractor` dựa trên `mimeType` của file.
 
-### 2.3 Observer Pattern — Search Index Sync
+### 2.3 Observer Pattern — Search Refresh
 
-Khi tài liệu được tạo/sửa/xóa, cần đồng bộ sang Search Engine. Sử dụng **Spring Application Events**:
+Khi tài liệu được tạo/sửa/xóa, cần refresh search row/vector trong PostgreSQL. Sử dụng publish RabbitMQ sau commit cho task nặng; event nội bộ chỉ dùng để gom dữ liệu và đảm bảo publish sau khi transaction thành công:
 
 ```text
-DocumentCreatedEvent  → SearchIndexListener (index document)
-DocumentUpdatedEvent  → SearchIndexListener (re-index)
-DocumentDeletedEvent  → SearchIndexListener (remove from index)
+DocumentUploadCompletedEvent  → publish dms.extract
+DocumentMetadataChangedEvent  → publish dms.index
+DocumentDeletedEvent          → publish dms.index hoặc cleanup marker theo retention policy
 ```
 
 ### 2.4 Adapter Pattern — Search Engine Abstraction
 
-Trừu tượng hóa lớp gọi Elasticsearch để tách business logic khỏi chi tiết query/indexing:
+Trừu tượng hóa lớp gọi PostgreSQL FTS để tách business logic khỏi chi tiết query và refresh search vector:
 
 ```java
 public interface SearchEngine {
     SearchResult search(SearchQuery query);
-    void index(DocumentIndex document);
-    void delete(Long documentId);
-    void reindexAll();
+    void refresh(DocumentSearchRow document);
+    void remove(Long documentId);
+    void refreshAll();
 }
 ```
 
 Implementation:
-- `ElasticsearchSearchEngine` — search engine mặc định cho full-text search, filters, highlight và scoring
+- `PostgresSearchEngine` — search engine mặc định, thực thi PostgreSQL FTS/trigram query bằng SQL/native query
 
 ### 2.5 Transaction Boundaries
 
@@ -125,7 +113,7 @@ Business Validation (trùng lặp? quyền truy cập? category tồn tại?)
   ↓
 Authorization (JWT — Admin mới được upload/xóa, User chỉ đọc/tải)
   ↓
-Persistence (Lưu file + MySQL + Search Index)
+Persistence (Lưu file + PostgreSQL + search row/vector)
   ↓
 Response
 ```
@@ -138,67 +126,55 @@ Sử dụng **MapStruct** cho toàn bộ chuyển đổi Entity ↔ DTO. Không 
 
 ## 3. Search Engine Architecture
 
-### Elasticsearch-first Search Engine
+### PostgreSQL-only Search Engine
 
-Sử dụng **Elasticsearch** làm search engine mặc định ngay từ đầu. MySQL lưu metadata nguồn và dữ liệu quan hệ; Elasticsearch lưu index phục vụ full-text search, filter, highlight, relevance scoring và permission-aware query. Hệ thống không dùng MySQL Full-text Search làm fallback.
+Sử dụng **PostgreSQL Full-Text Search** làm search engine mặc định ngay từ đầu. PostgreSQL lưu metadata nguồn, dữ liệu quan hệ, ACL và nội dung đã trích xuất; search chạy trực tiếp bằng `tsvector`/`tsquery`, GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Hệ thống không triển khai Elasticsearch/OpenSearch trong MVP.
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│                  Elasticsearch Cluster               │
-│                                                     │
-│  Index: documents                                   │
-│  ┌───────────────────────────────────────────┐      │
-│  │ document_id       (keyword)               │      │
-│  │ document_code     (keyword + text boost)  │      │
-│  │ title             (text, analyzed)        │      │
-│  │ description       (text, analyzed)        │      │
-│  │ extracted_content (text, analyzed)        │      │
-│  │ status            (keyword)               │      │
-│  │ access_level      (keyword)               │      │
-│  │ category_id/name  (keyword, facetable)    │      │
-│  │ department_ids    (keyword[], facetable)  │      │
-│  │ allowed_user_ids  (keyword[])             │      │
-│  │ owner_id          (keyword)               │      │
-│  │ uploader_id       (keyword)               │      │
-│  │ tag_ids/tags      (keyword[], facetable)  │      │
-│  │ file_type         (keyword, facetable)    │      │
-│  │ created_at        (date, sortable)        │      │
-│  │ updated_at        (date, sortable)        │      │
-│  │ effective_date    (date, filterable)      │      │
-│  │ expiry_date       (date, filterable)      │      │
-│  │ view_count        (integer, sortable)     │      │
-│  │ download_count    (integer, sortable)     │      │
-│  └───────────────────────────────────────────┘      │
-│                                                     │
-│  Features:                                          │
-│  ✅ Full-text search (BM25 scoring)                 │
-│  ✅ Permission filter trước khi trả kết quả         │
-│  ✅ Fuzzy search (tolerance for typos)              │
-│  ✅ Synonym support                                 │
-│  ✅ Vietnamese Analyzer (ICU + custom dictionary)   │
-│  ✅ Faceted Aggregations                            │
-│  ✅ Highlighted snippets                            │
-│  ✅ Autocomplete / Suggest                          │
-└─────────────────────────────────────────────────────┘
+PostgreSQL
+├── documents                         metadata, lifecycle, counters
+├── document_contents                  extracted_text, extraction status
+├── document_search_index              denormalized search fields
+│   ├── document_id                    FK/unique
+│   ├── search_vector                  weighted tsvector
+│   ├── title_unaccent                 normalized title
+│   ├── document_code                  exact/fuzzy lookup
+│   ├── tag_text                       denormalized tags
+│   ├── file_type/status/access fields filter/facet columns
+│   └── optional embedding vector      pgvector semantic search
+└── Indexes
+    ├── GIN(search_vector)
+    ├── GIN(title/document_code/tag_text gin_trgm_ops)
+    ├── B-tree(status, category_id, file_type, created_at)
+    └── ACL indexes on owner/department/user permission tables
 ```
 
-**Consistency & Sync Strategy (MySQL ↔ Object Storage → Elasticsearch):**
-- **Source of truth**: MySQL là nguồn chính cho metadata, ACL, lifecycle, current version và object key được tham chiếu.
+**Search features:**
+- Full-text search bằng `websearch_to_tsquery` / `plainto_tsquery`.
+- Ranking bằng `ts_rank_cd` với weighted `tsvector`: document code/title > tags > description > extracted content.
+- Permission filter áp ngay trong SQL bằng JOIN/EXISTS với ACL, không search xong mới lọc ở frontend.
+- Highlight bằng `ts_headline`, backend sanitize HTML trước khi trả frontend.
+- Fuzzy/typeahead bằng `pg_trgm` (`similarity`, `%`, trigram GIN index).
+- Facet theo category/department/file type/tags bằng SQL aggregation.
+- Search tiếng Việt mức cơ bản bằng `unaccent`; nếu cần tách từ tốt hơn thì bổ sung dictionary/tokenizer tiếng Việt.
+- Semantic search/RAG là optional bằng `pgvector`, không thuộc MVP bắt buộc.
+
+**Consistency Strategy (PostgreSQL ↔ Object Storage):**
+- **Source of truth**: PostgreSQL là nguồn chính cho metadata, ACL, lifecycle, current version, extracted text, search vector và object key được tham chiếu.
 - **Object storage**: MinIO/R2 chỉ lưu binary/artifact theo UUID object key; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
-- **Derived index**: Elasticsearch là index dẫn xuất, có thể rebuild từ MySQL + extracted content/object storage.
-- **Upload ordering**: Backend tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu object upload thành công nhưng DB transaction fail, tạo cleanup task hoặc để scheduled orphan cleanup xóa object không được DB tham chiếu.
-- **After-commit event**: Extraction, preview conversion và indexing/re-indexing chỉ chạy sau khi transaction MySQL commit thành công.
-- **Failure handling**: Nếu extraction hoặc indexing thất bại sau DB commit, tài liệu/version chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng; không rollback metadata đã commit.
-- **Delete/archive/restore**: Ghi MySQL trước, đồng bộ Elasticsearch async sau commit. Soft delete không xóa file vật lý ngay lập tức.
-- **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được MySQL tham chiếu.
-- **Retry**: Scheduled job retry mỗi 30 phút cho lỗi extraction/indexing tạm thời.
-- **Batch Re-index**: Scheduled job chạy hàng đêm để self-heal lệch index giữa MySQL và Elasticsearch.
+- **Upload ordering**: Backend tạo object key và row `AWAITING_UPLOAD`, trả presigned PUT URL; client upload binary trực tiếp lên object storage; `upload-complete` HEAD object, validate size/MIME thực tế bằng Tika, chuyển `PROCESSING` trong PostgreSQL rồi commit. Row `AWAITING_UPLOAD` quá TTL hoặc object orphan được cleanup job xử lý.
+- **After-commit event**: API server publish RabbitMQ message sau khi transaction PostgreSQL commit thành công; extraction, OCR, preview conversion và refresh search vector chỉ chạy trong worker sau message đó.
+- **Failure handling**: Nếu extraction hoặc refresh search vector thất bại sau DB commit, tài liệu/version chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng; không rollback metadata đã commit.
+- **Delete/archive/restore**: Ghi PostgreSQL trước, search query tự loại theo `status`/ACL; worker refresh denormalized search row sau commit nếu metadata/ACL đổi.
+- **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được PostgreSQL tham chiếu.
+- **Retry**: Worker retry qua RabbitMQ TTL queues `dms.retry.30s`, `dms.retry.5m`, `dms.retry.30m`; vượt `maxAttempts = 3` thì message vào `dms.dlq` và document/version chuyển `EXTRACTION_FAILED`.
+- **Batch search refresh**: Scheduled job chạy hàng đêm để publish `INDEX` messages rebuild `document_search_index` từ PostgreSQL khi cần self-heal; ShedLock đảm bảo chỉ một API instance phát batch.
 
 ---
 
-## 4. Content Extraction Pipeline
+## 4. Worker Processing Pipeline
 
-### Extraction & Preview Responsibility
+### Extraction, Preview & Index Responsibility
 
 Tika không phải extractor chính cho toàn bộ file. Trách nhiệm được phân định như sau:
 
@@ -207,9 +183,22 @@ Tika không phải extractor chính cho toàn bộ file. Trách nhiệm được
 | **Apache Tika** | Detect MIME type thực tế khi upload và fallback extraction khi cần |
 | **Apache PDFBox** | Extractor chính cho PDF text |
 | **Apache POI** | Extractor chính cho DOC/DOCX/XLS/XLSX |
-| **JODConverter + LibreOffice headless** | Convert Word/Excel sang PDF hoặc HTML preview |
+| **JODConverter + LibreOffice headless** | Worker convert Word/Excel sang PDF hoặc HTML preview artifact |
 | **OWASP Java HTML Sanitizer / Jsoup** | Sanitize HTML preview và search highlight trước khi trả frontend |
-| **Tesseract OCR** | OCR scanned PDF/image |
+| **Tesseract OCR** | Worker OCR scanned PDF/image |
+### RabbitMQ queues
+
+| Queue | Task | Trigger |
+|-------|------|---------|
+| `dms.extract` | Extract text bằng PDFBox/POI hoặc phát hiện cần OCR | `upload-complete`, version complete, retry thủ công |
+| `dms.ocr` | OCR scanned PDF/image bằng Tesseract | Worker extract phát hiện scan/image |
+| `dms.preview` | Generate preview artifact PDF/HTML bằng LibreOffice/JODConverter | File Office sau upload/version complete |
+| `dms.index` | Refresh `document_search_index` / search vector | Extract/OCR thành công hoặc metadata/ACL đổi |
+
+Worker dùng manual acknowledgement, message persistent và queue durable. Mỗi task idempotent bằng cách đọc lại PostgreSQL state trước khi xử lý; search row và document content ghi bằng upsert.
+
+Retry topology đã chốt: `maxAttempts = 3`, delay `30s -> 5m -> 30m`, vượt retry thì reject sang `dms.dlq` và alert cho admin xử lý thủ công.
+
 
 ```text
 File Input
@@ -268,7 +257,7 @@ Server → Verify JWT → Extract userId, role → Authorize endpoint
 ### Document Access Policy
 
 - Search, metadata detail, preview và download dùng chung `DocumentAccessPolicyService`.
-- Elasticsearch query phải filter theo quyền truy cập trước khi trả kết quả; không search xong rồi mới loại bỏ ở frontend.
+- PostgreSQL FTS query phải filter theo quyền truy cập trước khi trả kết quả; không search xong rồi mới loại bỏ ở frontend.
 - User không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL của tài liệu.
 - Tài liệu `DELETED` không xuất hiện trong search, preview, download hoặc metadata detail của User.
 - Tài liệu `ARCHIVED` không hiển thị mặc định với User; Admin có thể filter để xem.
@@ -284,13 +273,13 @@ Server → Verify JWT → Extract userId, role → Authorize endpoint
 
 | Endpoint Pattern | ADMIN | USER | PUBLIC |
 |-----------------|-------|------|--------|
-| `POST /documents` (upload) | ✅ | ❌ | ❌ |
+| `POST /documents/upload-init` + `/upload-complete` | ✅ | ❌ | ❌ |
 | `PUT/DELETE /documents/{id}` | ✅ | ❌ | ❌ |
 | `GET /documents/search` | ✅ | ✅ | ❌ |
 | `GET /documents/search/suggestions` | ✅ | ✅ | ❌ |
 | `GET /documents/{id}` | ✅ | ✅ | ❌ |
-| `GET /documents/{id}/preview` | ✅ | ✅ | ❌ |
-| `GET /documents/{id}/download` | ✅ | ✅ | ❌ |
+| `GET /documents/{id}/preview-url` | ✅ | ✅ | ❌ |
+| `GET /documents/{id}/download-url` | ✅ | ✅ | ❌ |
 | `GET /documents/{id}/versions` | ✅ | ✅ | ❌ |
 | `POST /documents/{id}/versions` | ✅ | ❌ | ❌ |
 | `POST /documents/{id}/versions/{versionId}/restore` | ✅ | ❌ | ❌ |
@@ -318,8 +307,8 @@ Sử dụng **Spring Scheduler** (`@Scheduled`):
 
 | Job | Tần suất | Mô tả |
 |-----|----------|-------|
-| Re-index batch | Hàng đêm (2:00 AM) | Đồng bộ lại toàn bộ search index để self-heal lệch index |
-| Content extraction retry | Mỗi 30 phút | Retry extraction/indexing cho documents `EXTRACTION_FAILED` do lỗi tạm thời |
+| Search refresh batch | Hàng đêm (2:00 AM) | Rebuild `document_search_index` để self-heal lệch search vector |
+| Content extraction retry | Mỗi 30 phút | Retry extraction/refresh search cho documents `EXTRACTION_FAILED` do lỗi tạm thời |
 | Storage cleanup | Hàng tuần hoặc production hardening | Chỉ xóa orphan files không còn metadata/version reference; không xóa file của tài liệu soft-deleted còn khả năng restore |
 | Analytics aggregation | Hàng ngày | Tổng hợp view/download/search metrics cho dashboard, tránh scan log lớn trực tiếp |
 | OCR queue processor | Mỗi 5 phút | Xử lý hàng đợi OCR |
@@ -391,7 +380,7 @@ backend/
 │   │   └── mapper/
 │   ├── search/                         ← PH3: Search module
 │   │   ├── controller/
-│   │   ├── service/                    ← SearchService, SearchIndexService, SuggestionService
+│   │   ├── service/                    ← SearchService, SearchRefreshService, SuggestionService
 │   │   └── dto/
 │   ├── masterdata/                     ← PH4: Master Data
 │   │   ├── controller/
@@ -412,7 +401,7 @@ backend/
 │       └── dto/
 ├── src/main/resources/
 │   ├── db/migration/                   ← Flyway migration scripts (V1__init.sql...)
-│   ├── application.yml                 ← multipart max-file-size/max-request-size = 50MB
+│   ├── application.yml                 ← presigned upload TTL + small multipart limit for non-file forms
 │   ├── application-dev.yml
 │   └── application-prod.yml
 ├── src/test/
@@ -426,6 +415,6 @@ backend/
 
 | Quy mô | Mục tiêu | Giải pháp |
 |--------|----------|-----------|
-| **MVP / single server** | < 10k documents | Elasticsearch single-node, MinIO dev object storage, Monolith, OCR (Tesseract) |
-| **Production scale** | 10k–100k documents | Elasticsearch cluster, Cloudflare R2 qua S3-compatible API, OCR queue, Redis Cache |
-| **Enterprise scale** | > 100k documents | Multi-node Elasticsearch, CDN, Async queue (RabbitMQ), Vietnamese NLP |
+| **MVP / single server** | < 10k documents | PostgreSQL FTS single-node, MinIO dev object storage, Monolith, OCR (Tesseract) |
+| **Production scale** | 10k–100k documents | PostgreSQL FTS cluster, Cloudflare R2 qua S3-compatible API, OCR queue, Redis Cache |
+| **Enterprise scale** | > 100k documents | Multi-node PostgreSQL FTS, CDN, Async queue (RabbitMQ), Vietnamese NLP |

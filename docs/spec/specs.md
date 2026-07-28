@@ -22,7 +22,7 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 | --- | ----------------------- | --------------------------------------------------------------------------------- |
 | 1   | Quản lý tài liệu        | CRUD tài liệu (upload, sửa metadata, xóa mềm)                                     |
 | 2   | Phân loại tài liệu      | Quản lý danh mục (cây phân cấp), phòng ban, tags                                  |
-| 3   | Tìm kiếm full-text      | Tìm kiếm qua Elasticsearch trong tiêu đề + mô tả + nội dung file                  |
+| 3   | Tìm kiếm full-text      | Tìm kiếm qua PostgreSQL FTS trong tiêu đề + mô tả + nội dung file                  |
 | 4   | Permission-aware Search | Kết quả tìm kiếm chỉ bao gồm tài liệu user hiện tại có quyền xem                  |
 | 5   | Preview tài liệu        | Xem trực tiếp PDF; Word/Excel được convert sang PDF hoặc HTML preview bởi backend |
 | 6   | Download tài liệu       | Tải file gốc theo quyền truy cập                                                  |
@@ -53,20 +53,20 @@ Mục tiêu: chứng minh luồng quản lý tài liệu và tìm kiếm full-te
 | ---- | ------- |
 | Auth | Login, refresh token, RBAC `ADMIN`/`USER` |
 | User/Department | CRUD user, CRUD department mức cơ bản, mỗi user thuộc một department chính |
-| Document Upload | Admin upload 1 file/request, validate size/type, lưu object vào MinIO/dev object storage, lưu metadata MySQL |
+| Document Upload | Admin khởi tạo presigned upload 1 file/request, client PUT trực tiếp vào MinIO/dev object storage, complete validate size/MIME thực tế và lưu metadata PostgreSQL |
 | File support | PDF text và DOCX; chưa bắt buộc OCR scan/image và Excel preview |
-| Processing | Async extraction, lưu extracted content, index Elasticsearch |
+| Processing | RabbitMQ worker extraction, lưu extracted content, tạo preview artifact khi cần và refresh PostgreSQL search vector |
 | Search | Search title/description/content/document code/tags, filter `status = INDEXED`, permission-aware filter |
-| Preview/Download | Preview PDF trực tiếp; DOCX có thể download bản gốc, preview nâng cao có thể để milestone sau |
-| Lifecycle | `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `DELETED`; soft delete cơ bản |
+| Preview/Download | Preview/download bằng presigned GET URL; PDF/image dùng object gốc, DOCX có thể download bản gốc và preview nâng cao để milestone sau |
+| Lifecycle | `AWAITING_UPLOAD`, `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `DELETED`; soft delete cơ bản |
 | Audit | Ghi log upload, search, preview, download ở mức tối thiểu |
 
 Done criteria:
 
-1. Admin upload được PDF text/DOCX hợp lệ và tài liệu chuyển từ `PROCESSING` sang `INDEXED`.
+1. Admin upload được PDF text/DOCX hợp lệ qua flow `upload-init -> PUT object storage -> upload-complete` và tài liệu chuyển từ `AWAITING_UPLOAD` sang `PROCESSING` rồi `INDEXED`.
 2. User chỉ search/preview/download được tài liệu có quyền theo `PUBLIC`, `DEPARTMENT`, `RESTRICTED`.
-3. Search trả kết quả từ Elasticsearch với highlight cơ bản và P95 < 500ms với bộ dữ liệu MVP dưới 10k documents.
-4. File sai định dạng, vượt 50 MB hoặc thuộc extension bị chặn bị từ chối ở backend.
+3. Search trả kết quả từ PostgreSQL FTS với highlight cơ bản và P95 < 500ms với bộ dữ liệu MVP dưới 10k documents.
+4. File sai định dạng, vượt 50 MB hoặc thuộc extension bị chặn bị từ chối ở `upload-init` hoặc `upload-complete` sau khi Tika validate MIME thực tế.
 5. Tài liệu `DELETED` không xuất hiện trong search và không preview/download được bởi User.
 
 #### Milestone 2 — Document Experience & Admin Operations
@@ -76,7 +76,7 @@ Mục tiêu: hoàn thiện trải nghiệm quản trị và đọc tài liệu s
 | Nhóm | Bao gồm |
 | ---- | ------- |
 | File support | PDF scanned/image OCR, XLS/XLSX extraction, DOC/DOCX/XLS/XLSX preview qua PDF/HTML đã sanitize |
-| Versioning | Upload version mới, version history, chọn current version, re-index khi current version đổi |
+| Versioning | Upload version mới, version history, chọn current version, refresh search vector khi current version đổi |
 | Lifecycle | Archive/restore, retry thủ công cho `EXTRACTION_FAILED`, rule rõ cho trạng thái sau restore |
 | Metadata | Quản lý category tree, tags, filter nâng cao |
 | Dashboard | Thống kê cơ bản số tài liệu, lượt preview/download, top search keywords |
@@ -95,15 +95,15 @@ Mục tiêu: chuẩn bị vận hành production và khả năng phục hồi d�
 
 | Nhóm | Bao gồm |
 | ---- | ------- |
-| Object storage | Cloudflare R2 qua S3-compatible API, lifecycle cleanup orphan object |
+| Object storage | Cloudflare R2 qua S3-compatible API, presigned URL, private bucket/CORS và lifecycle cleanup orphan object |
 | Security | CORS/CSRF decision, cookie SameSite theo deployment topology, malware scan, hardening headers |
-| Reliability | Retry queue rõ ràng, batch reindex nightly, rebuild Elasticsearch từ MySQL/object storage |
-| Observability | Metrics, structured logs, alert cho extraction/indexing failure |
-| Performance | Dashboard aggregation, search suggestion cache, tuning Elasticsearch analyzer/index |
+| Reliability | RabbitMQ retry queues/DLQ rõ ràng, batch search refresh nightly, rebuild `document_search_index` từ PostgreSQL/object storage |
+| Observability | Metrics, structured logs, alert cho extraction/search refresh failure |
+| Performance | Dashboard aggregation, search suggestion cache, tuning PostgreSQL FTS analyzer/index |
 
 Done criteria:
 
-1. ES được xem là derived index và có quy trình rebuild từ MySQL + object/content.
+1. `document_search_index` được xem là derived search table và có quy trình rebuild từ PostgreSQL + object/content.
 2. Upload/object/DB/index failure có cleanup hoặc retry path rõ ràng.
 3. Auth cookie, CORS và CSRF được cấu hình theo môi trường dev/prod.
 4. Production deployment dùng R2 và có rule cleanup object không còn được DB tham chiếu.
@@ -111,10 +111,10 @@ Done criteria:
 #### Thứ tự triển khai khuyến nghị
 
 1. Backend auth/RBAC và data model user/department/document/version tối thiểu.
-2. Object storage dev + upload metadata transaction.
-3. Async extraction/indexing pipeline cho PDF text/DOCX.
-4. Permission-aware Elasticsearch query.
-5. Frontend upload/search/result/detail/preview/download golden path.
+2. Object storage dev + presigned upload init/complete + metadata transaction.
+3. RabbitMQ worker extraction/search refresh pipeline cho PDF text/DOCX.
+4. Permission-aware PostgreSQL FTS query.
+5. Frontend presigned upload/search/result/detail/preview-url/download-url golden path.
 6. Audit log tối thiểu và dashboard đơn giản.
 7. Versioning, OCR, Office preview nâng cao, archive/restore.
 8. Production hardening và R2.
@@ -141,36 +141,31 @@ Done criteria:
 Business rules:
 
 - Search, preview và download phải áp dụng cùng một logic phân quyền.
-- Elasticsearch query phải filter theo quyền truy cập trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
+- PostgreSQL FTS query phải filter theo quyền truy cập trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
 - User không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL của tài liệu.
 - Admin có quyền quản trị toàn bộ metadata và lifecycle tài liệu.
 
-### Elasticsearch ACL Query Model
+### PostgreSQL ACL Query Model
 
-Elasticsearch document index phải có tối thiểu các field phục vụ phân quyền:
+Search query phải JOIN về bảng nguồn để áp quyền bằng SQL, không lưu ACL dạng array denormalized như search engine ngoài:
 
-| Field | Kiểu | Mục đích |
-| ----- | ---- | -------- |
-| `status` | `keyword` | Lọc lifecycle; User mặc định chỉ thấy `INDEXED` |
-| `access_level` | `keyword` | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
-| `owner_id` | `keyword` | Chủ sở hữu/người chịu trách nhiệm tài liệu |
-| `department_ids` | `keyword[]` | Danh sách phòng ban được cấp quyền xem tài liệu |
-| `allowed_user_ids` | `keyword[]` | Danh sách user được chia sẻ trực tiếp |
+| Source | Mục đích |
+| ----- | -------- |
+| `documents.status` | Lọc lifecycle; User mặc định chỉ thấy `INDEXED` |
+| `documents.access_level` | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
+| `documents.owner_id` | Chủ sở hữu/người chịu trách nhiệm tài liệu |
+| `document_department_accesses` | Danh sách phòng ban được cấp quyền xem tài liệu |
+| `document_user_accesses` | Danh sách user được chia sẻ trực tiếp |
 
-Query cho User thường phải áp `filter` trước khi trả kết quả:
+Query cho User thường phải áp filter trước khi trả kết quả:
 
 ```text
-status = INDEXED
+d.status = 'INDEXED'
 AND (
-  access_level = PUBLIC
-  OR (access_level = DEPARTMENT AND department_ids contains any current_user.department_ids)
-  OR (
-    access_level = RESTRICTED
-    AND (
-      owner_id = current_user.id
-      OR allowed_user_ids contains current_user.id
-    )
-  )
+  d.access_level = 'PUBLIC'
+  OR d.owner_id = current_user.id
+  OR EXISTS (department ACL match any current_user.department_ids)
+  OR EXISTS (user ACL match current_user.id)
 )
 ```
 
@@ -186,9 +181,9 @@ Nếu current_user.role = ADMIN:
 Business decisions:
 
 - MVP giả định mỗi user có một department chính; query vẫn dùng `current_user.department_ids` để không phải đổi model nếu sau này user thuộc nhiều phòng ban.
-- Chưa áp dụng kế thừa quyền theo department hierarchy trong MVP; nếu cần kế thừa, backend phải mở rộng `current_user.department_ids` thành toàn bộ department được thừa hưởng trước khi query Elasticsearch.
+- Chưa áp dụng kế thừa quyền theo department hierarchy trong MVP; nếu cần kế thừa, backend phải mở rộng `current_user.department_ids` thành toàn bộ department được thừa hưởng trước khi query PostgreSQL FTS.
 - User bị deactivate không được cấp access token mới; nếu token hiện tại còn hạn, API authorization phải kiểm tra trạng thái user ở backend trước search/preview/download.
-- Khi user đổi department, không cần reindex document nếu document index đã lưu `department_ids`; search query dùng department hiện tại của user. Chỉ cần reindex khi ACL của document thay đổi.
+- Khi user đổi department, không cần refresh search vector vì search query JOIN ACL và dùng department hiện tại của user. Chỉ cần refresh search row khi metadata/content search của document thay đổi.
 - Facet/aggregation cho User phải chạy trên cùng tập kết quả đã áp ACL filter để không lộ category/tag/department của tài liệu không có quyền.
 - Search suggestions cũng phải áp cùng ACL filter; không gợi ý title/document code/tag chỉ tồn tại trong tài liệu user không có quyền.
 
@@ -221,7 +216,7 @@ Business decisions:
 
 ## 6. Search Engine Requirements
 
-Tìm kiếm là chức năng cốt lõi và được thực thi bởi Elasticsearch.
+Tìm kiếm là chức năng cốt lõi và được thực thi bởi PostgreSQL FTS.
 
 | Nhóm yêu cầu  | Chi tiết                                                                                        |
 | ------------- | ----------------------------------------------------------------------------------------------- |
@@ -229,7 +224,7 @@ Tìm kiếm là chức năng cốt lõi và được thực thi bởi Elasticsea
 | Query type    | Multi-match query, exact match cho mã tài liệu, fuzzy search cho lỗi chính tả                   |
 | Filters       | Category, department, tag, file type, owner/uploader, date range, document status, access level |
 | Sorting       | Relevance, createdAt, updatedAt, viewCount, downloadCount, title                                |
-| Highlight     | Elasticsearch native highlight cho `title`, `description`, `extracted_content`                  |
+| Highlight     | PostgreSQL ts_headline highlight cho `title`, `description`, `extracted_content`                  |
 | Facets        | Đếm kết quả theo category, department, file type, tag                                           |
 | Permission    | Query phải filter theo quyền truy cập của current user                                          |
 | Suggestions   | Autocomplete/suggestion cho title, document code, tags (có thể cache bằng Redis)                |
@@ -249,7 +244,8 @@ Relevance priority:
 
 | Status              | Mô tả                                                                 | Hiển thị với User |
 | ------------------- | --------------------------------------------------------------------- | :---------------: |
-| `PROCESSING`        | File đã upload, đang trích xuất nội dung hoặc index vào Elasticsearch |       Không       |
+| `AWAITING_UPLOAD`   | Metadata đã tạo, đang chờ client PUT file qua presigned URL và gọi complete |       Không       |
+| `PROCESSING`        | File đã upload và validate xong, worker đang trích xuất nội dung hoặc refresh PostgreSQL search vector |       Không       |
 | `INDEXED`           | Tài liệu đã sẵn sàng để search, preview, download                     | Có, nếu có quyền  |
 | `EXTRACTION_FAILED` | Lỗi trích xuất nội dung hoặc index                                    |       Không       |
 | `ARCHIVED`          | Tài liệu ngưng sử dụng nhưng vẫn giữ lịch sử                          |  Không mặc định   |
@@ -258,9 +254,10 @@ Relevance priority:
 Business rules:
 
 - Search mặc định chỉ trả về tài liệu `INDEXED`.
+- Tài liệu `AWAITING_UPLOAD` quá TTL phải được cleanup để không giữ metadata/upload object mồ côi.
 - Tài liệu `DELETED` không xuất hiện trong search, preview hoặc download.
-- Hệ thống tự động retry extraction/indexing mỗi 30 phút cho tài liệu `EXTRACTION_FAILED` do lỗi xử lý/index tạm thời.
-- Admin có thể xem tài liệu lỗi xử lý để retry extraction/indexing thủ công.
+- Hệ thống tự động retry extraction/search refresh mỗi 30 phút cho tài liệu `EXTRACTION_FAILED` do lỗi xử lý/refresh search tạm thời.
+- Admin có thể xem tài liệu lỗi xử lý để retry extraction/search refresh thủ công.
 - Soft delete không xóa file vật lý ngay lập tức.
 
 ---
@@ -272,17 +269,17 @@ Business rules:
 | Không mất version cũ | Upload version mới không ghi đè file/version cũ                                                       |
 | Current version      | Search, preview và download mặc định sử dụng version hiện hành                                        |
 | Version history      | Admin có thể xem lịch sử version, uploader, thời gian upload và changelog                             |
-| Re-index             | Khi version hiện hành thay đổi, hệ thống phải trích xuất lại nội dung và cập nhật Elasticsearch index |
+| Refresh search vector | Khi version hiện hành thay đổi, hệ thống phải trích xuất lại nội dung và refresh PostgreSQL search vector |
 | Restore              | Admin có thể chọn version cũ làm version hiện hành nếu cần                                            |
 
 ### Current Version Switch Rule
 
 - Upload version mới tạo `document_versions` mới ở trạng thái `PROCESSING`; version hiện hành cũ vẫn tiếp tục phục vụ search, preview và download.
-- Version mới chỉ được set làm `current_version_id` sau khi extraction, preview artifact cần thiết và Elasticsearch indexing thành công.
-- Khi switch current version thành công, Elasticsearch document phải phản ánh metadata và content của version mới trong cùng một after-commit/retry flow.
-- Nếu extraction/indexing của version mới thất bại, version mới chuyển `EXTRACTION_FAILED`, `current_version_id` không đổi và User vẫn thấy version hiện hành cũ.
+- Version mới chỉ được set làm `current_version_id` sau khi extraction, preview artifact cần thiết và refresh search vector thành công.
+- Khi switch current version thành công, PostgreSQL search row phải phản ánh metadata và content của version mới trong cùng một after-commit/retry flow.
+- Nếu extraction/refresh search của version mới thất bại, version mới chuyển `EXTRACTION_FAILED`, `current_version_id` không đổi và User vẫn thấy version hiện hành cũ.
 - Admin có thể retry version lỗi hoặc xóa mềm version lỗi nếu version đó chưa từng là current.
-- Khi Admin chọn version cũ làm current, hệ thống phải re-index theo nội dung version được chọn trước khi User thấy kết quả search/preview/download mới.
+- Khi Admin chọn version cũ làm current, hệ thống phải refresh search vector theo nội dung version được chọn trước khi User thấy kết quả search/preview/download mới.
 
 ---
 
@@ -295,8 +292,8 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 | Upload document         | Admin      | userId, documentId, fileName, fileType, fileSize, timestamp  |
 | Update metadata         | Admin      | userId, documentId, changedFields, timestamp                 |
 | Delete/Restore document | Admin      | userId, documentId, action, timestamp                        |
-| Preview document        | Admin/User | userId, documentId, timestamp                                |
-| Download document       | Admin/User | userId, documentId, timestamp                                |
+| Preview document        | Admin/User | userId, documentId, timestamp cấp presigned URL preview       |
+| Download document       | Admin/User | userId, documentId, timestamp cấp presigned URL download      |
 | Search                  | Admin/User | userId, keyword, filters, resultCount, searchTime, timestamp |
 
 ---
@@ -305,13 +302,13 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 
 | #   | Yêu cầu                | Chi tiết                                                                                                     |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 1   | **Search Performance** | P95 search latency < 500ms với < 10k documents trên Elasticsearch single-node                                |
-| 2   | **Indexing SLA**       | Tài liệu upload thành công được trích xuất và index trong vòng 60 giây với file hợp lệ                       |
+| 1   | **Search Performance** | P95 search latency < 500ms với < 10k documents trên PostgreSQL FTS single-node                                |
+| 2   | **Search Refresh SLA**       | Tài liệu upload thành công được trích xuất và refresh search vector trong vòng 60 giây với file hợp lệ                       |
 | 3   | **Upload Performance** | File tối đa 50 MB upload không timeout trong điều kiện mạng nội bộ ổn định                                   |
 | 4   | **Security**           | Tất cả API trừ login/refresh yêu cầu JWT; mật khẩu hash bằng BCrypt; Refresh Token lưu HttpOnly Cookie       |
 | 5   | **Authorization**      | Search, preview, download và metadata detail phải kiểm tra quyền truy cập tài liệu                           |
 | 6   | **Availability**       | Hệ thống hoạt động 99% uptime trong giờ làm việc                                                             |
-| 7   | **Scalability**        | Kiến trúc Elasticsearch-first, cho phép mở rộng cluster search và Cloudflare R2/S3-compatible object storage |
+| 7   | **Scalability**        | Kiến trúc PostgreSQL FTS-first, cho phép mở rộng cluster search và Cloudflare R2/S3-compatible object storage |
 | 8   | **Data Integrity**     | Soft delete cho mọi entity chính, không mất dữ liệu; version cũ không bị ghi đè                              |
 | 9   | **API Standard**       | RESTful API, OpenAPI 3 / Swagger documentation                                                               |
 | 10  | **Response Format**    | Tất cả endpoint trả JSON thống nhất qua `ApiResponse<T>`                                                     |
@@ -327,17 +324,17 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 - `POST /auth/refresh` và `POST /auth/logout` phải có CSRF protection nếu cookie refresh token được gửi cross-site. Cơ chế đề xuất là double-submit CSRF token hoặc custom CSRF header do frontend gửi kèm.
 - Logout phải revoke refresh token phía server và trả `Set-Cookie` xóa cookie refresh token với cùng `Path`/`SameSite`/`Secure` tương ứng.
 
-### DB/Object Storage/Elasticsearch Consistency Pattern
+### DB/Object Storage/Search Consistency Pattern
 
-- MySQL là source of truth cho metadata, ACL, document lifecycle, version hiện hành và object key đang được tham chiếu.
+- PostgreSQL là source of truth cho metadata, ACL, document lifecycle, version hiện hành, extracted content, search vector và object key đang được tham chiếu.
 - Object storage chỉ lưu binary/artifact theo object key UUID-based; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
-- Elasticsearch là derived index; dữ liệu search phải có thể rebuild từ MySQL và nội dung đã extract/object storage.
-- Upload tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu upload object thành công nhưng MySQL transaction fail, hệ thống phải ghi nhận hoặc lên lịch cleanup orphan object.
-- Extraction/indexing chỉ chạy sau khi MySQL commit thành công bằng after-commit event hoặc retry queue.
-- Nếu extraction hoặc indexing fail sau khi DB commit, document/version giữ trạng thái `PROCESSING` hoặc chuyển `EXTRACTION_FAILED`; không rollback metadata đã commit.
-- Delete/archive/restore cập nhật MySQL trước, sau đó đồng bộ Elasticsearch async. Soft delete không xóa object vật lý ngay.
-- Object deletion vật lý chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được MySQL tham chiếu.
-- Batch reindex nightly dùng để self-heal lệch index; job này đọc MySQL/document content làm nguồn chính và ghi lại Elasticsearch.
+- Search data nằm trong PostgreSQL (`document_search_index`) và có thể rebuild từ các bảng nguồn + extracted content.
+- Upload tạo object key và row `AWAITING_UPLOAD`, trả presigned PUT URL để client upload binary trực tiếp vào object storage; `upload-complete` validate object rồi chuyển `PROCESSING`. Row quá TTL hoặc object không còn được PostgreSQL tham chiếu phải được cleanup.
+- Extraction/preview conversion/refresh search chỉ chạy sau khi PostgreSQL commit thành công bằng RabbitMQ message publish after-commit.
+- Nếu extraction hoặc refresh search fail sau khi DB commit, document/version giữ trạng thái `PROCESSING` hoặc chuyển `EXTRACTION_FAILED`; không rollback metadata đã commit.
+- Delete/archive/restore cập nhật PostgreSQL trước; search query tự loại theo `status`/ACL mặc định. Soft delete không xóa object vật lý ngay.
+- Object deletion vật lý chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được PostgreSQL tham chiếu.
+- Batch reindex nightly dùng để self-heal `document_search_index`; job này đọc PostgreSQL/document content làm nguồn chính và refresh search vector.
 
 ---
 
@@ -345,16 +342,16 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 
 | #   | Tiêu chí nghiệm thu                                                                                    |
 | --- | ------------------------------------------------------------------------------------------------------ |
-| 1   | Admin có thể upload file hợp lệ, metadata được lưu và tài liệu được index vào Elasticsearch.           |
+| 1   | Admin có thể upload file hợp lệ, metadata được lưu và tài liệu được refresh PostgreSQL search vector.           |
 | 2   | User có thể tìm tài liệu theo từ khóa trong title, description và extracted content.                   |
 | 3   | Kết quả search trả về trong P95 < 500ms với dưới 10k documents.                                        |
 | 4   | User không thấy tài liệu không có quyền truy cập trong search, preview, download hoặc metadata detail. |
-| 5   | Search result có highlight snippet cho nội dung khớp nếu Elasticsearch trả về highlight.               |
+| 5   | Search result có highlight snippet cho nội dung khớp nếu PostgreSQL FTS trả về highlight.               |
 | 6   | File không hợp lệ, file vượt quá 50 MB hoặc file thuộc extension bị chặn phải bị từ chối.              |
 | 7   | Tài liệu bị xóa mềm không xuất hiện trong search và không thể preview/download bởi User.               |
 | 8   | Upload version mới không làm mất version cũ và search mặc định dùng version hiện hành.                 |
 | 9   | Preview PDF hoạt động trực tiếp trên browser; Word/Excel có preview qua bản convert PDF/HTML.          |
-| 10  | Hệ thống ghi access log cho preview/download và search history cho truy vấn tìm kiếm.                  |
+| 10  | Hệ thống ghi access log khi cấp preview/download presigned URL và ghi search history cho truy vấn tìm kiếm.                  |
 | 11  | Admin có thể xem dashboard thống kê số tài liệu, lượt xem, lượt tải và từ khóa tìm kiếm.               |
 
 ---
