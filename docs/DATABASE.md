@@ -43,7 +43,7 @@ Tất cả entity chính có:
 | Entity | Soft Delete? | Field | Lý do |
 |--------|:---:|-------|-------|
 | User | Có | `deleted_at` | Giữ lại lịch sử hoạt động |
-| Document | Có | `deleted_at` + `status = DELETED` | Không xóa vĩnh viễn, có thể restore |
+| Document | Có | `deleted_at` + `deleted_by` + `purge_after` + `status = DELETED` | Đưa vào Thùng rác, có thể restore trước khi tự purge sau 30 ngày |
 | Category | Có | `deleted_at` | Cần giữ lại cho tài liệu cũ |
 | Department | Có | `deleted_at` | Cần giữ lại cho user/tài liệu cũ |
 | Tag | Có | `deleted_at` | Cần giữ lại mapping tài liệu cũ |
@@ -84,6 +84,7 @@ INDEXED -> ARCHIVED
 ARCHIVED -> INDEXED
 INDEXED/ARCHIVED/EXTRACTION_FAILED -> DELETED
 DELETED -> PROCESSING/INDEXED/ARCHIVED
+DELETED -> PURGED (sau 30 ngày hoặc permanent delete)
 ```
 
 | Status | Mô tả |
@@ -93,7 +94,41 @@ DELETED -> PROCESSING/INDEXED/ARCHIVED
 | `INDEXED` | Tài liệu đã sẵn sàng để search/preview/download. |
 | `EXTRACTION_FAILED` | Extract hoặc refresh search thất bại; có thể retry. |
 | `ARCHIVED` | Tài liệu ngưng sử dụng, ẩn khỏi danh sách/search mặc định. |
-| `DELETED` | Xóa mềm; không hiển thị/search/preview/download theo mặc định. |
+| `DELETED` | Xóa mềm trong Thùng rác; không hiển thị/search/preview/download theo mặc định và tự purge sau `purge_after`. |
+
+
+
+### Document Code Generation Rule
+
+- `documents.document_code` do backend tự sinh khi tạo document, không lấy từ input người dùng.
+- Format đề xuất: `DMS-{yyyyMM}-{sequence6}`; ví dụ `DMS-202607-000001`.
+- Sequence có thể theo tháng hoặc toàn hệ thống, nhưng phải sinh trong transaction và có unique index bảo vệ.
+- Nếu upload nhiều file cùng lúc, mỗi file/document nhận một `document_code` riêng.
+- Mã tài liệu là immutable trong luồng metadata thông thường; mọi thay đổi thủ công nếu có trong tương lai phải ghi audit riêng.
+
+### Trash Retention Policy
+
+- Soft delete document set:
+  - `status = DELETED`
+  - `deleted_at = now()`
+  - `deleted_by = current_user_id`
+  - `purge_after = deleted_at + interval 30 day`
+  - `previous_status = old status`
+- Restore document clear `deleted_at`, `deleted_by`, `purge_after`; status trở về `previous_status` nếu file/index còn hợp lệ, hoặc `PROCESSING` nếu cần re-index.
+- Permanent purge áp dụng khi Admin xóa vĩnh viễn hoặc scheduled job thấy `status = DELETED AND purge_after <= now()`.
+- Permanent purge xóa object storage current file, version files theo retention policy, `document_contents`, Elasticsearch document và metadata nếu chọn hard delete. Audit/access/search logs vẫn được giữ.
+- Nếu cần giữ lịch sử tối thiểu cho audit, giữ tombstone row với `permanently_deleted_at` và xóa storage/content/search artifacts.
+
+### Storage Usage Calculation
+
+| Metric | Công thức |
+|--------|-----------|
+| Active storage | `SUM(documents.file_size)` với `status != 'DELETED'` |
+| Trash storage | `SUM(documents.file_size)` với `status = 'DELETED'` |
+| Version storage | `SUM(document_versions.file_size)` nếu version lưu object riêng |
+| Total storage | Active + Trash + Version |
+
+MB hiển thị = bytes / 1024 / 1024, làm tròn 2 chữ số. Các giá trị trên là logical file size theo DB, không nhất thiết bằng dung lượng billing thực tế của object storage nếu provider có nén/deduplication.
 
 ---
 
@@ -198,7 +233,7 @@ DELETED -> PROCESSING/INDEXED/ARCHIVED
 | preview_object_key | VARCHAR(500) | NULLABLE | Object key của preview artifact PDF/HTML đã generate cho Office hoặc format cần convert |
 | upload_expires_at | TIMESTAMP | NULLABLE | Hạn chót client phải PUT file và gọi upload-complete cho trạng thái AWAITING_UPLOAD |
 | page_count | INT | NULLABLE | Số trang nếu áp dụng |
-| document_code | VARCHAR(100) | NULLABLE, UNIQUE | Mã tài liệu doanh nghiệp |
+| document_code | VARCHAR(100) | NOT NULL, UNIQUE | Mã tài liệu do backend tự sinh, ví dụ `DMS-202607-000001` |
 | version_number | VARCHAR(20) | NOT NULL, DEFAULT '1.0' | Phiên bản hiện tại |
 | status | VARCHAR(30) | NOT NULL, DEFAULT 'AWAITING_UPLOAD' | AWAITING_UPLOAD, PROCESSING, INDEXED, EXTRACTION_FAILED, ARCHIVED, DELETED |
 | access_level | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC, DEPARTMENT, RESTRICTED |
@@ -207,7 +242,11 @@ DELETED -> PROCESSING/INDEXED/ARCHIVED
 | effective_date | DATE | NULLABLE | Ngày hiệu lực |
 | expiry_date | DATE | NULLABLE | Ngày hết hiệu lực |
 | archived_at | TIMESTAMP | NULLABLE | Thời điểm archive |
-| deleted_at | TIMESTAMP | NULLABLE | Soft delete |
+| deleted_at | TIMESTAMP | NULLABLE | Soft delete / thời điểm đưa vào Thùng rác |
+| deleted_by | BIGINT | FK → users(id), NULLABLE | Người đưa tài liệu vào Thùng rác |
+| purge_after | TIMESTAMP | NULLABLE | Thời điểm tự xóa vĩnh viễn, mặc định `deleted_at + 30 ngày` |
+| previous_status | VARCHAR(30) | NULLABLE | Trạng thái trước khi soft delete, dùng cho restore |
+| permanently_deleted_at | TIMESTAMP | NULLABLE | Tombstone nếu chọn giữ row sau permanent purge |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NULLABLE, updated by trigger/app | |
 
@@ -327,7 +366,7 @@ DELETED -> PROCESSING/INDEXED/ARCHIVED
 ```sql
 CREATE UNIQUE INDEX idx_users_email ON users(email);
 CREATE UNIQUE INDEX idx_documents_slug ON documents(slug);
-CREATE UNIQUE INDEX idx_documents_code ON documents(document_code);
+CREATE UNIQUE INDEX idx_documents_code ON documents(document_code); -- chống trùng mã tự sinh khi concurrent upload
 CREATE UNIQUE INDEX idx_categories_slug ON categories(slug);
 CREATE UNIQUE INDEX idx_departments_code ON departments(code);
 CREATE UNIQUE INDEX idx_tags_slug ON tags(slug);
@@ -349,6 +388,8 @@ CREATE INDEX idx_documents_access_level ON documents(access_level);
 CREATE INDEX idx_documents_file_type ON documents(file_type);
 CREATE INDEX idx_documents_effective_date ON documents(effective_date);
 CREATE INDEX idx_documents_created_at ON documents(created_at);
+CREATE INDEX idx_documents_deleted_at ON documents(deleted_at);
+CREATE INDEX idx_documents_purge_after ON documents(purge_after);
 
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
 CREATE INDEX idx_audit_logs_actor_date ON audit_logs(actor_id, created_at);
@@ -363,6 +404,7 @@ CREATE INDEX idx_search_logs_user_date ON search_logs(user_id, created_at);
 ```sql
 CREATE INDEX idx_documents_cat_status_date ON documents(category_id, status, created_at);
 CREATE INDEX idx_documents_dept_type ON documents(department_id, file_type);
+CREATE INDEX idx_documents_status_purge ON documents(status, purge_after);
 CREATE INDEX idx_doc_dept_access_dept ON document_department_accesses(department_id, document_id);
 CREATE INDEX idx_doc_user_access_user ON document_user_accesses(user_id, document_id);
 ```
@@ -450,12 +492,14 @@ AND (
 | Action | Log table |
 |--------|-----------|
 | Login/logout | `audit_logs` |
-| Create/update/delete/archive/restore document | `audit_logs` |
+| Create/update/delete/archive/restore/move/permanent delete document | `audit_logs` |
 | Update ACL/tags/category/metadata | `audit_logs` |
 | Upload/restore version | `audit_logs` |
 | Preview/download/version download | `access_logs` — ghi tại thời điểm backend cấp presigned URL, không phải lúc object storage truyền byte hoàn tất |
 | Denied preview/download/detail due to ACL | `access_logs` |
 | Search/suggestions | `search_logs` |
-| Retry extraction/search refresh | `audit_logs` |
+| Retry extraction/indexing | `audit_logs` |
+| Batch upload/delete/move | `audit_logs` per affected document |
+| Scheduled trash purge | `audit_logs` hoặc maintenance log |
 
-Dashboard tổng hợp từ `documents`, `users`, `audit_logs`, `access_logs`, `search_logs`, `document_contents` và PostgreSQL FTS sync metadata. `download_count`/`view_count` trong kiến trúc presigned URL là số lượt cấp URL thành công, không đảm bảo client tải/preview hoàn tất.
+Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs`, `document_contents` và Elasticsearch sync metadata. Dung lượng lưu trữ lấy từ MySQL để bao gồm cả active/trash/version theo policy, không lấy từ Elasticsearch.

@@ -44,7 +44,7 @@
 
 ### 2.1 Clean Architecture (Application Layer + Domain Services)
 
-- **Domain Services**: (`DocumentService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
+- **Domain Services**: (`DocumentService`, `DocumentBatchService`, `DocumentLifecycleService`, `DocumentStorageStatsService`, `CategoryService`, `TagService`). Xử lý logic nghiệp vụ nội tại của từng entity.
 - **Application Layer** (Use Cases): (`DocumentUploadUseCase`, `DocumentSearchUseCase`). Điều phối nhiều Domain Services.
   - Ví dụ: `DocumentUploadUseCase` điều phối `upload-init`/`upload-complete`: lưu metadata `AWAITING_UPLOAD`, ký presigned URL bằng `S3StorageService`, validate object ở complete, chuyển `PROCESSING`, rồi publish RabbitMQ message sau commit. `ContentExtractorService` và `SearchRefreshService` chạy trong worker profile, không nằm trên request path của API server.
 
@@ -122,6 +122,30 @@ Response
 
 Sử dụng **MapStruct** cho toàn bộ chuyển đổi Entity ↔ DTO. Không dùng Manual Mapping.
 
+
+### 2.8 Document Lifecycle, Batch & Storage Stats Services
+
+```text
+DocumentBatchService
+  ├── batchUpload(files[], sharedMetadata)
+  ├── batchDelete(documentIds[])
+  └── batchMove(documentIds[], targetCategoryId)
+
+DocumentLifecycleService
+  ├── softDelete(documentId)
+  ├── restore(documentIds[])
+  ├── permanentDelete(documentIds[])
+  └── purgeDeletedDocuments()
+
+DocumentStorageStatsService
+  └── calculate active/trash/version/total storage from MySQL
+```
+
+- Batch operations dùng partial success response để lỗi từng file/tài liệu không rollback toàn bộ batch.
+- `DocumentLifecycleService` là nơi duy nhất set/clear `deleted_at`, `deleted_by`, `purge_after`, `previous_status`.
+- `DocumentStorageStatsService` tính dung lượng từ `documents.file_size` và `document_versions.file_size`, không phụ thuộc Elasticsearch.
+- Trash list lấy từ MySQL vì Elasticsearch mặc định không giữ document `DELETED` trong kết quả search.
+
 ---
 
 ## 3. Search Engine Architecture
@@ -158,7 +182,6 @@ PostgreSQL
 - Facet theo category/department/file type/tags bằng SQL aggregation.
 - Search tiếng Việt mức cơ bản bằng `unaccent`; nếu cần tách từ tốt hơn thì bổ sung dictionary/tokenizer tiếng Việt.
 - Semantic search/RAG là optional bằng `pgvector`, không thuộc MVP bắt buộc.
-
 **Consistency Strategy (PostgreSQL ↔ Object Storage):**
 - **Source of truth**: PostgreSQL là nguồn chính cho metadata, ACL, lifecycle, current version, extracted text, search vector và object key được tham chiếu.
 - **Object storage**: MinIO/R2 chỉ lưu binary/artifact theo UUID object key; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
@@ -335,12 +358,14 @@ Dashboard dùng nhóm endpoint Admin thống nhất với phân rã tính năng 
 
 | Endpoint | Mục đích |
 |----------|----------|
-| `GET /admin/dashboard` | Thống kê tổng quan: documents, users, categories, departments, preview/download/search totals |
+| `GET /admin/dashboard/summary` | Thống kê tổng quan: documents, users, categories, departments, preview/download/search totals |
+| `GET /admin/dashboard/storage` | Tổng dung lượng file toàn hệ thống theo MB, tách active/trash/version |
 | `GET /admin/dashboard/top-documents` | Top tài liệu xem/tải nhiều |
 | `GET /admin/dashboard/recent-uploads` | Tài liệu upload gần đây |
 | `GET /admin/dashboard/top-search-keywords` | Top keyword tìm kiếm, resultCount trung bình, searchTime trung bình |
 | `GET /admin/dashboard/access-stats` | Thống kê preview/download theo ngày/tuần/tháng, unique users |
-| `GET /admin/dashboard/processing-errors` | Tài liệu `PROCESSING` lâu hoặc `EXTRACTION_FAILED` |
+| `GET /admin/dashboard/system-access` | Dữ liệu truy cập hệ thống: login, active users, unique access users, preview/download/search/denied access |
+| `GET /admin/dashboard/processing-errors` | Tài liệu `PROCESSING` lâu hoặc `EXTRACTION_FAILED`, gồm errorCode/errorMessage/stage lỗi |
 | `GET /admin/audit-logs` | Tra cứu audit/access/search logs với filters |
 | `GET /admin/analytics/**` | Optional nếu triển khai MH18 như màn riêng thay vì tab trong dashboard |
 
@@ -370,6 +395,9 @@ backend/
 │   │   ├── controller/
 │   │   ├── service/
 │   │   │   ├── DocumentService.java
+│   │   │   ├── DocumentBatchService.java
+│   │   │   ├── DocumentLifecycleService.java
+│   │   │   ├── DocumentStorageStatsService.java
 │   │   │   ├── DocumentAccessPolicyService.java
 │   │   │   ├── StorageService.java
 │   │   │   ├── ContentExtractorService.java

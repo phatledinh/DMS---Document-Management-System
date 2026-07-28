@@ -41,6 +41,18 @@ CDN / Nginx ──> Load Balancer ──> Backend API xN ──publish──> Ra
 
 ---
 
+
+## Trash Purge & Batch Operation Runtime
+
+- Backend chạy scheduled job `purgeDeletedDocuments` hằng ngày, mặc định 02:00 server time.
+- Job xử lý các document `status = DELETED` và `purge_after <= now()`; soft delete thông thường không xóa object storage ngay.
+- Production nhiều backend instance phải dùng ShedLock hoặc cơ chế distributed lock tương đương để tránh nhiều node purge cùng một document.
+- Object storage deletion phải idempotent: object đã mất được xem là thành công, lỗi tạm thời được log để retry.
+- Batch upload nên giới hạn số file/request bằng `BATCH_UPLOAD_MAX_FILES`; mỗi file vẫn chịu `FILE_MAX_SIZE`.
+- Trash storage và total storage trên dashboard lấy từ MySQL metadata, không gọi object storage provider trong request dashboard.
+
+---
+
 ## 2. Docker Compose (Development)
 
 ```yaml
@@ -138,6 +150,12 @@ services:
             - STORAGE_PATH_STYLE_ACCESS=true
             - FILE_MAX_SIZE=52428800
             - CORS_ORIGINS=http://localhost:3000
+            - PROCESSING_THREAD_POOL_SIZE=4
+            - PROCESSING_RETRY_INTERVAL=PT30M
+            - PROCESSING_MAX_RETRY_COUNT=5
+            - TRASH_RETENTION_DAYS=30
+            - TRASH_PURGE_CRON=0 0 2 * * *
+            - BATCH_UPLOAD_MAX_FILES=20
             - STORAGE_PRESIGNED_UPLOAD_TTL=PT5M
             - STORAGE_PRESIGNED_DOWNLOAD_TTL=PT5M
             - SPRING_RABBITMQ_HOST=rabbitmq

@@ -212,13 +212,16 @@ Quản lý dữ liệu danh mục dùng chung cho toàn hệ thống: danh mục
 ## PH5: Dashboard & Analytics — Thống kê
 
 ### Mô tả
-Dashboard thống kê tổng quan cho Admin dựa trên dữ liệu tài liệu, user, master data, access log và search log.
+Dashboard thống kê tổng quan cho Admin dựa trên dữ liệu tài liệu, dung lượng lưu trữ, dữ liệu truy cập hệ thống, lỗi xử lý, user, master data, access log và search log.
 
 ### Chức năng chính
 - Tổng số tài liệu, users, categories, departments
 - Phân bổ tài liệu theo trạng thái (INDEXED, PROCESSING, EXTRACTION_FAILED, ARCHIVED, DELETED)
 - Phân bổ tài liệu theo category, department và loại file
 - Tổng lượt xem và lượt tải
+- Tổng dung lượng file toàn hệ thống theo MB, tách active/trash/version
+- Dữ liệu truy cập hệ thống: login, active users, unique access users, denied access
+- Tài liệu lỗi xử lý kèm lý do lỗi (`errorCode`, `errorMessage`, stage lỗi)
 - Top tài liệu xem nhiều nhất
 - Top tài liệu tải nhiều nhất
 - Tài liệu upload gần đây
@@ -230,6 +233,9 @@ Dashboard thống kê tổng quan cho Admin dựa trên dữ liệu tài liệu,
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
 | GET | `/admin/dashboard/summary` | Thống kê tổng quan Admin |
+| GET | `/admin/dashboard/storage` | Tổng dung lượng file toàn hệ thống theo MB |
+| GET | `/admin/dashboard/system-access` | Dữ liệu truy cập hệ thống |
+| GET | `/admin/dashboard/processing-errors` | Tài liệu lỗi xử lý kèm lý do lỗi |
 
 ---
 
@@ -241,14 +247,16 @@ Ghi nhận các hành động quan trọng để phục vụ truy vết, kiểm 
 ### Entities
 | Entity | Mô tả |
 |--------|-------|
-| `AuditLog` | Nhật ký thao tác quản trị: upload, update metadata, delete, restore, archive, user management |
+| `AuditLog` | Nhật ký thao tác quản trị: upload, batch action, update metadata, move, delete, restore, permanent delete, archive, user management |
 | `AccessLog` | Nhật ký truy cập tài liệu: metadata detail, preview, download |
 | `SearchLog` | Nhật ký tìm kiếm: keyword, filters, resultCount, searchTime |
 
 ### Chức năng chính
 - Ghi nhận upload document
 - Ghi nhận update metadata với `changedFields`
-- Ghi nhận delete/restore/archive document
+- Ghi nhận delete/restore/archive/move/permanent delete document
+- Ghi nhận batch upload/delete/move với total/succeeded/failed
+- Ghi nhận lỗi xử lý tài liệu với errorCode/errorMessage/stage
 - Ghi nhận preview và download document
 - Ghi nhận search keyword, filters, resultCount, searchTime
 - Ghi nhận user management actions

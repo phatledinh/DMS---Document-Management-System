@@ -88,6 +88,9 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 | `INVALID_CREDENTIALS` | Email hoặc mật khẩu sai |
 | `TOKEN_EXPIRED` | JWT đã hết hạn |
 | `ACCESS_DENIED` | Không có quyền truy cập |
+| `BATCH_OPERATION_PARTIAL_FAILED` | Batch operation có một phần item thất bại |
+| `DOCUMENT_ALREADY_DELETED` | Tài liệu đã nằm trong Thùng rác |
+| `TRASH_ITEM_EXPIRED` | Tài liệu trong Thùng rác đã quá hạn hoặc đã bị purge |
 
 ### Supported File Types & Upload Validation
 
@@ -104,12 +107,14 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 
 Upload validation rules:
 
-- File size tối đa: `50MB`.
+- File size tối đa: `50MB` cho từng file.
+- `POST /documents` upload 1 file; `POST /documents/batch-upload` upload nhiều file với partial success.
 - Validate cả extension và MIME thực tế bằng Apache Tika; không chỉ tin vào filename hoặc header từ client.
 - Chặn các extension nguy hiểm: `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`, `.htm`, `.jar`, `.msi`, `.ps1`, `.vbs`.
 - `storage_path` phải dùng UUID hoặc generated key, không dùng trực tiếp tên file gốc.
 - `file_name` là tên gốc đã sanitize để hiển thị/tải xuống, không được dùng để tạo path lưu trữ.
 - Khi upload phiên bản mới, file mới cũng phải đi qua toàn bộ validation như upload tài liệu lần đầu.
+- `document_code` do backend tự sinh khi upload, không nhập/sửa thủ công trong form metadata.
 
 ---
 
@@ -271,7 +276,7 @@ DELETED -> INDEXED/ARCHIVED          // restore nếu còn trong retention windo
 | preview_object_key | VARCHAR(500) | NULLABLE | Object key preview artifact PDF/HTML đã generate |
 | upload_expires_at | TIMESTAMP | NULLABLE | Hạn chót complete presigned upload |
 | page_count | INT | NULLABLE | |
-| document_code | VARCHAR(100) | NULLABLE, UNIQUE | Mã tài liệu |
+| document_code | VARCHAR(100) | NOT NULL, UNIQUE | Mã tài liệu do backend tự sinh |
 | version_number | VARCHAR(20) | DEFAULT '1.0' | Phiên bản hiện tại |
 | status | VARCHAR(30) | DEFAULT 'AWAITING_UPLOAD' | AWAITING_UPLOAD / PROCESSING / INDEXED / EXTRACTION_FAILED / ARCHIVED / DELETED |
 | access_level | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC / DEPARTMENT / RESTRICTED |
@@ -539,25 +544,31 @@ AND (
 | 20 | GET | `/documents/{id}/preview-url` | Auth | Lấy presigned URL preview |
 | 21 | GET | `/documents/{id}/download-url` | Auth | Lấy presigned URL download |
 | 22 | GET | `/documents/{id}/versions` | Auth | Lịch sử phiên bản |
-| 23 | POST | `/documents/{id}/versions/init` | Admin | Khởi tạo upload phiên bản mới |
-| 24 | GET | `/documents/{id}/versions/{versionId}/download-url` | Auth | Lấy presigned URL tải phiên bản cũ |
-| 25 | POST | `/documents/{id}/versions/{versionId}/complete` | Admin | Xác nhận upload phiên bản mới |
-| 26 | POST | `/documents/{id}/versions/{versionId}/restore` | Admin | Khôi phục một phiên bản cũ thành phiên bản hiện tại |
+| 23 | POST | `/documents/{id}/versions` | Admin | Upload phiên bản mới |
+| 24 | GET | `/documents/{id}/versions/{versionId}/download` | Auth | Tải phiên bản cũ |
+| 25 | POST | `/documents/{id}/versions/{versionId}/restore` | Admin | Khôi phục một phiên bản cũ thành phiên bản hiện tại |
+| 26 | POST | `/documents/batch-upload` | Admin | Upload nhiều file với partial success |
+| 27 | POST | `/documents/batch-delete` | Admin | Xóa mềm nhiều tài liệu vào Thùng rác |
+| 28 | POST | `/documents/{id}/move` | Admin | Chuyển một tài liệu sang danh mục/folder khác |
+| 29 | POST | `/documents/batch-move` | Admin | Chuyển nhiều tài liệu sang danh mục/folder khác |
+| 30 | GET | `/documents/trash` | Admin | Danh sách tài liệu trong Thùng rác |
+| 31 | POST | `/documents/trash/restore` | Admin | Restore nhiều tài liệu từ Thùng rác |
+| 32 | DELETE | `/documents/trash/permanent-delete` | Admin | Xóa vĩnh viễn tài liệu trong Thùng rác |
 
 ### Search
 
 | # | Method | Endpoint | Auth | Description |
 |---|--------|----------|------|-------------|
-| 26 | GET | `/documents/search` | Auth | Tìm kiếm full-text có filter quyền |
-| 27 | GET | `/documents/search/suggestions` | Auth | Gợi ý keyword/title/code/tag |
+| 33 | GET | `/documents/search` | Auth | Tìm kiếm full-text có filter quyền |
+| 34 | GET | `/documents/search/suggestions` | Auth | Gợi ý keyword/title/code/tag |
 
 ### Master Data
 
 | # | Method | Endpoint | Auth | Description |
 |---|--------|----------|------|-------------|
-| 28–32 | CRUD | `/categories`, `/categories/{id}` | Auth/Admin | Danh mục |
-| 33–37 | CRUD | `/departments`, `/departments/{id}` | Auth/Admin | Phòng ban |
-| 38–42 | CRUD | `/tags`, `/tags/{id}` | Auth/Admin | Tags |
+| 35–39 | CRUD | `/categories`, `/categories/{id}` | Auth/Admin | Danh mục |
+| 40–44 | CRUD | `/departments`, `/departments/{id}` | Auth/Admin | Phòng ban |
+| 45–49 | CRUD | `/tags`, `/tags/{id}` | Auth/Admin | Tags |
 
 ### Dashboard & Audit
 
@@ -565,13 +576,15 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
 
 | # | Method | Endpoint | Auth | Description |
 |---|--------|----------|------|-------------|
-| 43 | GET | `/admin/dashboard/summary` | Admin | Tổng số tài liệu, user, lượt truy cập, lỗi xử lý |
-| 44 | GET | `/admin/dashboard/top-documents` | Admin | Tài liệu được xem/tải nhiều nhất |
-| 45 | GET | `/admin/dashboard/recent-uploads` | Admin | Tài liệu upload gần đây |
-| 46 | GET | `/admin/dashboard/top-search-keywords` | Admin | Từ khóa tìm kiếm phổ biến |
-| 47 | GET | `/admin/dashboard/access-stats` | Admin | Thống kê preview/download/view theo thời gian |
-| 48 | GET | `/admin/dashboard/processing-errors` | Admin | Danh sách lỗi extraction/search refresh |
-| 49 | GET | `/admin/audit-logs` | Admin | Tra cứu audit logs |
+| 50 | GET | `/admin/dashboard/summary` | Admin | Tổng số tài liệu, user, lượt truy cập, lỗi xử lý |
+| 51 | GET | `/admin/dashboard/storage` | Admin | Tổng dung lượng file toàn hệ thống theo MB |
+| 52 | GET | `/admin/dashboard/system-access` | Admin | Dữ liệu truy cập hệ thống |
+| 53 | GET | `/admin/dashboard/top-documents` | Admin | Tài liệu được xem/tải nhiều nhất |
+| 54 | GET | `/admin/dashboard/recent-uploads` | Admin | Tài liệu upload gần đây |
+| 55 | GET | `/admin/dashboard/top-search-keywords` | Admin | Từ khóa tìm kiếm phổ biến |
+| 56 | GET | `/admin/dashboard/access-stats` | Admin | Thống kê preview/download/view theo thời gian |
+| 57 | GET | `/admin/dashboard/processing-errors` | Admin | Danh sách lỗi extraction/indexing kèm lý do lỗi |
+| 58 | GET | `/admin/audit-logs` | Admin | Tra cứu audit/access/search logs |
 
 ---
 
@@ -580,14 +593,16 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
 | Action | Log table |
 |--------|-----------|
 | Login/logout | `audit_logs` |
-| Create/update/delete/archive/restore document | `audit_logs` |
+| Create/update/delete/archive/restore/move/permanent delete document | `audit_logs` |
 | Update ACL/tags/category/metadata | `audit_logs` |
 | Preview/download/version download | `access_logs` — ghi tại thời điểm backend cấp presigned URL, không phải lúc object storage truyền byte hoàn tất |
 | Denied preview/download/detail due to ACL | `access_logs` |
 | Search/suggestions | `search_logs` |
-| Retry extraction/search refresh | `audit_logs` |
+| Retry extraction/indexing | `audit_logs` |
+| Batch upload/delete/move | `audit_logs` per affected document |
+| Processing failure reason | `audit_logs` hoặc `document_contents.error_message` |
 
-Dashboard chỉ tổng hợp từ `documents`, `users`, `audit_logs`, `access_logs`, `search_logs` và trạng thái xử lý trong `document_contents`/PostgreSQL FTS sync metadata. `download_count`/`view_count` trong kiến trúc presigned URL là số lượt cấp URL thành công, không đảm bảo client tải/preview hoàn tất.
+Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs` và trạng thái xử lý trong `document_contents`/Elasticsearch sync metadata. Dung lượng lấy từ MySQL metadata; dữ liệu truy cập lấy từ audit/access/search logs.
 
 ---
 

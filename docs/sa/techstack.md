@@ -232,6 +232,9 @@ backend/
 │   │   ├── controller/
 │   │   ├── service/
 │   │   │   ├── DocumentService.java
+│   │   │   ├── DocumentBatchService.java
+│   │   │   ├── DocumentLifecycleService.java
+│   │   │   ├── DocumentStorageStatsService.java
 │   │   │   ├── StorageService.java
 │   │   │   ├── ContentExtractorService.java
 │   │   │   └── PreviewService.java     ← JODConverter/LibreOffice + HtmlSanitizer
