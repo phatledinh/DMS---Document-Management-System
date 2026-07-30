@@ -75,65 +75,65 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.3 Resource access policy trung tâm
 
-- [ ] Tạo `DocumentAccessPolicyService`
-  - Ghi chú: Service hiện tại chạy permissive nhưng là điểm móc bắt buộc cho list/detail/search/preview/download
-- [ ] Tạo `CategoryAccessPolicyService`
-  - Ghi chú: Chuẩn bị audience theo danh mục để tài liệu có thể thừa hưởng quyền sau này
-- [ ] Xử lý `visibility = PUBLIC`
-  - Ghi chú: Mọi user đã đăng nhập có thể xem khi lifecycle/status hợp lệ
-- [ ] Xử lý `visibility = RESTRICTED`
-  - Ghi chú: Khi enforcement bật, kiểm tra owner/shared users/departments hoặc audience thừa hưởng từ category
-- [ ] Áp dụng resource access policy cho document list
-  - Ghi chú:
-- [ ] Áp dụng resource access policy cho document detail
-  - Ghi chú:
-- [ ] Áp dụng resource access policy cho preview URL
-  - Ghi chú:
-- [ ] Áp dụng resource access policy cho download URL
-  - Ghi chú:
-- [ ] Viết test cơ bản cho resource access policy service
-  - Ghi chú:
+- [x] Tạo `DocumentAccessPolicyService`
+  - Ghi chú: Đã có service trung tâm kiểm lifecycle/status, admin archived path, PUBLIC/RESTRICTED audience, owner/shared users/departments/category audience.
+- [x] Tạo `CategoryAccessPolicyService`
+  - Ghi chú: Đã có service móc nối category audience; hiện mới active-user/admin placeholder cho giai đoạn đầu.
+- [x] Xử lý `visibility = PUBLIC`
+  - Ghi chú: Mọi active user có thể xem khi document lifecycle/status hợp lệ.
+- [x] Xử lý `visibility = RESTRICTED`
+  - Ghi chú: Đã kiểm owner, shared users, shared departments và category audience; admin được allow.
+- [x] Áp dụng resource access policy cho document list
+  - Ghi chú: Đã thêm `GET /documents`; list dùng `DocumentMetadataService` + JPA Specification để lọc status/audience ở DB trước khi phân trang.
+- [x] Áp dụng resource access policy cho document detail
+  - Ghi chú: Đã thêm `GET /documents/{id}`; detail gọi `DocumentAccessPolicyService.canViewMetadata` trước khi trả metadata và không tăng `view_count`.
+- [x] Áp dụng resource access policy cho preview URL
+  - Ghi chú: `GET /documents/{id}/preview-url` gọi `DocumentAccessPolicyService.canPreview` trước khi ký URL.
+- [x] Áp dụng resource access policy cho download URL
+  - Ghi chú: `GET /documents/{id}/download-url` gọi `DocumentAccessPolicyService.canDownload` trước khi ký URL.
+- [x] Viết test cơ bản cho resource access policy service
+  - Ghi chú: Đã có `DocumentAccessPolicyServiceTest` cover PUBLIC, RESTRICTED owner/user/department, archived admin, processing denied và version status.
 
 ### 1.4 Object storage và Presigned URL upload
 
-- [ ] Cấu hình S3-compatible client cho MinIO/R2
-  - Ghi chú:
-- [ ] Tạo `ObjectStorageService`
-  - Ghi chú:
-- [ ] Tạo `PresignedUrlService`
-  - Ghi chú:
-- [ ] Tạo `FileValidationService`
-  - Ghi chú:
-- [ ] Tạo `MimeDetectionService` dùng Apache Tika
-  - Ghi chú:
-- [ ] Triển khai `POST /api/v1/documents/upload-init`
-  - Ghi chú:
-- [ ] Backend tự sinh `documentCode`
-  - Ghi chú:
-- [ ] Backend tự sinh object key UUID/generated
-  - Ghi chú:
-- [ ] Validate file size tối đa 50MB ở upload init
-  - Ghi chú:
-- [ ] Validate extension/content type khai báo ở upload init
-  - Ghi chú:
-- [ ] Chặn extension nguy hiểm
-  - Ghi chú:
-- [ ] Tạo document status `AWAITING_UPLOAD`
-  - Ghi chú:
-- [ ] Trả presigned PUT URL cho client
-  - Ghi chú:
-- [ ] Triển khai `POST /api/v1/documents/{id}/upload-complete`
-  - Ghi chú:
-- [ ] HEAD object storage để xác nhận file tồn tại
-  - Ghi chú:
-- [ ] Verify size thực tế với declared size
-  - Ghi chú:
-- [ ] Detect MIME thật bằng Apache Tika
-  - Ghi chú:
-- [ ] Update document sang `PROCESSING`
-  - Ghi chú:
-- [ ] Publish message RabbitMQ sau DB commit
-  - Ghi chú:
+- [x] Cấu hình S3-compatible client cho MinIO/R2
+  - Ghi chú: Đã thêm `StorageProperties`, `StorageConfig` với `S3Client`/`S3Presigner`, endpoint override và path-style access.
+- [x] Tạo `ObjectStorageService`
+  - Ghi chú: Đã hỗ trợ sinh object key, presigned PUT/GET, HEAD object, mở stream và xóa object.
+- [x] Tạo `PresignedUrlService`
+  - Ghi chú: Đã triển khai trong `DocumentPresignedUrlService`, bao gồm upload-init/complete và download/preview URL.
+- [x] Tạo `FileValidationService`
+  - Ghi chú: Đã validate size, sanitize filename, allowlist extension/MIME và dangerous extensions; có unit test.
+- [x] Tạo `MimeDetectionService` dùng Apache Tika
+  - Ghi chú: Đã dùng Tika detect MIME từ stream object ở bước complete.
+- [x] Triển khai `POST /api/v1/documents/upload-init`
+  - Ghi chú: Đã thêm `DocumentController` và DTO request/response theo API spec.
+- [x] Backend tự sinh `documentCode`
+  - Ghi chú: Đã sinh khi `upload-complete` thành công; hiện dùng format `DMS-yyyyMM-random`.
+- [x] Backend tự sinh object key UUID/generated
+  - Ghi chú: Đã sinh key dạng `documents/{uuid}` trong `ObjectStorageService`.
+- [x] Validate file size tối đa 50MB ở upload init
+  - Ghi chú: Đã lấy giới hạn từ `app.storage.max-file-size`.
+- [x] Validate extension/content type khai báo ở upload init
+  - Ghi chú: Đã validate theo allowlist PDF/Office/image trong `FileValidationService`.
+- [x] Chặn extension nguy hiểm
+  - Ghi chú: Đã chặn exe/sh/bat/cmd/js/html/htm/jar/msi/ps1/vbs.
+- [x] Tạo document status `AWAITING_UPLOAD`
+  - Ghi chú: `upload-init` lưu document với status `AWAITING_UPLOAD` và `uploadExpiresAt`.
+- [x] Trả presigned PUT URL cho client
+  - Ghi chú: Response trả URL PUT, method, required headers và expiresIn.
+- [x] Triển khai `POST /api/v1/documents/{id}/upload-complete`
+  - Ghi chú: Đã kiểm trạng thái/hạn upload, validate object và chuyển sang processing.
+- [x] HEAD object storage để xác nhận file tồn tại
+  - Ghi chú: `ObjectStorageService.headObject` map object thiếu sang `UPLOAD_NOT_COMPLETED`.
+- [x] Verify size thực tế với declared size
+  - Ghi chú: Nếu lệch size thì xóa object và trả `UPLOAD_SIZE_MISMATCH`.
+- [x] Detect MIME thật bằng Apache Tika
+  - Ghi chú: Detect từ object stream và so với extension/allowlist.
+- [x] Update document sang `PROCESSING`
+  - Ghi chú: Sau validation thành công, clear `uploadExpiresAt` và set `PROCESSING`.
+- [x] Publish message RabbitMQ sau DB commit
+  - Ghi chú: Đã thêm event `DocumentExtractionRequestedEvent` và `@TransactionalEventListener(AFTER_COMMIT)` publish queue `dms.extract`.
 
 ### 1.5 RabbitMQ và worker pipeline cơ bản
 
