@@ -78,7 +78,7 @@ Admin chọn "Upload tài liệu"
   • Kiểm tra required fields
   • Kiểm tra dữ liệu phân quyền tương ứng access level
       ↓
-[DocumentController] — POST /documents hoặc POST /documents/batch-upload (multipart/form-data)
+[DocumentController] — POST /documents/upload-init hoặc /documents/batch-upload-init
       ↓
 [FileUploadHandler] — Server-side validation
   ├── ❌ File type không hợp lệ → 415 Unsupported Media Type
@@ -92,7 +92,7 @@ Admin chọn "Upload tài liệu"
   • Status = "AWAITING_UPLOAD"
   • upload_expires_at = now + 5 phút
         ↓
-[DocumentService] — Lưu metadata vào MySQL
+[DocumentService] — Lưu metadata vào PostgreSQL
   • Sinh `document_code` tự động, ví dụ DMS-202607-000001
   • Tạo record trong bảng `documents`
   • Tạo record trong `document_tags` (N:N)
@@ -557,7 +557,7 @@ Admin có thể restore trước hạn
 [Scheduler purgeDeletedDocuments] — Chạy hằng ngày
   • Tìm status = DELETED AND purge_after <= now()
   • Xóa object storage current file + version files theo retention policy
-  • Xóa document_contents và Elasticsearch document
+  • Xóa document_contents và PostgreSQL search row
   • Hard delete row hoặc giữ tombstone permanently_deleted_at theo policy
   • Ghi audit/maintenance log
 ```
@@ -617,7 +617,7 @@ Admin mở Dashboard MH07
 Business rules:
 
 - Dashboard hiển thị tách active/trash/version để tránh hiểu nhầm tổng dung lượng.
-- Số liệu dung lượng lấy từ MySQL, không lấy từ Elasticsearch.
+- Số liệu dung lượng lấy từ PostgreSQL, không lấy từ PostgreSQL FTS.
 
 
 ---

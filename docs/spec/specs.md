@@ -81,7 +81,7 @@ Mục tiêu: hoàn thiện trải nghiệm quản trị và đọc tài liệu s
 | Nhóm | Bao gồm |
 | ---- | ------- |
 | File support | PDF scanned/image OCR, XLS/XLSX extraction, DOC/DOCX/XLS/XLSX preview qua PDF/HTML đã sanitize |
-| Versioning | Upload version mới, version history, chọn current version, re-index khi current version đổi |
+| Versioning | Upload version mới, version history, chọn current version, refresh search row khi current version đổi |
 | Lifecycle | Archive/restore, retry thủ công cho `EXTRACTION_FAILED`, thùng rác, permanent delete và tự purge sau 30 ngày |
 | Metadata | Quản lý category tree như folder, tags, filter nâng cao, chuyển tài liệu giữa danh mục |
 | Batch operations | Upload nhiều file, xóa nhiều file, chuyển nhiều file với partial success theo từng item |
@@ -215,7 +215,7 @@ Business decisions:
 | Ràng buộc              | Giá trị                                                              |
 | ---------------------- | -------------------------------------------------------------------- |
 | Kích thước file tối đa | 50 MB                                                                |
-| Số file mỗi request    | `POST /documents` nhận 1 file; `POST /documents/batch-upload` nhận nhiều file, mỗi file tối đa 50 MB |
+| Số file mỗi request    | `upload-init` nhận 1 file; `batch-upload-init` nhận nhiều file và trả presigned PUT URL theo item, mỗi file tối đa 50 MB |
 | Metadata bắt buộc      | File, title, category, access level và ACL tương ứng; `document_code` do backend tự sinh |
 | Đặt tên file lưu trữ   | UUID-based, không dùng tên file user nhập làm storage path trực tiếp |
 | Kiểm tra định dạng     | Validate MIME type thực tế và extension                              |
@@ -231,7 +231,7 @@ Business decisions:
 - Format đề xuất: `DMS-{yyyyMM}-{sequence6}`, ví dụ `DMS-202607-000001`.
 - Upload nhiều file tạo nhiều document và mỗi document có mã riêng.
 - Mã tài liệu là immutable trong luồng metadata thông thường; Admin chỉ xem, không nhập/sửa trên form upload/edit.
-- Mã tài liệu vẫn là field search quan trọng, được ưu tiên exact match/boost trong Elasticsearch.
+- Mã tài liệu vẫn là field search quan trọng, được ưu tiên exact match/boost trong PostgreSQL FTS.
 - Backend phải xử lý concurrency bằng transaction/sequence và unique index để không sinh trùng mã khi nhiều Admin upload cùng lúc.
 
 ## 6. Search Engine Requirements
@@ -275,7 +275,7 @@ Business rules:
 
 - Search mặc định chỉ trả về tài liệu `INDEXED`.
 - Tài liệu `DELETED` nằm trong Thùng rác, có thể restore trước `purge_after`; hệ thống tự xóa vĩnh viễn sau 30 ngày.
-- Khi soft delete, hệ thống lưu trạng thái trước đó để restore về trạng thái phù hợp hoặc chuyển `PROCESSING` nếu cần re-index.
+- Khi soft delete, hệ thống lưu trạng thái trước đó để restore về trạng thái phù hợp hoặc chuyển `PROCESSING` nếu cần refresh search row.
 - Tài liệu `DELETED` không xuất hiện trong search, preview hoặc download.
 - Hệ thống tự động retry extraction/search refresh mỗi 30 phút cho tài liệu `EXTRACTION_FAILED` do lỗi xử lý/refresh search tạm thời.
 - Admin có thể xem tài liệu lỗi xử lý để retry extraction/search refresh thủ công.
@@ -293,8 +293,8 @@ Business rules:
 | Soft delete | Admin xóa tài liệu thì hệ thống set `status = DELETED`, `deleted_at`, `deleted_by`, `purge_after = deleted_at + 30 ngày`, lưu `previous_status`. |
 | Visibility | Tài liệu `DELETED` không xuất hiện trong search/list/preview/download mặc định của User. |
 | Trash list | Admin xem được danh sách tài liệu trong thùng rác với title/fileName/fileSize/category/deletedBy/deletedAt/purgeAfter/daysUntilPurge. |
-| Restore | Admin có thể restore một/nhiều tài liệu trước khi purge; hệ thống clear deleted fields và re-index nếu cần. |
-| Permanent delete | Admin có thể xóa vĩnh viễn thủ công; hệ thống xóa object storage, extracted content và Elasticsearch document, giữ audit logs. |
+| Restore | Admin có thể restore một/nhiều tài liệu trước khi purge; hệ thống clear deleted fields và refresh search row nếu cần. |
+| Permanent delete | Admin có thể xóa vĩnh viễn thủ công; hệ thống xóa object storage, extracted content và PostgreSQL search row, giữ audit logs. |
 | Auto purge | Scheduled job hằng ngày tự purge tài liệu `DELETED` khi `purge_after <= now()`. |
 
 ### Batch operations
@@ -310,7 +310,7 @@ Business rules:
 
 - Hệ thống dùng `categories.parent_id` như cây folder/danh mục, không tạo entity `folders` riêng.
 - Move document là cập nhật `documents.category_id`, nhưng phải có API/action riêng để ghi audit rõ category cũ/mới.
-- Khi move thành công, hệ thống re-index metadata category trong Elasticsearch.
+- Khi move thành công, hệ thống refresh search row metadata category trong PostgreSQL FTS.
 - Target category phải tồn tại, active và chưa soft delete.
 
 ---
@@ -328,7 +328,7 @@ Business rules:
 
 - Dashboard Admin phải hiển thị **Tổng MB** toàn hệ thống (`totalStorageMb`).
 - MB = bytes / 1024 / 1024, làm tròn 2 chữ số.
-- Dung lượng lấy từ MySQL metadata, không lấy từ Elasticsearch.
+- Dung lượng lấy từ PostgreSQL metadata, không lấy từ PostgreSQL FTS.
 
 ### Dữ liệu truy cập hệ thống
 
@@ -431,13 +431,13 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 
 - PostgreSQL là source of truth cho metadata, ACL, document lifecycle, version hiện hành, extracted content, search vector và object key đang được tham chiếu.
 - Object storage chỉ lưu binary/artifact theo object key UUID-based; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
-- Elasticsearch là derived index; dữ liệu search phải có thể rebuild từ MySQL và nội dung đã extract/object storage.
-- Upload tạo object key trước, upload binary vào object storage, sau đó ghi MySQL trong transaction. Nếu upload object thành công nhưng MySQL transaction fail, hệ thống phải ghi nhận hoặc lên lịch cleanup orphan object.
-- Extraction/indexing chỉ chạy sau khi MySQL commit thành công bằng after-commit event hoặc retry queue.
+- `document_search_index` là derived table; dữ liệu search phải có thể rebuild từ PostgreSQL và nội dung đã extract/object storage.
+- Upload tạo row `AWAITING_UPLOAD` và object key trong PostgreSQL trước, client PUT binary vào object storage, sau đó `upload-complete` validate object và chuyển `PROCESSING`. Row/object quá TTL được cleanup.
+- Extraction/indexing chỉ chạy sau khi PostgreSQL commit thành công bằng after-commit publish RabbitMQ hoặc retry queue.
 - Nếu extraction hoặc indexing fail sau khi DB commit, document/version giữ trạng thái `PROCESSING` hoặc chuyển `EXTRACTION_FAILED`; không rollback metadata đã commit.
-- Delete/archive/restore/move cập nhật MySQL trước, sau đó đồng bộ Elasticsearch async. Soft delete không xóa object vật lý ngay.
-- Object deletion vật lý chạy bằng cleanup job theo retention policy; orphan cleanup xử lý object không còn được MySQL tham chiếu, trash purge xử lý document `DELETED` đã quá `purge_after`.
-- Batch reindex nightly dùng để self-heal lệch index; job này đọc MySQL/document content làm nguồn chính và ghi lại Elasticsearch.
+- Delete/archive/restore/move cập nhật PostgreSQL trước, sau đó đồng bộ PostgreSQL FTS async. Soft delete không xóa object vật lý ngay.
+- Object deletion vật lý chạy bằng cleanup job theo retention policy; orphan cleanup xử lý object không còn được PostgreSQL tham chiếu, trash purge xử lý document `DELETED` đã quá `purge_after`.
+- Batch reindex nightly dùng để self-heal lệch index; job này đọc PostgreSQL/document content làm nguồn chính và ghi lại PostgreSQL FTS.
 
 ---
 
@@ -445,9 +445,9 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 
 | #   | Tiêu chí nghiệm thu |
 | --- | ------------------- |
-| 1   | Admin upload được file hợp lệ; backend tự sinh `documentCode`, metadata được lưu, tài liệu chuyển `PROCESSING` và được index vào Elasticsearch khi xử lý thành công. |
+| 1   | Admin upload được file hợp lệ; backend tự sinh `documentCode`, metadata được lưu, tài liệu chuyển `PROCESSING` và được refresh vào PostgreSQL search index khi xử lý thành công. |
 | 2   | Admin batch upload nhiều file; mỗi file hợp lệ tạo document/mã riêng, file lỗi trả lỗi theo item và không rollback file hợp lệ. |
-| 3   | User tìm được tài liệu theo title, description, extracted content, tags và mã tài liệu; kết quả search có highlight khi Elasticsearch trả về highlight. |
+| 3   | User tìm được tài liệu theo title, description, extracted content, tags và mã tài liệu; kết quả search có highlight từ PostgreSQL `ts_headline`. |
 | 4   | Kết quả search trả về trong P95 < 500ms với dưới 10k documents. |
 | 5   | User không thấy title/snippet/metadata/download URL của tài liệu không có quyền trong search, preview, download hoặc detail. |
 | 6   | File sai MIME/extension, vượt 50 MB hoặc thuộc extension bị chặn bị backend từ chối. |
@@ -455,9 +455,9 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 | 8   | Download trả file gốc với quyền hợp lệ, tăng `download_count` và ghi access log. |
 | 9   | Upload version mới không làm mất version cũ; search/preview/download mặc định dùng current version hợp lệ. |
 | 10  | Admin xóa một/nhiều tài liệu thì tài liệu vào Thùng rác, có `deletedAt`, `deletedBy`, `purgeAfter`, không xuất hiện trong search/preview/download của User. |
-| 11  | Admin restore được tài liệu từ Thùng rác trước hạn purge; hệ thống clear deleted fields và re-index nếu cần. |
+| 11  | Admin restore được tài liệu từ Thùng rác trước hạn purge; hệ thống clear deleted fields và refresh search row nếu cần. |
 | 12  | Hệ thống tự purge tài liệu trong Thùng rác sau 30 ngày hoặc khi Admin permanent delete; storage/content/search artifacts được xóa theo policy, audit logs được giữ. |
-| 13  | Admin chuyển một/nhiều tài liệu sang danh mục/folder khác; category cũ/mới được audit và Elasticsearch metadata được re-index. |
+| 13  | Admin chuyển một/nhiều tài liệu sang danh mục/folder khác; category cũ/mới được audit và PostgreSQL search metadata được refresh search row. |
 | 14  | Dashboard MH07 hiển thị tổng dung lượng file toàn hệ thống theo MB, tách active/trash/version nếu cần. |
 | 15  | Dashboard MH07 hiển thị dữ liệu truy cập hệ thống: login, active users, unique access users, preview/download/search/denied access. |
 | 16  | Admin xem được tài liệu lỗi xử lý kèm lý do lỗi (`errorCode`, `errorMessage`, stage lỗi), retry count và action retry. |

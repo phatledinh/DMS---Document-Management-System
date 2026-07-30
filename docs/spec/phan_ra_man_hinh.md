@@ -406,7 +406,7 @@ MH05 không còn là màn hình riêng. Chức năng preview tài liệu đượ
 | Tài liệu | Tiêu đề hoặc tên file lỗi |
 | File type | PDF/DOCX/XLSX/JPG... |
 | Status | `PROCESSING` lâu hoặc `EXTRACTION_FAILED` |
-| Lý do lỗi | Message cụ thể như OCR timeout, MIME mismatch, file corrupted, Elasticsearch indexing failed |
+| Lý do lỗi | Message cụ thể như OCR timeout, MIME mismatch, file corrupted, PostgreSQL search indexing failed |
 | Retry count | Số lần retry extraction/indexing |
 | Updated at | Thời điểm lỗi/cập nhật gần nhất |
 | Action | Retry indexing, xem chi tiết, tải file gốc nếu cần kiểm tra |
@@ -487,7 +487,7 @@ Cập nhật multi-upload:
 - Drag/drop zone cho phép chọn nhiều file, mỗi file tối đa 50MB.
 - Metadata/ACL panel áp dụng mặc định cho toàn bộ file trong batch; mã tài liệu không nhập tay, mỗi file được backend tự sinh mã riêng sau upload.
 - UI hiển thị validation/progress/result theo từng file.
-- Upload một file vẫn là trường hợp đặc biệt của cùng màn hình; backend có thể gọi `POST /documents` hoặc `POST /documents/batch-upload` tùy số file.
+- Upload một file vẫn là trường hợp đặc biệt của cùng màn hình; backend gọi `POST /documents/upload-init` cho 1 file hoặc `POST /documents/batch-upload-init` cho nhiều file, sau đó complete theo item.
 - Sau upload hiển thị summary: tổng file, thành công, thất bại, danh sách file lỗi và action retry.
 
 | Thuộc tính | Chi tiết |

@@ -650,15 +650,17 @@ public UserDTO getCurrentUser() {
 ### Refresh Token
 
 - Refresh Token là **UUID random** lưu trong bảng `refresh_tokens` (PostgreSQL), KHÔNG phải JWT
+- Refresh Token gửi cho browser bằng **HttpOnly Cookie** (`Path=/api/v1/auth`), JavaScript không đọc trực tiếp
+- Frontend lưu Access Token trong memory, KHÔNG lưu LocalStorage/SessionStorage
 - Khi refresh: tạo access token mới + refresh token mới, revoke refresh token cũ
-- Logout: revoke refresh token + clear SecurityContext
+- Logout: revoke refresh token + clear SecurityContext + xóa cookie refresh token với cùng Path/SameSite/Secure
 - Refresh token hết hạn hoặc đã revoke → yêu cầu đăng nhập lại
 
 ### JWT Security Rules
 - Access token: **15 phút** (900000ms) — short-lived để giảm rủi ro leak
-- Refresh token: **7 ngày** (604800000ms) — lưu DB, có thể revoke
-- CSRF disabled CHỈ VÌ dùng stateless JWT — nếu chuyển sang cookie-based auth, phải bật lại CSRF
-- Spring oauth2ResourceServer xử lý validation tự động — không cần custom filter
+- Refresh token: **7 ngày** (604800000ms) — lưu DB, gửi qua HttpOnly Cookie, có thể revoke
+- CSRF có thể disable cho API dùng Bearer Access Token stateless; riêng `/auth/refresh` và `/auth/logout` phải có CSRF protection nếu refresh cookie được gửi cross-site
+- Spring oauth2ResourceServer xử lý validation tự động — không cần custom filter, không dùng jjwt/custom `OncePerRequestFilter`
 - `JwtAuthenticationConverter` map claim `role` → authority `ROLE_ADMIN` / `ROLE_USER`
 - User bị deactivate (`INACTIVE`/`BANNED`) không được cấp token mới; API phải check trạng thái user
 - `JWT_SECRET` phải đủ mạnh cho HMAC 256-bit; không dùng placeholder ở production
@@ -756,6 +758,13 @@ DELETED → INDEXED / ARCHIVED (restore nếu còn retention window)
 | `ARCHIVED` | Không mặc định | Ngưng sử dụng, có thể restore |
 | `DELETED` | Không | Thùng rác, auto purge sau 30 ngày |
 
+### Version Current Switch Rules
+
+- Upload version mới tạo `document_versions` mới nhưng chưa thay `current_version` ngay.
+- Version mới chỉ trở thành current sau khi extraction, preview artifact cần thiết và refresh `document_search_index` thành công.
+- Nếu version mới lỗi, version cũ tiếp tục phục vụ search/preview/download cho User; version lỗi chuyển `EXTRACTION_FAILED` và Admin có thể retry.
+- Restore version cũ cũng phải refresh search vector trước khi User thấy nội dung mới.
+
 ---
 
 ## 16. Upload Flow (Presigned URL)
@@ -776,6 +785,8 @@ DELETED → INDEXED / ARCHIVED (restore nếu còn retention window)
 - Chặn extensions nguy hiểm: `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`
 - `storage_path` dùng UUID — **KHÔNG** dùng filename gốc
 - `document_code` do backend tự sinh format `DMS-{yyyyMM}-{sequence6}`
+- Request DTO tạo/cập nhật tài liệu **KHÔNG nhận** `documentCode`; nếu tài liệu khác còn mô tả input này thì xem là stale và phải sửa docs trước khi implement
+- Batch upload cũng dùng presigned URL theo từng file/item; **KHÔNG dùng multipart upload qua Spring**
 - Spring `multipart.max-file-size` set nhỏ (1MB) vì file upload qua presigned URL, không qua Spring
 
 ---
@@ -905,6 +916,7 @@ public class DocumentService {
 - Dùng `{}` parameterized — **KHÔNG** dùng string concatenation
 - Controller: KHÔNG log business — chỉ log nếu cần auditing/tracing
 - Service: log important business events
+- Với presigned URL, `PREVIEW`/`DOWNLOAD` access log và `view_count`/`download_count` được ghi tại thời điểm backend cấp URL, không phải lúc object storage truyền byte hoàn tất
 
 ---
 

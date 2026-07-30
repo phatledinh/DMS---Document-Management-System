@@ -49,7 +49,7 @@ CDN / Nginx ──> Load Balancer ──> Backend API xN ──publish──> Ra
 - Production nhiều backend instance phải dùng ShedLock hoặc cơ chế distributed lock tương đương để tránh nhiều node purge cùng một document.
 - Object storage deletion phải idempotent: object đã mất được xem là thành công, lỗi tạm thời được log để retry.
 - Batch upload nên giới hạn số file/request bằng `BATCH_UPLOAD_MAX_FILES`; mỗi file vẫn chịu `FILE_MAX_SIZE`.
-- Trash storage và total storage trên dashboard lấy từ MySQL metadata, không gọi object storage provider trong request dashboard.
+- Trash storage và total storage trên dashboard lấy từ PostgreSQL metadata, không gọi object storage provider trong request dashboard.
 
 ---
 

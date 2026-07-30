@@ -54,23 +54,23 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.2 Auth, RBAC và security nền tảng
 
-- [x] Triển khai `POST /api/v1/auth/login`
+- [] Triển khai `POST /api/v1/auth/login`
   - Ghi chú: Đã tạo AuthController và AuthService
-- [x] Triển khai `POST /api/v1/auth/refresh`
+- [] Triển khai `POST /api/v1/auth/refresh`
   - Ghi chú: Đã xử lý HttpOnly cookie
-- [x] Triển khai `POST /api/v1/auth/logout`
+- [] Triển khai `POST /api/v1/auth/logout`
   - Ghi chú: Revoke refresh token và clear cookie
-- [x] Triển khai `GET /api/v1/auth/me`
+- [] Triển khai `GET /api/v1/auth/me`
   - Ghi chú: Đã tạo API trả về UserDTO
-- [x] Cấu hình JWT access token
+- [] Cấu hình JWT access token
   - Ghi chú: Đã tạo JwtTokenProvider
-- [x] Cấu hình refresh token qua HttpOnly cookie
+- [] Cấu hình refresh token qua HttpOnly cookie
   - Ghi chú: Cookie cấu hình HttpOnly, path /api/v1/auth
-- [x] Cấu hình Spring Security filter chain
+- [] Cấu hình Spring Security filter chain
   - Ghi chú: Đã cấu hình STATELESS session và JwtAuthenticationFilter
-- [x] Tạo role `ADMIN` và `USER`
+- [] Tạo role `ADMIN` và `USER`
   - Ghi chú: Đã tạo Enum Role
-- [x] Seed dữ liệu admin/dev user nếu cần
+- [] Seed dữ liệu admin/dev user nếu cần
   - Ghi chú: Đã có script seed admin user trong V1__init.sql
 
 ### 1.3 ACL trung tâm
@@ -373,7 +373,7 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 2.5 Batch upload và batch operations
 
-- [ ] Triển khai `POST /api/v1/documents/batch-upload`
+- [ ] Triển khai `POST /api/v1/documents/batch-upload-init` và `POST /api/v1/documents/batch-upload-complete`
   - Ghi chú:
 - [ ] Áp dụng giới hạn `BATCH_UPLOAD_MAX_FILES`
   - Ghi chú:

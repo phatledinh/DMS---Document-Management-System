@@ -116,7 +116,7 @@ DELETED -> PURGED (sau 30 ngày hoặc permanent delete)
   - `previous_status = old status`
 - Restore document clear `deleted_at`, `deleted_by`, `purge_after`; status trở về `previous_status` nếu file/index còn hợp lệ, hoặc `PROCESSING` nếu cần re-index.
 - Permanent purge áp dụng khi Admin xóa vĩnh viễn hoặc scheduled job thấy `status = DELETED AND purge_after <= now()`.
-- Permanent purge xóa object storage current file, version files theo retention policy, `document_contents`, Elasticsearch document và metadata nếu chọn hard delete. Audit/access/search logs vẫn được giữ.
+- Permanent purge xóa object storage current file, version files theo retention policy, `document_contents`, PostgreSQL search row và metadata nếu chọn hard delete. Audit/access/search logs vẫn được giữ.
 - Nếu cần giữ lịch sử tối thiểu cho audit, giữ tombstone row với `permanently_deleted_at` và xóa storage/content/search artifacts.
 
 ### Storage Usage Calculation
@@ -504,4 +504,4 @@ AND (
 | Batch upload/delete/move | `audit_logs` per affected document |
 | Scheduled trash purge | `audit_logs` hoặc maintenance log |
 
-Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs`, `document_contents` và Elasticsearch sync metadata. Dung lượng lưu trữ lấy từ MySQL để bao gồm cả active/trash/version theo policy, không lấy từ Elasticsearch.
+Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs`, `document_contents` và PostgreSQL search/index metadata. Dung lượng lưu trữ lấy từ PostgreSQL để bao gồm cả active/trash/version theo policy, không lấy từ PostgreSQL FTS.

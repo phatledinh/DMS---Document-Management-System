@@ -126,7 +126,7 @@ Tất cả JSON endpoint trả về format thống nhất.
 
 Upload rules:
 
-S- Upload dùng flow presigned URL: backend ký URL, client PUT file trực tiếp lên object storage, rồi gọi complete.
+- Upload dùng flow presigned URL: backend ký URL, client PUT file trực tiếp lên object storage, rồi gọi complete.
 - Mỗi flow upload xử lý đúng 1 file, file size tối đa `50MB`.
 - `upload-init` validate sơ bộ extension, MIME khai báo, kích thước và metadata; backend sinh `storage_path` UUID/generated key, client không được chọn object key.
 - `upload-complete` HEAD object, kiểm tra size thực tế và validate MIME thực tế bằng Apache Tika trước khi chuyển sang `PROCESSING`.
@@ -402,7 +402,6 @@ Admin khởi tạo upload tài liệu mới. Backend validate metadata và thôn
   "description": "Tài liệu mô tả quy trình quản lý chất lượng",
   "categoryId": 1,
   "departmentId": 3,
-  "documentCode": "SOP-QA-001",
   "tagIds": [1, 5],
   "accessLevel": "DEPARTMENT",
   "departmentIds": [3],
@@ -583,11 +582,11 @@ Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST
 }
 ```
 
-**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/ACL thay đổi phải re-index Elasticsearch và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
+**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/ACL thay đổi phải refresh PostgreSQL search row và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
 
 ### `DELETE /documents/{id}` 👑
 
-Soft delete tài liệu: set `status = DELETED`, `deleted_at`, `deleted_by`, `purge_after = deleted_at + 30 ngày`, lưu `previous_status`, cập nhật Elasticsearch để loại khỏi search mặc định và đưa tài liệu vào Thùng rác.
+Soft delete tài liệu: set `status = DELETED`, `deleted_at`, `deleted_by`, `purge_after = deleted_at + 30 ngày`, lưu `previous_status`, cập nhật PostgreSQL FTS để loại khỏi search mặc định và đưa tài liệu vào Thùng rác.
 
 **Success Response (204):** No Content
 
@@ -642,50 +641,70 @@ Retry extraction hoặc refresh search vector cho tài liệu `EXTRACTION_FAILED
 ```
 
 
-### `POST /documents/batch-upload` 👑
+### `POST /documents/batch-upload-init` 👑
 
-Admin upload nhiều file trong một request. Mỗi file hợp lệ tạo một document riêng, version 1.0 riêng và chạy extraction/indexing độc lập.
+Admin khởi tạo upload nhiều file bằng presigned URL. Backend validate metadata chung và thông tin khai báo của từng file, tạo document/version riêng cho từng item hợp lệ, trả danh sách presigned PUT URL để client upload từng file trực tiếp lên object storage. Không có endpoint multipart upload qua Spring.
 
-**Request Fields (`multipart/form-data`):**
-
-| Field | Type | Required | Description |
-|-------|------|:---:|-------------|
-| `files` | File[] | Có | Danh sách file, mỗi file max 50MB |
-| `categoryId` | Long | Có | Danh mục/folder mặc định cho tất cả file |
-| `departmentId` | Long | Không | Phòng ban sở hữu/chủ quản |
-| `tagIds` | Long[] | Không | Tags áp dụng chung |
-| `accessLevel` | String | Có | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
-| `departmentIds` | Long[] | Conditional | Bắt buộc nếu `accessLevel = DEPARTMENT` |
-| `ownerId` | Long | Conditional | Owner mặc định |
-| `sharedUserIds` | Long[] | Không | User được chia sẻ trực tiếp |
-| `effectiveDate` | Date | Không | Ngày hiệu lực mặc định |
-| `expiryDate` | Date | Không | Ngày hết hiệu lực mặc định |
-| `titlePattern` | String | Không | Quy tắc sinh title; mặc định lấy từ tên file |
+**Request Body:**
+```json
+{
+  "files": [
+    { "clientItemId": "item-1", "fileName": "policy.pdf", "fileSize": 2048576, "contentType": "application/pdf", "title": "Chính sách nội bộ" },
+    { "clientItemId": "item-2", "fileName": "manual.docx", "fileSize": 1048576, "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "title": "Hướng dẫn vận hành" }
+  ],
+  "categoryId": 1,
+  "departmentId": 3,
+  "tagIds": [1, 5],
+  "accessLevel": "DEPARTMENT",
+  "departmentIds": [3],
+  "ownerId": 10,
+  "sharedUserIds": [],
+  "effectiveDate": "2026-01-01",
+  "expiryDate": null
+}
+```
 
 **Business Rules:**
 
-- Validate MIME, extension và size theo từng file.
-- Cho phép partial success; file lỗi không rollback file hợp lệ.
-- Response trả kết quả theo từng file, bao gồm `documentCode` tự sinh cho file upload thành công, để frontend hiển thị retry/failed list.
-- Ghi audit log cho từng document tạo thành công.
+- Validate extension, MIME khai báo và size theo từng item ở init; `batch-upload-complete` validate object thực tế bằng HEAD + Tika.
+- Cho phép partial success; item lỗi không rollback item hợp lệ.
+- Mỗi item hợp lệ nhận `documentId`, `documentCode` tự sinh và presigned PUT URL riêng.
+- Client PUT từng file bằng URL tương ứng, rồi gọi `POST /documents/batch-upload-complete` với danh sách item đã upload.
+- Ghi audit log cho từng document upload complete thành công.
 
 **Success Response (200):**
 ```json
 {
   "success": true,
-  "message": "Batch upload completed",
+  "message": "Batch upload URLs created",
   "data": {
     "total": 3,
     "succeeded": 2,
     "failed": 1,
     "items": [
-      { "fileName": "policy.pdf", "success": true, "documentId": 101, "documentCode": "DMS-202607-000001", "status": "PROCESSING" },
-      { "fileName": "manual.docx", "success": true, "documentId": 102, "documentCode": "DMS-202607-000002", "status": "PROCESSING" },
-      { "fileName": "script.exe", "success": false, "errorCode": "DANGEROUS_FILE_TYPE", "message": "File type is blocked" }
+      { "clientItemId": "item-1", "fileName": "policy.pdf", "success": true, "documentId": 101, "documentCode": "DMS-202607-000001", "status": "AWAITING_UPLOAD", "uploadUrl": "https://storage.example.com/dms-documents/uuid-101?X-Amz-Signature=...", "method": "PUT", "requiredHeaders": { "Content-Type": "application/pdf" }, "expiresIn": 300 },
+      { "clientItemId": "item-2", "fileName": "manual.docx", "success": true, "documentId": 102, "documentCode": "DMS-202607-000002", "status": "AWAITING_UPLOAD", "uploadUrl": "https://storage.example.com/dms-documents/uuid-102?X-Amz-Signature=...", "method": "PUT", "requiredHeaders": { "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, "expiresIn": 300 },
+      { "clientItemId": "item-3", "fileName": "script.exe", "success": false, "errorCode": "DANGEROUS_FILE_TYPE", "message": "File type is blocked" }
     ]
   }
 }
 ```
+
+### `POST /documents/batch-upload-complete` 👑
+
+Xác nhận nhiều item đã PUT xong. Backend xử lý từng item như `upload-complete`: HEAD object, validate size/MIME thực tế bằng Tika, chuyển item hợp lệ sang `PROCESSING`, commit rồi publish RabbitMQ task riêng.
+
+**Request Body:**
+```json
+{
+  "items": [
+    { "documentId": 101 },
+    { "documentId": 102 }
+  ]
+}
+```
+
+Response dùng cùng partial success format; item thành công trả `status = PROCESSING`.
 
 ### `POST /documents/batch-delete` 👑
 
@@ -776,7 +795,7 @@ Chuyển nhiều tài liệu sang cùng một category/folder.
 
 ### Trash / Recycle Bin APIs 👑
 
-Trash list chỉ lấy từ MySQL vì tài liệu `DELETED` bị loại khỏi Elasticsearch search mặc định.
+Trash list chỉ lấy từ PostgreSQL vì tài liệu `DELETED` bị loại khỏi PostgreSQL FTS search mặc định.
 
 #### `GET /documents/trash`
 
@@ -828,7 +847,7 @@ Response dùng cùng partial success format như batch delete. Restore clear `de
 }
 ```
 
-Xóa vĩnh viễn file hiện tại, version files, extracted content và Elasticsearch document; audit logs vẫn được giữ. Endpoint này chỉ dành cho Admin.
+Xóa vĩnh viễn file hiện tại, version files, extracted content và PostgreSQL search row; audit logs vẫn được giữ. Endpoint này chỉ dành cho Admin.
 
 ### Internal scheduled job: `purgeDeletedDocuments`
 
@@ -1484,8 +1503,9 @@ API spec tương thích OpenAPI 3 / Swagger. Khi triển khai, `@RestController`
 | 49 | GET | `/admin/dashboard/system-access` | 👑 | Dữ liệu truy cập hệ thống |
 | 50 | GET | `/admin/audit-logs` | 👑 | Tra cứu audit/access/search logs |
 | | | **Batch & Trash** | | |
-| 51 | POST | `/documents/batch-upload` | 👑 | Upload nhiều file với partial success |
-| 52 | POST | `/documents/batch-delete` | 👑 | Xóa mềm nhiều tài liệu vào Thùng rác |
+| 51 | POST | `/documents/batch-upload-init` | 👑 | Khởi tạo upload nhiều file, trả presigned PUT URL theo item |
+| 52 | POST | `/documents/batch-upload-complete` | 👑 | Xác nhận nhiều item đã PUT xong |
+| 53 | POST | `/documents/batch-delete` | 👑 | Xóa mềm nhiều tài liệu vào Thùng rác |
 | 53 | POST | `/documents/{id}/move` | 👑 | Chuyển một tài liệu sang category/folder khác |
 | 54 | POST | `/documents/batch-move` | 👑 | Chuyển nhiều tài liệu sang category/folder khác |
 | 55 | GET | `/documents/trash` | 👑 | Danh sách tài liệu trong Thùng rác |

@@ -36,8 +36,8 @@
 
 | Thư viện | Mô tả |
 |----------|-------|
-| **Ant Design** / **MUI** | Component library (Table, Form, Modal, Menu...) |
-| **CSS Modules** / **Styled Components** | Styling solution |
+| **Ant Design** | Component library (Table, Form, Modal, Tree, Upload...) |
+| **CSS Modules** | Styling solution |
 | **React Icons** | Icon library |
 
 ### State Management & Data Fetching
@@ -45,7 +45,7 @@
 | Thư viện | Mô tả |
 |----------|-------|
 | **TanStack Query (React Query)** | Server state management, caching, refetching |
-| **Zustand** / **Context API** | Client state (auth, UI state) |
+| **Zustand** | Client state (auth, UI state) |
 | **Axios** | HTTP client (interceptors cho JWT refresh) |
 
 ### Routing & Navigation
@@ -136,8 +136,9 @@ frontend/
 
 | Thư viện | Mô tả |
 |----------|-------|
-| **jjwt (io.jsonwebtoken)** | JWT token generation & validation |
+| **Spring Security oauth2-resource-server + Nimbus JOSE JWT** | JWT Access Token validation/signing với HS256, không dùng custom filter |
 | **BCrypt** (Spring Security) | Password hashing |
+| **Refresh Token UUID + HttpOnly Cookie** | Refresh token lưu PostgreSQL, revoke được, cookie path `/api/v1/auth` |
 
 ### File Processing
 

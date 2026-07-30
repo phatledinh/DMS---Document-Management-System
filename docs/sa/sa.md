@@ -138,13 +138,13 @@ DocumentLifecycleService
   └── purgeDeletedDocuments()
 
 DocumentStorageStatsService
-  └── calculate active/trash/version/total storage from MySQL
+  └── calculate active/trash/version/total storage from PostgreSQL
 ```
 
 - Batch operations dùng partial success response để lỗi từng file/tài liệu không rollback toàn bộ batch.
 - `DocumentLifecycleService` là nơi duy nhất set/clear `deleted_at`, `deleted_by`, `purge_after`, `previous_status`.
-- `DocumentStorageStatsService` tính dung lượng từ `documents.file_size` và `document_versions.file_size`, không phụ thuộc Elasticsearch.
-- Trash list lấy từ MySQL vì Elasticsearch mặc định không giữ document `DELETED` trong kết quả search.
+- `DocumentStorageStatsService` tính dung lượng từ `documents.file_size` và `document_versions.file_size`, không phụ thuộc PostgreSQL FTS.
+- Trash list lấy từ PostgreSQL vì PostgreSQL FTS mặc định không giữ document `DELETED` trong kết quả search.
 
 ---
 

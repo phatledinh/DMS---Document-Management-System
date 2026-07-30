@@ -108,7 +108,7 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 Upload validation rules:
 
 - File size tối đa: `50MB` cho từng file.
-- `POST /documents` upload 1 file; `POST /documents/batch-upload` upload nhiều file với partial success.
+- `POST /documents/upload-init` upload 1 file; `POST /documents/batch-upload-init` khởi tạo nhiều presigned upload với partial success theo item.
 - Validate cả extension và MIME thực tế bằng Apache Tika; không chỉ tin vào filename hoặc header từ client.
 - Chặn các extension nguy hiểm: `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`, `.htm`, `.jar`, `.msi`, `.ps1`, `.vbs`.
 - `storage_path` phải dùng UUID hoặc generated key, không dùng trực tiếp tên file gốc.
@@ -549,7 +549,8 @@ AND (
 | 23 | POST | `/documents/{id}/versions` | Admin | Upload phiên bản mới |
 | 24 | GET | `/documents/{id}/versions/{versionId}/download` | Auth | Tải phiên bản cũ |
 | 25 | POST | `/documents/{id}/versions/{versionId}/restore` | Admin | Khôi phục một phiên bản cũ thành phiên bản hiện tại |
-| 26 | POST | `/documents/batch-upload` | Admin | Upload nhiều file với partial success |
+| 26 | POST | `/documents/batch-upload-init` | Admin | Khởi tạo upload nhiều file với presigned URL theo item |
+| 27 | POST | `/documents/batch-upload-complete` | Admin | Xác nhận nhiều item upload xong |
 | 27 | POST | `/documents/batch-delete` | Admin | Xóa mềm nhiều tài liệu vào Thùng rác |
 | 28 | POST | `/documents/{id}/move` | Admin | Chuyển một tài liệu sang danh mục/folder khác |
 | 29 | POST | `/documents/batch-move` | Admin | Chuyển nhiều tài liệu sang danh mục/folder khác |
@@ -604,7 +605,7 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
 | Batch upload/delete/move | `audit_logs` per affected document |
 | Processing failure reason | `audit_logs` hoặc `document_contents.error_message` |
 
-Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs` và trạng thái xử lý trong `document_contents`/Elasticsearch sync metadata. Dung lượng lấy từ MySQL metadata; dữ liệu truy cập lấy từ audit/access/search logs.
+Dashboard tổng hợp từ `documents`, `document_versions`, `users`, `audit_logs`, `access_logs`, `search_logs` và trạng thái xử lý trong `document_contents`/PostgreSQL search/index metadata. Dung lượng lấy từ PostgreSQL metadata; dữ liệu truy cập lấy từ audit/access/search logs.
 
 ---
 

@@ -89,9 +89,9 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Khởi tạo upload bằng presigned URL, client PUT file trực tiếp lên object storage, complete để validate và tạo version đầu tiên |
-| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
+| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
 | Output | `upload-init` trả document `AWAITING_UPLOAD` + presigned PUT URL; `upload-complete` chuyển document sang `PROCESSING` |
-| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` phải unique nếu có<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
+| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` do backend tự sinh, request không nhận/sửa field này<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
 | API | `POST /documents/upload-init` 👑, `POST /documents/{id}/upload-complete` 👑 |
 
 ### F2.2: Trích xuất nội dung file (Content Extraction)
@@ -131,8 +131,8 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và ACL |
-| Input | `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- `documentCode` phải unique nếu thay đổi<br>- Cập nhật metadata/ACL phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
+| Input | `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
+| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` qua metadata endpoint<br>- Cập nhật metadata/ACL phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
 | API | `PUT /documents/{id}` 👑 |
 
 ### F2.6: Xóa tài liệu
@@ -236,8 +236,8 @@
 | Mô tả | Upload nhiều file trong một thao tác với metadata/ACL mặc định dùng chung |
 | Input | `files[]` (required, mỗi file max 50MB), `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`, `titlePattern` |
 | Output | Kết quả tổng hợp gồm `total`, `succeeded`, `failed` và danh sách kết quả theo từng file |
-| Business Rules | - Validate size/type/MIME từng file độc lập<br>- Mỗi file hợp lệ tạo một document record, một `documentCode` tự sinh và version 1.0 riêng<br>- Cho phép partial success: file lỗi không làm rollback các file hợp lệ<br>- Extraction/indexing chạy độc lập theo từng document<br>- Ghi audit log cho từng document upload thành công |
-| API | `POST /documents/batch-upload` 👑 (multipart/form-data) |
+| Business Rules | - Init validate size/type khai báo từng file, complete validate object thực tế bằng Tika từng item<br>- Mỗi file hợp lệ tạo một document record, một `documentCode` tự sinh và version 1.0 riêng<br>- Cho phép partial success: file lỗi không làm rollback các file hợp lệ<br>- Extraction/indexing chạy độc lập theo từng document<br>- Ghi audit log cho từng document upload thành công |
+| API | `POST /documents/batch-upload-init`, `POST /documents/batch-upload-complete` 👑 |
 
 ### F2.17: Xóa nhiều tài liệu cùng lúc
 
@@ -258,7 +258,7 @@
 | Mô tả | Chuyển một hoặc nhiều tài liệu từ category/folder hiện tại sang category/folder khác |
 | Input | `documentIds[]` hoặc `{id}`, `targetCategoryId` |
 | Output | Category cũ/mới với kết quả theo từng document nếu batch |
-| Business Rules | - Category hiện có được dùng như folder, không tạo entity folder riêng<br>- Validate target category tồn tại, active và chưa soft delete<br>- Cập nhật `documents.category_id` và re-index metadata category trong Elasticsearch<br>- Ghi audit log với category cũ và mới |
+| Business Rules | - Category hiện có được dùng như folder, không tạo entity folder riêng<br>- Validate target category tồn tại, active và chưa soft delete<br>- Cập nhật `documents.category_id` và refresh PostgreSQL search row metadata category<br>- Ghi audit log với category cũ và mới |
 | API | `POST /documents/{id}/move`, `POST /documents/batch-move` 👑 |
 
 ### F2.19: Thùng rác tài liệu
@@ -269,7 +269,7 @@
 | Mô tả | Xem, lọc, khôi phục hoặc xóa vĩnh viễn tài liệu đã soft delete |
 | Filters | `categoryId`, `deletedBy`, `deletedFrom`, `deletedTo`, `fileType`, pagination |
 | Output | Danh sách tài liệu `DELETED` kèm `deletedAt`, `purgeAfter`, `daysUntilPurge`, `fileSizeMb` |
-| Business Rules | - Trash list lấy từ MySQL, không lấy từ Elasticsearch<br>- Admin có thể restore một/nhiều tài liệu trước hạn purge<br>- Permanent delete xóa object storage, extracted content và search index; audit logs vẫn được giữ<br>- Tài liệu quá hạn `purge_after` có thể không restore được nếu purge job đã xử lý |
+| Business Rules | - Trash list lấy từ PostgreSQL, không lấy từ search index<br>- Admin có thể restore một/nhiều tài liệu trước hạn purge<br>- Permanent delete xóa object storage, extracted content và search index; audit logs vẫn được giữ<br>- Tài liệu quá hạn `purge_after` có thể không restore được nếu purge job đã xử lý |
 | API | `GET /documents/trash`, `POST /documents/trash/restore`, `DELETE /documents/trash/permanent-delete` 👑 |
 
 ### F2.20: Tự động xóa vĩnh viễn sau 30 ngày
@@ -278,7 +278,7 @@
 |------------|----------|
 | Actor | System (Scheduler) |
 | Mô tả | Tự động purge tài liệu trong Thùng rác khi `purge_after <= now()` |
-| Business Rules | - Job chạy hằng ngày, idempotent và ghi log kết quả<br>- Chỉ xử lý document `status = DELETED` đã quá hạn purge<br>- Xóa file hiện tại và version files trong object storage theo retention policy<br>- Xóa extracted content và Elasticsearch document<br>- Nếu xóa object storage thất bại, ghi lỗi và retry ở lần chạy sau |
+| Business Rules | - Job chạy hằng ngày, idempotent và ghi log kết quả<br>- Chỉ xử lý document `status = DELETED` đã quá hạn purge<br>- Xóa file hiện tại và version files trong object storage theo retention policy<br>- Xóa extracted content và PostgreSQL search row<br>- Nếu xóa object storage thất bại, ghi lỗi và retry ở lần chạy sau |
 | API | Internal scheduled job `purgeDeletedDocuments` |
 
 ---
