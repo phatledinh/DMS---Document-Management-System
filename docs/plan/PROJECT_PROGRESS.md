@@ -54,23 +54,23 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.2 Auth, RBAC và security nền tảng
 
-- [] Triển khai `POST /api/v1/auth/login`
-  - Ghi chú: Đã tạo AuthController và AuthService
-- [] Triển khai `POST /api/v1/auth/refresh`
-  - Ghi chú: Đã xử lý HttpOnly cookie
-- [] Triển khai `POST /api/v1/auth/logout`
-  - Ghi chú: Revoke refresh token và clear cookie
-- [] Triển khai `GET /api/v1/auth/me`
-  - Ghi chú: Đã tạo API trả về UserDTO
-- [] Cấu hình JWT access token
-  - Ghi chú: Đã tạo JwtTokenProvider
-- [] Cấu hình refresh token qua HttpOnly cookie
-  - Ghi chú: Cookie cấu hình HttpOnly, path /api/v1/auth
-- [] Cấu hình Spring Security filter chain
-  - Ghi chú: Đã cấu hình STATELESS session và JwtAuthenticationFilter
-- [] Tạo role `ADMIN` và `USER`
-  - Ghi chú: Đã tạo Enum Role
-- [] Seed dữ liệu admin/dev user nếu cần
+- [x] Triển khai `POST /api/v1/auth/login`
+  - Ghi chú: Đã tạo AuthController/AuthService, BCrypt password check, update last_login, trả access token và set refresh cookie
+- [x] Triển khai `POST /api/v1/auth/refresh`
+  - Ghi chú: Đã xử lý HttpOnly cookie, validate token trong DB và rotate refresh token
+- [x] Triển khai `POST /api/v1/auth/logout`
+  - Ghi chú: Revoke refresh token và clear cookie idempotent
+- [x] Triển khai `GET /api/v1/users/me`
+  - Ghi chú: Endpoint canonical theo API spec; trả về UserResponse và re-check user ACTIVE
+- [x] Cấu hình JWT access token
+  - Ghi chú: Đã tạo JwtTokenProvider, HS256 JwtEncoder/JwtDecoder, claim userId và role
+- [x] Cấu hình refresh token qua HttpOnly cookie
+  - Ghi chú: Cookie cấu hình HttpOnly, SameSite=Strict, path /api/v1/auth
+- [x] Cấu hình Spring Security filter chain
+  - Ghi chú: Đã cấu hình STATELESS session, OAuth2 Resource Server JWT, CORS, JSON 401/403 handlers
+- [x] Tạo role `ADMIN` và `USER`
+  - Ghi chú: Đã tạo Enum Role và map role claim sang ROLE_* authority
+- [x] Seed dữ liệu admin/dev user nếu cần
   - Ghi chú: Đã có script seed admin user trong V1__init.sql
 
 ### 1.3 ACL trung tâm
