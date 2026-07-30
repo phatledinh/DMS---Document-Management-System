@@ -31,7 +31,7 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.1 Database schema
 
-- [x] Tạo Flyway migration cho bảng user/role/department
+- [x] Tạo Flyway migration cho bảng user/department và role quản trị tối thiểu
   - Ghi chú: Đã tạo trong V1__init.sql
 - [x] Tạo Flyway migration cho bảng `documents`
   - Ghi chú: Đã tạo trong V1__init.sql
@@ -41,18 +41,18 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
   - Ghi chú: Đã tạo trong V1__init.sql
 - [x] Tạo Flyway migration cho bảng `document_search_index`
   - Ghi chú: Đã tạo trong V1__init.sql
-- [x] Tạo Flyway migration cho bảng ACL phòng ban và user
-  - Ghi chú: Đã tạo trong V1__init.sql
+- [x] Tạo Flyway migration cho bảng audience theo phòng ban và user
+  - Ghi chú: Đã tạo trong V1__init.sql; các bảng này là điểm móc resource access policy, hiện tại chạy permissive
 - [x] Tạo Flyway migration cho `audit_logs`, `access_logs`, `search_logs`
   - Ghi chú: Đã tạo trong V1__init.sql
 - [x] Bật PostgreSQL extension `unaccent`
   - Ghi chú: Đã thêm vào V1__init.sql
 - [x] Bật PostgreSQL extension `pg_trgm`
   - Ghi chú: Đã thêm vào V1__init.sql
-- [x] Tạo index cần thiết cho status, ACL, search vector, trash, document code
+- [x] Tạo index cần thiết cho status, audience, search vector, trash, document code
   - Ghi chú: Đã thêm vào V1__init.sql
 
-### 1.2 Auth, RBAC và security nền tảng
+### 1.2 Auth, identity và security nền tảng
 
 - [x] Triển khai `POST /api/v1/auth/login`
   - Ghi chú: Đã tạo AuthController/AuthService, BCrypt password check, update last_login, trả access token và set refresh cookie
@@ -73,25 +73,25 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 - [x] Seed dữ liệu admin/dev user nếu cần
   - Ghi chú: Đã có script seed admin user trong V1__init.sql
 
-### 1.3 ACL trung tâm
+### 1.3 Resource access policy trung tâm
 
 - [ ] Tạo `DocumentAccessPolicyService`
+  - Ghi chú: Service hiện tại chạy permissive nhưng là điểm móc bắt buộc cho list/detail/search/preview/download
+- [ ] Tạo `CategoryAccessPolicyService`
+  - Ghi chú: Chuẩn bị audience theo danh mục để tài liệu có thể thừa hưởng quyền sau này
+- [ ] Xử lý `visibility = PUBLIC`
+  - Ghi chú: Mọi user đã đăng nhập có thể xem khi lifecycle/status hợp lệ
+- [ ] Xử lý `visibility = RESTRICTED`
+  - Ghi chú: Khi enforcement bật, kiểm tra owner/shared users/departments hoặc audience thừa hưởng từ category
+- [ ] Áp dụng resource access policy cho document list
   - Ghi chú:
-- [ ] Xử lý quyền `PUBLIC`
+- [ ] Áp dụng resource access policy cho document detail
   - Ghi chú:
-- [ ] Xử lý quyền `DEPARTMENT`
+- [ ] Áp dụng resource access policy cho preview URL
   - Ghi chú:
-- [ ] Xử lý quyền `RESTRICTED`
+- [ ] Áp dụng resource access policy cho download URL
   - Ghi chú:
-- [ ] Áp dụng ACL cho document list
-  - Ghi chú:
-- [ ] Áp dụng ACL cho document detail
-  - Ghi chú:
-- [ ] Áp dụng ACL cho preview URL
-  - Ghi chú:
-- [ ] Áp dụng ACL cho download URL
-  - Ghi chú:
-- [ ] Viết test cơ bản cho ACL service
+- [ ] Viết test cơ bản cho resource access policy service
   - Ghi chú:
 
 ### 1.4 Object storage và Presigned URL upload
@@ -220,13 +220,13 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
   - Ghi chú:
 - [ ] Áp dụng `unaccent` cho tiếng Việt
   - Ghi chú:
-- [ ] Áp dụng ACL trực tiếp trong SQL search query
+- [ ] Áp dụng resource access policy trực tiếp trong SQL search query
   - Ghi chú:
 - [ ] Đảm bảo không leak title/snippet/count của document không có quyền
   - Ghi chú:
 - [ ] Triển khai `GET /api/v1/search/suggestions`
   - Ghi chú:
-- [ ] Áp dụng ACL cho suggestions
+- [ ] Áp dụng resource access policy cho suggestions
   - Ghi chú:
 - [ ] Ghi `search_logs`
   - Ghi chú:
@@ -280,7 +280,7 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
   - Ghi chú:
 - [ ] Test search có kết quả đúng
   - Ghi chú:
-- [ ] Test user không có quyền không thấy document
+- [ ] Test user không thuộc audience không thấy document khi enforcement bật
   - Ghi chú:
 - [ ] Test preview URL hoạt động
   - Ghi chú:
@@ -461,7 +461,7 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
   - Ghi chú:
 - [ ] Sanitize search highlight/snippet
   - Ghi chú:
-- [ ] Review toàn bộ endpoint có ACL
+- [ ] Review toàn bộ endpoint đi qua resource access policy
   - Ghi chú:
 
 ### 3.3 Worker reliability

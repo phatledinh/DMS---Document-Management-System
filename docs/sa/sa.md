@@ -33,7 +33,7 @@
                          └──────────┬───────────┘
                                     ▼
         ┌────────────────────────────────────────────────────────────┐
-        │ PostgreSQL DB + FTS + ACL + lifecycle + document contents  │
+        │ PostgreSQL DB + FTS + audience + lifecycle + document contents │
         └────────────────────────────────────────────────────────────┘
 ```
 
@@ -152,7 +152,7 @@ DocumentStorageStatsService
 
 ### PostgreSQL-only Search Engine
 
-Sử dụng **PostgreSQL Full-Text Search** làm search engine mặc định ngay từ đầu. PostgreSQL lưu metadata nguồn, dữ liệu quan hệ, ACL và nội dung đã trích xuất; search chạy trực tiếp bằng `tsvector`/`tsquery`, GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Hệ thống không triển khai Elasticsearch/OpenSearch trong MVP.
+Sử dụng **PostgreSQL Full-Text Search** làm search engine mặc định ngay từ đầu. PostgreSQL lưu metadata nguồn, dữ liệu quan hệ, audience access policy và nội dung đã trích xuất; search chạy trực tiếp bằng `tsvector`/`tsquery`, GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Hệ thống không triển khai Elasticsearch/OpenSearch trong MVP.
 
 ```text
 PostgreSQL
@@ -170,25 +170,25 @@ PostgreSQL
     ├── GIN(search_vector)
     ├── GIN(title/document_code/tag_text gin_trgm_ops)
     ├── B-tree(status, category_id, file_type, created_at)
-    └── ACL indexes on owner/department/user permission tables
+    └── Audience indexes on owner/department/user access tables
 ```
 
 **Search features:**
 - Full-text search bằng `websearch_to_tsquery` / `plainto_tsquery`.
 - Ranking bằng `ts_rank_cd` với weighted `tsvector`: document code/title > tags > description > extracted content.
-- Permission filter áp ngay trong SQL bằng JOIN/EXISTS với ACL, không search xong mới lọc ở frontend.
+- Resource access filter áp ngay trong SQL bằng JOIN/EXISTS với audience khi enforcement bật, không search xong mới lọc ở frontend.
 - Highlight bằng `ts_headline`, backend sanitize HTML trước khi trả frontend.
 - Fuzzy/typeahead bằng `pg_trgm` (`similarity`, `%`, trigram GIN index).
 - Facet theo category/department/file type/tags bằng SQL aggregation.
 - Search tiếng Việt mức cơ bản bằng `unaccent`; nếu cần tách từ tốt hơn thì bổ sung dictionary/tokenizer tiếng Việt.
 - Semantic search/RAG là optional bằng `pgvector`, không thuộc MVP bắt buộc.
 **Consistency Strategy (PostgreSQL ↔ Object Storage):**
-- **Source of truth**: PostgreSQL là nguồn chính cho metadata, ACL, lifecycle, current version, extracted text, search vector và object key được tham chiếu.
+- **Source of truth**: PostgreSQL là nguồn chính cho metadata, audience, lifecycle, current version, extracted text, search vector và object key được tham chiếu.
 - **Object storage**: MinIO/R2 chỉ lưu binary/artifact theo UUID object key; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
 - **Upload ordering**: Backend tạo object key và row `AWAITING_UPLOAD`, trả presigned PUT URL; client upload binary trực tiếp lên object storage; `upload-complete` HEAD object, validate size/MIME thực tế bằng Tika, chuyển `PROCESSING` trong PostgreSQL rồi commit. Row `AWAITING_UPLOAD` quá TTL hoặc object orphan được cleanup job xử lý.
 - **After-commit event**: API server publish RabbitMQ message sau khi transaction PostgreSQL commit thành công; extraction, OCR, preview conversion và refresh search vector chỉ chạy trong worker sau message đó.
 - **Failure handling**: Nếu extraction hoặc refresh search vector thất bại sau DB commit, tài liệu/version chuyển `EXTRACTION_FAILED` hoặc ghi retry task tương ứng; không rollback metadata đã commit.
-- **Delete/archive/restore**: Ghi PostgreSQL trước, search query tự loại theo `status`/ACL; worker refresh denormalized search row sau commit nếu metadata/ACL đổi.
+- **Delete/archive/restore**: Ghi PostgreSQL trước, search query tự loại theo `status`/resource access policy; worker refresh denormalized search row sau commit nếu metadata/audience đổi.
 - **Object cleanup**: Xóa vật lý chỉ chạy bằng cleanup job theo retention policy và chỉ xóa object không còn được PostgreSQL tham chiếu.
 - **Retry**: Worker retry qua RabbitMQ TTL queues `dms.retry.30s`, `dms.retry.5m`, `dms.retry.30m`; vượt `maxAttempts = 3` thì message vào `dms.dlq` và document/version chuyển `EXTRACTION_FAILED`.
 - **Batch search refresh**: Scheduled job chạy hàng đêm để publish `INDEX` messages rebuild `document_search_index` từ PostgreSQL khi cần self-heal; ShedLock đảm bảo chỉ một API instance phát batch.
@@ -216,7 +216,7 @@ Tika không phải extractor chính cho toàn bộ file. Trách nhiệm được
 | `dms.extract` | Extract text bằng PDFBox/POI hoặc phát hiện cần OCR | `upload-complete`, version complete, retry thủ công |
 | `dms.ocr` | OCR scanned PDF/image bằng Tesseract | Worker extract phát hiện scan/image |
 | `dms.preview` | Generate preview artifact PDF/HTML bằng LibreOffice/JODConverter | File Office sau upload/version complete |
-| `dms.index` | Refresh `document_search_index` / search vector | Extract/OCR thành công hoặc metadata/ACL đổi |
+| `dms.index` | Refresh `document_search_index` / search vector | Extract/OCR thành công hoặc metadata/audience đổi |
 
 Worker dùng manual acknowledgement, message persistent và queue durable. Mỗi task idempotent bằng cách đọc lại PostgreSQL state trước khi xử lý; search row và document content ghi bằng upsert.
 

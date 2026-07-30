@@ -197,7 +197,7 @@
 
 > Kết quả chỉ gồm tài liệu user có quyền (F3.2) và mặc định status `INDEXED`.
 > Facet count phải tôn trọng permission filter (F3.6).
-> Admin có thêm facet `status` và `accessLevel`.
+> Admin có thêm facet `status` và `visibility`.
 > Mỗi lần search ghi search log qua F6.3.
 
 ---
@@ -208,7 +208,7 @@
 |------------|----------|
 | URL | `/documents/{id}` hoặc `/documents/{slug}` |
 | Actor | Admin, User |
-| Mô tả | Trang xem tài liệu với preview bên trái và panel thông tin/ACL/lịch sử/trạng thái bên phải |
+| Mô tả | Trang xem tài liệu với preview bên trái và panel thông tin/audience/lịch sử/trạng thái bên phải |
 | Features liên quan | F2.4, F2.7, F2.8, F2.10, F2.11, F2.12, F2.13, F2.14, F2.15 |
 
 ### Layout
@@ -224,7 +224,7 @@
 │  │  [PDF VIEWER / HTML PREVIEW / IMAGE]         │ │ Mã: SOP-QA-001        │ │
 │  │                                              │ │ Phiên bản: 1.2        │ │
 │  │  Nội dung tài liệu hiển thị trực tiếp        │ │ Trạng thái: INDEXED   │ │
-│  │  trong trình duyệt                           │ │ Access: DEPARTMENT    │ │
+│  │  trong trình duyệt                           │ │ Visibility: PUBLIC    │ │
 │  │                                              │ │                       │ │
 │  │  [← Trang trước] Trang 1 / 25 [Trang sau →] │ │ ─ Thông tin chi tiết ─│ │
 │  │  [🔍 Zoom -] [🔍 Zoom +]                     │ │ Danh mục: ISO         │ │
@@ -235,7 +235,7 @@
 │                                                   │ Lượt xem/tải: 150/45  │ │
 │                                                   │ Upload bởi: Admin     │ │
 │                                                   │                       │ │
-│                                                   │ ─ ACL (chỉ Admin) ───│ │
+│                                                   │ ─ Audience (Admin) ──│ │
 │                                                   │ Phòng ban: QA, IT     │ │
 │                                                   │ Owner: admin@...      │ │
 │                                                   │ Shared users: —       │ │
@@ -262,7 +262,7 @@
 | 3 | Preview Controls | Toolbar | Chuyển trang, zoom, trạng thái preview/loading/error |
 | 4 | Detail Sidebar | Right Sidebar | Khu vực bên phải chứa thông tin chi tiết, trạng thái, actions |
 | 5 | Metadata Section | Info block | Danh mục, loại file, tags, ngày upload, hiệu lực, lượt xem/tải, uploader |
-| 6 | ACL Section | Admin-only block | Access level, phòng ban, owner, shared users |
+| 6 | Audience Section | Admin-only block | Visibility, phòng ban, owner, shared users |
 | 7 | Version History Section | List | Danh sách phiên bản, download từng phiên bản, restore với Admin |
 | 8 | Status Section | Badge/Info | Trạng thái xử lý: INDEXED, PROCESSING, EXTRACTION_FAILED, ARCHIVED, DELETED |
 | 9 | Action Buttons | Buttons | Download; Admin có Sửa, Archive/Restore/Xóa, Upload version, Retry indexing |
@@ -278,13 +278,13 @@
 
 ### Business rules UI
 
-- Chỉ render nếu user có quyền truy cập; không có quyền → 404/403, không hiển thị metadata/URL.
+- Chỉ render sau khi đi qua resource access policy; khi enforcement bật, user không thuộc audience → 404/403, không hiển thị metadata/URL.
 - User chỉ thấy tài liệu `INDEXED`; tài liệu `DELETED` không hiển thị.
-- Preview dùng cùng logic kiểm tra quyền với search/detail/download.
+- Preview dùng cùng resource access policy với search/detail/download.
 - HTML preview phải được sanitize để tránh XSS.
 - Nếu conversion/preview lỗi: hiển thị thông báo lỗi trong Preview Panel và nút Download nếu user có quyền.
-- Actions Admin: Sửa metadata/ACL, Archive, Restore, Xóa, Upload version, Retry indexing (chỉ khi `EXTRACTION_FAILED`).
-- Hiển thị `accessLevel` (PUBLIC/DEPARTMENT/RESTRICTED); khối ACL chỉ hiển thị với Admin.
+- Actions Admin: Sửa metadata/audience, Archive, Restore, Xóa, Upload version, Retry indexing (chỉ khi `EXTRACTION_FAILED`).
+- Hiển thị `visibility` (PUBLIC/RESTRICTED); khối audience chỉ hiển thị với Admin.
 - Restore version (♻️) và Upload version chỉ hiển thị với Admin.
 - Ghi access log action = Preview khi user mở/xem preview (F6.2); tăng `view_count` theo F2.4.
 
@@ -292,7 +292,7 @@
 
 ## MH05: Preview tài liệu (đã gộp vào MH04)
 
-MH05 không còn là màn hình riêng. Chức năng preview tài liệu được đưa vào khu vực bên trái của MH04; các thông tin chi tiết, ACL chỉ Admin, lịch sử phiên bản và trạng thái nằm ở sidebar bên phải.
+MH05 không còn là màn hình riêng. Chức năng preview tài liệu được đưa vào khu vực bên trái của MH04; các thông tin chi tiết, audience chỉ Admin, lịch sử phiên bản và trạng thái nằm ở sidebar bên phải.
 
 ---
 
@@ -456,7 +456,7 @@ Batch actions bổ sung:
 │         │  Hiển thị 1-20 / 150    [← 1 2 3 ... 8 →]    │
 └──────────┴───────────────────────────────────────────────┘
 
-[⋮] Menu: Xem chi tiết | Sửa metadata/ACL | Preview | Download
+[⋮] Menu: Xem chi tiết | Sửa metadata/audience | Preview | Download
           | Upload version | Xem versions
           | Archive | Restore | Retry processing/search refresh* | Xóa (soft)
    (* Retry processing/search refresh chỉ hiển thị khi status = EXTRACTION_FAILED)
@@ -467,7 +467,7 @@ Batch actions bổ sung:
 | Filter | Giá trị |
 |--------|---------|
 | status | PROCESSING, INDEXED, EXTRACTION_FAILED, ARCHIVED, DELETED |
-| accessLevel | PUBLIC, DEPARTMENT, RESTRICTED |
+| visibility | PUBLIC, RESTRICTED |
 | category / department / fileType / tags | Theo master data |
 | owner / uploader | Theo user |
 | date range | effectiveDate / createdAt |
@@ -485,7 +485,7 @@ Batch actions bổ sung:
 Cập nhật multi-upload:
 
 - Drag/drop zone cho phép chọn nhiều file, mỗi file tối đa 50MB.
-- Metadata/ACL panel áp dụng mặc định cho toàn bộ file trong batch; mã tài liệu không nhập tay, mỗi file được backend tự sinh mã riêng sau upload.
+- Metadata/audience panel áp dụng mặc định cho toàn bộ file trong batch; mã tài liệu không nhập tay, mỗi file được backend tự sinh mã riêng sau upload.
 - UI hiển thị validation/progress/result theo từng file.
 - Upload một file vẫn là trường hợp đặc biệt của cùng màn hình; backend gọi `POST /documents/upload-init` cho 1 file hoặc `POST /documents/batch-upload-init` cho nhiều file, sau đó complete theo item.
 - Sau upload hiển thị summary: tổng file, thành công, thất bại, danh sách file lỗi và action retry.
@@ -494,7 +494,7 @@ Cập nhật multi-upload:
 |------------|----------|
 | URL | `/admin/documents/upload` |
 | Actor | Admin |
-| Mô tả | Form upload tài liệu mới với access level và ACL động |
+| Mô tả | Form upload tài liệu mới với visibility và audience tùy chọn |
 | Features liên quan | F2.1 |
 
 ### Layout
@@ -518,9 +518,9 @@ Cập nhật multi-upload:
 │         │  Ngày hiệu lực:  [📅 __ /__ /____]           │
 │         │  Ngày hết hạn:   [📅 __ /__ /____]           │
 │         │                                                │
-│         │  Access Level *: (○ PUBLIC ● DEPARTMENT ○ RESTRICTED)│
-│         │   ├ nếu DEPARTMENT: [Chọn phòng ban (nhiều) ▼]│
-│         │   └ nếu RESTRICTED: [Owner ▼] [Shared users ▼]│
+│         │  Visibility:      (● PUBLIC ○ RESTRICTED)      │
+│         │   └ nếu RESTRICTED: [Owner ▼] [Users ▼] [Departments ▼]│
+│         │  Ghi chú: hiện tại permissive, có thể bỏ qua audience│
 │         │                                                │
 │         │  [    HỦY    ]   [    UPLOAD    ]             │
 └──────────┴───────────────────────────────────────────────┘
@@ -530,8 +530,7 @@ Cập nhật multi-upload:
 
 - 1 file/request, size ≤ 50MB, đúng loại file cho phép.
 - Chặn extension nguy hiểm (`.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`).
-- Nếu `DEPARTMENT`: bắt buộc chọn ít nhất một phòng ban.
-- Nếu `RESTRICTED`: bắt buộc chọn owner hoặc ít nhất một shared user.
+- Nếu `RESTRICTED`: chọn owner, shared users hoặc departments làm audience; hiện tại permissive nên chưa bắt buộc chặn truy cập theo audience.
 - Sau upload: hiển thị trạng thái `PROCESSING`, thông báo tài liệu đang được xử lý/index.
 
 ---
@@ -542,16 +541,16 @@ Cập nhật multi-upload:
 |------------|----------|
 | URL | `/admin/documents/{id}/edit` |
 | Actor | Admin |
-| Mô tả | Form sửa metadata và ACL tài liệu (không đổi file) |
+| Mô tả | Form sửa metadata và audience tài liệu (không đổi file) |
 | Features liên quan | F2.5 |
 
 Tương tự MH09 nhưng:
 
 - Không có phần upload file (đổi file dùng MH11 upload version mới).
 - Các field đã điền sẵn data hiện tại.
-- Cho phép sửa: `title`, `description`, `categoryId`, `tagIds`, `effectiveDate`, `expiryDate`, `accessLevel` và ACL tương ứng (`departmentIds` / `ownerId` / `sharedUserIds`). `documentCode` chỉ hiển thị read-only vì backend tự sinh.
+- Cho phép sửa: `title`, `description`, `categoryId`, `tagIds`, `effectiveDate`, `expiryDate`, `visibility` và audience tương ứng (`ownerId` / `sharedUserIds` / `departmentIds`). `documentCode` chỉ hiển thị read-only vì backend tự sinh.
 - Nút "LƯU THAY ĐỔI" thay vì "UPLOAD".
-- Cảnh báo: thay đổi `accessLevel`/ACL ảnh hưởng đến visibility trong search/detail/preview/download và sẽ refresh PostgreSQL search vector.
+- Cảnh báo: thay đổi `visibility`/audience ảnh hưởng đến search/detail/preview/download khi enforcement bật và sẽ refresh PostgreSQL search vector.
 
 ---
 
@@ -636,7 +635,7 @@ Tương tự MH09 nhưng:
 
 Hiển thị dạng bảng đơn giản: Tên, Mã (code unique), Mô tả, Trạng thái (is_active), Actions.
 
-> Phòng ban dùng cho access level `DEPARTMENT`; thay đổi ACL/filter sẽ refresh search row cho tài liệu liên quan.
+> Phòng ban dùng cho department audience; thay đổi audience/filter sẽ refresh search row cho tài liệu liên quan khi cần.
 
 ---
 
@@ -833,8 +832,8 @@ Business rules:
 |---|----------|-----|-------|
 | MH07 | Dashboard | `/admin/dashboard` | Thống kê tổng quan (tabs) |
 | MH08 | Quản lý tài liệu | `/admin/documents` | Bảng + filter + lifecycle actions |
-| MH09 | Upload tài liệu | `/admin/documents/upload` | Form upload + access level/ACL |
-| MH10 | Sửa tài liệu | `/admin/documents/{id}/edit` | Sửa metadata + ACL |
+| MH09 | Upload tài liệu | `/admin/documents/upload` | Form upload + visibility/audience |
+| MH10 | Sửa tài liệu | `/admin/documents/{id}/edit` | Sửa metadata + audience |
 | MH11 | Phiên bản | `/admin/documents/{id}/versions` | Version list + upload + restore |
 | MH12 | Quản lý danh mục | `/admin/categories` | CRUD cây phân cấp |
 | MH13 | Quản lý phòng ban | `/admin/departments` | CRUD bảng |
@@ -893,7 +892,7 @@ Business rules:
 | SearchAutocomplete | Gợi ý title/document code/tags | MH02, MH03 |
 | FacetFilterSidebar | Filter + facet counts | MH03 |
 | DateRangePicker | Chọn khoảng thời gian | MH02, MH03, MH08, MH16, MH18 |
-| AccessLevelSelector | Chọn PUBLIC/DEPARTMENT/RESTRICTED + ACL động | MH09, MH10 |
+| VisibilityAudienceSelector | Chọn PUBLIC/RESTRICTED + audience tùy chọn | MH09, MH10 |
 | DepartmentMultiSelect | Chọn nhiều phòng ban | MH09, MH10 |
 | UserMultiSelect | Chọn owner/shared users | MH09, MH10 |
 | StatusBadge | Badge trạng thái tài liệu/user | MH04, MH08, MH15, MH17 |

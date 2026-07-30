@@ -24,7 +24,7 @@ Không thay đổi breaking changes trong `v1`. Mọi thay đổi lớn phải t
 - Access Token gửi qua header `Authorization: Bearer <token>`.
 - Refresh Token lưu trong HttpOnly Cookie, không trả cho JavaScript đọc trực tiếp.
 - Endpoint 👑 yêu cầu user có role `ADMIN`.
-- Endpoint 🔒 vẫn phải áp dụng quyền tài liệu bằng `DocumentAccessPolicyService` khi đọc tài liệu.
+- Endpoint 🔒 đọc tài liệu/danh mục vẫn phải đi qua resource access policy. Hiện tại policy permissive, sau này bật enforcement theo audience của tài liệu/danh mục.
 
 ### HTTP Status Codes
 
@@ -33,7 +33,7 @@ Không thay đổi breaking changes trong `v1`. Mọi thay đổi lớn phải t
 | `200` | OK | Successful GET, PUT, action POST |
 | `201` | Created | Successful POST tạo resource/upload |
 | `204` | No Content | Successful DELETE |
-| `400` | Bad Request | Validation errors, ACL input không hợp lệ |
+| `400` | Bad Request | Validation errors, audience input không hợp lệ |
 | `401` | Unauthorized | Missing/invalid/expired JWT |
 | `403` | Forbidden | JWT valid nhưng không đủ quyền |
 | `404` | Not Found | Resource không tồn tại hoặc không được tiết lộ do policy |
@@ -99,8 +99,8 @@ Tất cả JSON endpoint trả về format thống nhất.
 | `INVALID_CREDENTIALS` | Email hoặc mật khẩu sai |
 | `TOKEN_EXPIRED` | JWT đã hết hạn |
 | `ACCESS_DENIED` | Không có quyền truy cập |
-| `INVALID_ACCESS_LEVEL` | `accessLevel` không hợp lệ |
-| `INVALID_ACL_RULE` | Thiếu department/user ACL tương ứng `accessLevel` |
+| `INVALID_VISIBILITY` | `visibility` không hợp lệ |
+| `INVALID_AUDIENCE_RULE` | Audience user/department không hợp lệ |
 | `VERSION_NOT_FOUND` | Phiên bản tài liệu không tồn tại |
 | `VERSION_DUPLICATE` | Số phiên bản đã tồn tại |
 | `BATCH_OPERATION_PARTIAL_FAILED` | Batch operation có một phần item thất bại |
@@ -372,7 +372,7 @@ Rules:
   "fileSize": 2048576,
   "pageCount": 25,
   "status": "INDEXED",
-  "accessLevel": "DEPARTMENT",
+  "visibility": "PUBLIC",
   "versionNumber": "1.0",
   "viewCount": 150,
   "downloadCount": 45,
@@ -403,7 +403,7 @@ Admin khởi tạo upload tài liệu mới. Backend validate metadata và thôn
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5],
-  "accessLevel": "DEPARTMENT",
+  "visibility": "PUBLIC",
   "departmentIds": [3],
   "ownerId": 10,
   "sharedUserIds": [],
@@ -412,11 +412,11 @@ Admin khởi tạo upload tài liệu mới. Backend validate metadata và thôn
 }
 ```
 
-**ACL Rules:**
+**Audience Rules:**
 
-- `PUBLIC`: bỏ qua `departmentIds` và `sharedUserIds`; mọi user đăng nhập được xem sau khi tài liệu `INDEXED`.
-- `DEPARTMENT`: `departmentIds` phải có ít nhất 1 phần tử.
-- `RESTRICTED`: `ownerId` hoặc `sharedUserIds` phải có ít nhất một user; owner luôn có quyền xem.
+- `PUBLIC`: bỏ qua audience; mọi user đăng nhập được xem sau khi tài liệu `INDEXED`.
+- `RESTRICTED`: dùng `ownerId`, `sharedUserIds` hoặc `departmentIds` làm audience khi enforcement bật.
+- Hiện tại policy permissive nên audience có thể để trống; request vẫn giữ field để sau này không đổi API contract.
 
 **Success Response (201):**
 ```json
@@ -465,7 +465,7 @@ Sau khi complete thành công, extraction, preview artifact generation và refre
 
 ### `GET /documents` 🔒
 
-Danh sách tài liệu theo quyền hiện tại. Admin có thể xem/filter toàn bộ; User mặc định chỉ thấy tài liệu `INDEXED` và có quyền.
+Danh sách tài liệu theo resource access policy hiện tại. Giai đoạn permissive chưa chặn theo audience; mặc định chỉ trả tài liệu phù hợp lifecycle/status.
 
 **Query Params:**
 
@@ -475,7 +475,7 @@ Danh sách tài liệu theo quyền hiện tại. Admin có thể xem/filter to�
 | `departmentId` | Long | Lọc theo phòng ban sở hữu/chủ quản |
 | `fileType` | String | `PDF`, `DOC`, `DOCX`, `XLS`, `XLSX`, `JPG`, `PNG`, `TIFF` |
 | `status` | String | Admin dùng để lọc status; User chỉ được `INDEXED` mặc định |
-| `accessLevel` | String | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
+| `visibility` | String | `PUBLIC`, `RESTRICTED` |
 | `tagIds` | Long[] | Lọc theo tags |
 | `ownerId` | Long | Lọc theo owner |
 | `uploadedBy` | Long | Lọc theo uploader |
@@ -498,7 +498,7 @@ Danh sách tài liệu theo quyền hiện tại. Admin có thể xem/filter to�
         "fileType": "PDF",
         "fileSize": 2048576,
         "status": "INDEXED",
-        "accessLevel": "DEPARTMENT",
+        "visibility": "PUBLIC",
         "versionNumber": "1.0",
         "viewCount": 150,
         "downloadCount": 45,
@@ -519,7 +519,7 @@ Danh sách tài liệu theo quyền hiện tại. Admin có thể xem/filter to�
 
 ### `GET /documents/{id}` 🔒
 
-Chi tiết tài liệu. Kiểm tra quyền trước khi trả metadata/URL. Không tăng `view_count`; chỉ preview mới tăng lượt xem.
+Chi tiết tài liệu. Đi qua resource access policy trước khi trả metadata/URL. Không tăng `view_count`; chỉ preview mới tăng lượt xem.
 
 **Success Response (200):**
 ```json
@@ -537,7 +537,7 @@ Chi tiết tài liệu. Kiểm tra quyền trước khi trả metadata/URL. Khô
     "fileSize": 2048576,
     "pageCount": 25,
     "status": "INDEXED",
-    "accessLevel": "DEPARTMENT",
+    "visibility": "PUBLIC",
     "versionNumber": "1.0",
     "viewCount": 150,
     "downloadCount": 45,
@@ -563,7 +563,7 @@ Chi tiết tài liệu. Kiểm tra quyền trước khi trả metadata/URL. Khô
 
 ### `PUT /documents/{id}` 👑
 
-Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST /documents/{id}/versions` để upload phiên bản mới.
+Admin cập nhật metadata, tags và audience. Không cập nhật file; dùng `POST /documents/{id}/versions` để upload phiên bản mới.
 
 **Request Body:**
 ```json
@@ -573,7 +573,7 @@ Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5, 8],
-  "accessLevel": "RESTRICTED",
+  "visibility": "RESTRICTED",
   "ownerId": 10,
   "departmentIds": [],
   "sharedUserIds": [12, 15],
@@ -582,7 +582,7 @@ Admin cập nhật metadata, tags và ACL. Không cập nhật file; dùng `POST
 }
 ```
 
-**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/ACL thay đổi phải refresh PostgreSQL search row và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
+**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/audience thay đổi phải refresh PostgreSQL search row và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
 
 ### `DELETE /documents/{id}` 👑
 
@@ -655,7 +655,7 @@ Admin khởi tạo upload nhiều file bằng presigned URL. Backend validate me
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5],
-  "accessLevel": "DEPARTMENT",
+  "visibility": "PUBLIC",
   "departmentIds": [3],
   "ownerId": 10,
   "sharedUserIds": [],
@@ -1038,7 +1038,7 @@ Full-text search qua PostgreSQL `tsvector`/`tsquery` trên title, description, e
 | `ownerId` | Long | Không | Lọc owner |
 | `uploadedBy` | Long | Không | Lọc uploader |
 | `status` | String | Không | Admin có thể filter; User mặc định `INDEXED` |
-| `accessLevel` | String | Không | Admin có thể filter access level |
+| `visibility` | String | Không | Admin có thể filter access level |
 | `dateFrom` | Date | Không | Lọc created/effective date từ |
 | `dateTo` | Date | Không | Lọc đến ngày |
 | `sort` | String | Không | `relevance` default, `createdAt`, `updatedAt`, `viewCount`, `downloadCount`, `title` |
@@ -1462,7 +1462,7 @@ API spec tương thích OpenAPI 3 / Swagger. Khi triển khai, `@RestController`
 | 12 | POST | `/documents/upload-init` | 👑 | Khởi tạo upload tài liệu, trả presigned PUT URL |
 | 13 | GET | `/documents` | 🔒 | Danh sách tài liệu theo quyền hiện tại |
 | 14 | GET | `/documents/{id}` | 🔒 | Chi tiết tài liệu |
-| 15 | PUT | `/documents/{id}` | 👑 | Cập nhật metadata, tags, ACL |
+| 15 | PUT | `/documents/{id}` | 👑 | Cập nhật metadata, tags, audience |
 | 16 | DELETE | `/documents/{id}` | 👑 | Xóa tài liệu soft delete |
 | 17 | POST | `/documents/{id}/archive` | 👑 | Archive tài liệu |
 | 18 | POST | `/documents/{id}/restore` | 👑 | Restore tài liệu đã archive/delete |

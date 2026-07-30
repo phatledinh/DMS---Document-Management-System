@@ -70,7 +70,7 @@ Tách theo đặc tính tài nguyên để scale và cô lập lỗi độc lậ
 | Extract text (PDFBox/POI) | `dms.extract` | CPU vừa, nhanh | upload-complete, version complete, retry |
 | OCR (Tesseract) | `dms.ocr` | CPU rất nặng, chậm | khi extract phát hiện scanned PDF/image |
 | Preview convert (LibreOffice) | `dms.preview` | CPU/RAM nặng, spawn process con | upload-complete (nếu pre-gen artifact — xem [presigned-url.md §4](./presigned-url.md)) |
-| Refresh PostgreSQL search vector | `dms.index` | Nhẹ, I/O | sau extract thành công; khi metadata/ACL đổi |
+| Refresh PostgreSQL search vector | `dms.index` | Nhẹ, I/O | sau extract thành công; khi metadata/audience đổi |
 
 > Tách `dms.ocr` và `dms.preview` khỏi `dms.extract`/`dms.index` là điểm quan trọng: task nặng không làm nghẽn task nhẹ, và có thể scale số worker OCR riêng khi hàng đợi OCR dồn.
 

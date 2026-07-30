@@ -89,9 +89,9 @@
 |------------|----------|
 | Actor | Admin |
 | Mô tả | Khởi tạo upload bằng presigned URL, client PUT file trực tiếp lên object storage, complete để validate và tạo version đầu tiên |
-| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
+| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `tagIds`, `visibility`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
 | Output | `upload-init` trả document `AWAITING_UPLOAD` + presigned PUT URL; `upload-complete` chuyển document sang `PROCESSING` |
-| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` do backend tự sinh, request không nhận/sửa field này<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `accessLevel` gồm `PUBLIC`, `DEPARTMENT`, `RESTRICTED`<br>- Nếu `DEPARTMENT` phải có ít nhất một `departmentIds`<br>- Nếu `RESTRICTED` phải có owner hoặc danh sách `sharedUserIds` |
+| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` do backend tự sinh, request không nhận/sửa field này<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `visibility` gồm `PUBLIC`, `RESTRICTED`; mặc định `PUBLIC`<br>- Hiện tại resource access policy permissive nên audience có thể để trống<br>- Nếu sau này bật enforcement, `RESTRICTED` dùng owner/shared users/departments làm audience |
 | API | `POST /documents/upload-init` 👑, `POST /documents/{id}/upload-complete` 👑 |
 
 ### F2.2: Trích xuất nội dung file (Content Extraction)
@@ -110,10 +110,10 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Xem danh sách tài liệu với pagination và filters |
-| Filters | `categoryId`, `departmentId`, `fileType`, `status`, `tagIds`, `accessLevel`, `ownerId`, `effectiveDateFrom/To` |
+| Filters | `categoryId`, `departmentId`, `fileType`, `status`, `tagIds`, `visibility`, `ownerId`, `effectiveDateFrom/To` |
 | Sort | `created_at_desc` (default), `created_at_asc`, `updated_at_desc`, `title_asc`, `view_count_desc`, `download_count_desc` |
 | Pagination | `page` (default: 0), `size` (default: 20, max: 100) |
-| Business Rules | - User chỉ thấy tài liệu có quyền truy cập<br>- Admin có thể xem/filter toàn bộ tài liệu theo vai trò quản trị<br>- Mặc định User chỉ thấy tài liệu `INDEXED` |
+| Business Rules | - Danh sách đi qua resource access policy; hiện tại permissive chưa chặn theo audience<br>- Mặc định chỉ hiển thị tài liệu theo lifecycle/status phù hợp, User thường chỉ thấy `INDEXED` |
 | API | `GET /documents` 🔒 |
 
 ### F2.4: Chi tiết tài liệu
@@ -125,14 +125,14 @@
 | Business Rules | - Kiểm tra quyền trước khi trả metadata và endpoint lấy `preview-url`/`download-url`; không trả object key thô<br>- User không có quyền không được thấy title, snippet, metadata hoặc URL tải file<br>- Tài liệu `DELETED` không được trả cho User<br>- Chỉ tăng `view_count` khi người dùng preview, không tăng khi chỉ xem metadata |
 | API | `GET /documents/{id}` 🔒 |
 
-### F2.5: Cập nhật metadata và ACL tài liệu
+### F2.5: Cập nhật metadata và audience tài liệu
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và ACL |
-| Input | `title`, `description`, `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` qua metadata endpoint<br>- Cập nhật metadata/ACL phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
+| Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và audience |
+| Input | `title`, `description`, `categoryId`, `tagIds`, `visibility`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
+| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` qua metadata endpoint<br>- Cập nhật metadata/audience phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
 | API | `PUT /documents/{id}` 👑 |
 
 ### F2.6: Xóa tài liệu
@@ -233,8 +233,8 @@
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Upload nhiều file trong một thao tác với metadata/ACL mặc định dùng chung |
-| Input | `files[]` (required, mỗi file max 50MB), `categoryId`, `tagIds`, `accessLevel`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`, `titlePattern` |
+| Mô tả | Upload nhiều file trong một thao tác với metadata/audience mặc định dùng chung |
+| Input | `files[]` (required, mỗi file max 50MB), `categoryId`, `tagIds`, `visibility`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`, `titlePattern` |
 | Output | Kết quả tổng hợp gồm `total`, `succeeded`, `failed` và danh sách kết quả theo từng file |
 | Business Rules | - Init validate size/type khai báo từng file, complete validate object thực tế bằng Tika từng item<br>- Mỗi file hợp lệ tạo một document record, một `documentCode` tự sinh và version 1.0 riêng<br>- Cho phép partial success: file lỗi không làm rollback các file hợp lệ<br>- Extraction/indexing chạy độc lập theo từng document<br>- Ghi audit log cho từng document upload thành công |
 | API | `POST /documents/batch-upload-init`, `POST /documents/batch-upload-complete` 👑 |
@@ -291,7 +291,7 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô tả, mã tài liệu, tags và nội dung file |
-| Input | `q` (required), `categoryId`, `departmentId`, `fileType`, `tagIds`, `dateFrom/To`, `status`, `accessLevel`, `ownerId`, `sort`, `page`, `size` |
+| Input | `q` (required), `categoryId`, `departmentId`, `fileType`, `tagIds`, `dateFrom/To`, `status`, `visibility`, `ownerId`, `sort`, `page`, `size` |
 | Output | Danh sách kết quả, highlight, relevance score, facets, search time |
 | Business Rules | - Multi-match trên `title`, `description`, `extracted_content`, `tags`<br>- Exact/boosted match cho `documentCode`<br>- Mặc định chỉ trả tài liệu `INDEXED`<br>- Ghi search log qua PH6 |
 | API | `GET /documents/search` 🔒 |
@@ -377,7 +377,7 @@
 | Actor | Admin (write), User (read) |
 | Mô tả | Quản lý phòng ban |
 | Đặc biệt | - Có `code` unique (HR, IT, FIN...)<br>- Có `is_active` flag |
-| Business Rules | - Gán phòng ban cho user phục vụ access level `DEPARTMENT`<br>- Refresh search row cho tài liệu bị ảnh hưởng khi department ACL/filter thay đổi |
+| Business Rules | - Gán phòng ban cho user phục vụ department audience của tài liệu/danh mục<br>- Refresh search row cho tài liệu bị ảnh hưởng khi department audience/filter thay đổi nếu cần |
 | API | `GET/POST/PUT/DELETE /departments`, `/departments/{id}` |
 
 ### F4.7–F4.9: CRUD Tag (Nhãn)
@@ -539,7 +539,7 @@
 | 12 | POST | `/documents/{id}/upload-complete` | 👑 | F2.1 — Xác nhận upload tài liệu |
 | 12 | GET | `/documents` | 🔒 | F2.3 — Danh sách |
 | 13 | GET | `/documents/{id}` | 🔒 | F2.4 — Chi tiết |
-| 14 | PUT | `/documents/{id}` | 👑 | F2.5 — Cập nhật metadata và ACL |
+| 14 | PUT | `/documents/{id}` | 👑 | F2.5 — Cập nhật metadata và audience |
 | 15 | DELETE | `/documents/{id}` | 👑 | F2.6 — Xóa mềm |
 | 16 | GET | `/documents/{id}/preview-url` | 🔒 | F2.7 — Lấy URL preview |
 | 17 | GET | `/documents/{id}/download-url` | 🔒 | F2.8 — Lấy URL download |

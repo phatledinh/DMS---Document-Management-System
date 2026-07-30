@@ -159,7 +159,7 @@ frontend/
 | **AWS SDK for Java v2** (`software.amazon.awssdk:s3`) | S3-compatible client cho MinIO (dev) / Cloudflare R2 (prod): put/get/head/delete object |
 | **S3 Presigner** (`software.amazon.awssdk:s3` presigner) | Ký **presigned PUT/GET URL** cho upload & download/preview trực tiếp client ↔ storage (xem [presigned-url.md](./presigned-url.md)) |
 
-> **Luồng file dùng Presigned URL**: client PUT/GET byte **trực tiếp** với object storage; backend chỉ ký URL sau khi check ACL, không nằm trên đường truyền byte. Bucket private hoàn toàn + CORS cho origin frontend. Flow này là contract chính của docs gốc: `upload-init`/`upload-complete`, `download-url`, `preview-url`; [presigned-url.md](./presigned-url.md) giữ vai trò ADR tham khảo.
+> **Luồng file dùng Presigned URL**: client PUT/GET byte **trực tiếp** với object storage; backend chỉ ký URL sau khi đi qua resource access policy, không nằm trên đường truyền byte. Bucket private hoàn toàn + CORS cho origin frontend. Flow này là contract chính của docs gốc: `upload-init`/`upload-complete`, `download-url`, `preview-url`; [presigned-url.md](./presigned-url.md) giữ vai trò ADR tham khảo.
 
 ### Messaging & Async Processing
 
@@ -176,7 +176,7 @@ frontend/
 
 | Thư viện / Extension | Mô tả |
 |----------|-------|
-| **PostgreSQL JDBC / JPA native query** | Thực thi query FTS nâng cao (`websearch_to_tsquery`, `ts_rank_cd`, `ts_headline`, filter ACL/facet) |
+| **PostgreSQL JDBC / JPA native query** | Thực thi query FTS nâng cao (`websearch_to_tsquery`, `ts_rank_cd`, `ts_headline`, filter resource access/facet) |
 | **PostgreSQL `pg_trgm`** | Fuzzy search, typo tolerance, autocomplete/typeahead bằng trigram index |
 | **PostgreSQL `unaccent`** | Chuẩn hóa dấu khi search tiếng Việt ở mức cơ bản |
 | **PostgreSQL `pgvector`** (optional) | Vector/semantic search cho giai đoạn RAG nếu cần |
@@ -285,7 +285,7 @@ backend/
 | **PostgreSQL** | 17+ | Relational database chính + full-text search engine |
 
 **Lý do chọn PostgreSQL:**
-- Lưu trữ dữ liệu quan hệ, metadata tài liệu, ACL, audit/access/search logs
+- Lưu trữ dữ liệu quan hệ, metadata tài liệu, audience, audit/access/search logs
 - Hỗ trợ transaction, foreign keys, JSONB, CTE/window functions và index phong phú
 - Tích hợp Full-Text Search với `tsvector`, `tsquery`, `ts_rank_cd`, `ts_headline`
 - Hỗ trợ `pg_trgm` cho fuzzy/typeahead và `pgvector` cho semantic search nếu cần
@@ -319,7 +319,7 @@ backend/
 - Highlight bằng `ts_headline` và sanitize HTML trước khi trả frontend
 - Fuzzy search/typeahead bằng `pg_trgm`
 - Faceted aggregations theo danh mục, phòng ban, loại file, tags bằng SQL `GROUP BY`
-- Permission-aware query bằng JOIN/EXISTS với ACL ngay trong SQL
+- Resource-access-aware query bằng JOIN/EXISTS với audience ngay trong SQL khi enforcement bật
 
 ### Database Schema Overview
 
