@@ -1,22 +1,10 @@
 package com.dms.document.processing;
 
-import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-
-@Configuration
-class DocumentProcessingQueueConfig {
-    static final String EXTRACT_QUEUE = "dms.extract";
-
-    @Bean
-    Queue extractQueue() {
-        return new Queue(EXTRACT_QUEUE, true);
-    }
-}
 
 @Component
 public class DocumentProcessingPublisher {
@@ -28,9 +16,24 @@ public class DocumentProcessingPublisher {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void publish(DocumentExtractionRequestedEvent event) {
+        DocumentProcessingMessage message = DocumentProcessingMessage.extract(
+                event.documentId(),
+                event.versionId(),
+                event.objectKey(),
+                event.mimeType()
+        );
+        publish(DocumentProcessingRabbitConfig.EXTRACT_ROUTING_KEY, message);
+    }
+
+    public void publish(String routingKey, DocumentProcessingMessage message) {
         rabbitTemplate.convertAndSend(
-                DocumentProcessingQueueConfig.EXTRACT_QUEUE,
-                new DocumentExtractionMessage(event.documentId(), event.objectKey(), "EXTRACT")
+                DocumentProcessingRabbitConfig.TASKS_EXCHANGE,
+                routingKey,
+                message,
+                rabbitMessage -> {
+                    rabbitMessage.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+                    return rabbitMessage;
+                }
         );
     }
 }

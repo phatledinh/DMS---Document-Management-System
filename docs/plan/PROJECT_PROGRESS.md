@@ -137,34 +137,34 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.5 RabbitMQ và worker pipeline cơ bản
 
-- [ ] Cấu hình RabbitMQ exchange/queue
-  - Ghi chú:
-- [ ] Tạo queue `dms.extract`
-  - Ghi chú:
-- [ ] Tạo queue `dms.index`
-  - Ghi chú:
-- [ ] Tạo queue `dms.dlq`
-  - Ghi chú:
-- [ ] Cấu hình durable queue và persistent message
-  - Ghi chú:
-- [ ] Cấu hình manual ack cho worker
-  - Ghi chú:
-- [ ] Thiết kế message contract cho processing job
-  - Ghi chú:
-- [ ] Tạo publisher từ API sang RabbitMQ
-  - Ghi chú:
-- [ ] Tạo worker listener cho `dms.extract`
-  - Ghi chú:
-- [ ] Worker re-read DB state trước khi xử lý
-  - Ghi chú:
-- [ ] Worker xử lý idempotent
-  - Ghi chú:
-- [ ] Triển khai retry tối đa 3 lần
-  - Ghi chú:
-- [ ] Chuyển DLQ khi vượt retry
-  - Ghi chú:
-- [ ] Set document `EXTRACTION_FAILED` khi xử lý thất bại cuối cùng
-  - Ghi chú:
+- [x] Cấu hình RabbitMQ exchange/queue
+  - Ghi chú: Đã thêm topology durable `dms.tasks`, `dms.dlx`, `dms.retry` trong `DocumentProcessingRabbitConfig`.
+- [x] Tạo queue `dms.extract`
+  - Ghi chú: Queue durable, bind routing key `extract`, có DLX.
+- [x] Tạo queue `dms.index`
+  - Ghi chú: Queue durable, bind routing key `index`, chuẩn bị cho 1.6 indexing.
+- [x] Tạo queue `dms.dlq`
+  - Ghi chú: Queue durable nhận message vượt retry/failure cuối qua routing key `dlq`.
+- [x] Cấu hình durable queue và persistent message
+  - Ghi chú: Queue/exchange durable; publisher set `MessageDeliveryMode.PERSISTENT`.
+- [x] Cấu hình manual ack cho worker
+  - Ghi chú: `application.yml` và listener dùng manual ack, prefetch 1.
+- [x] Thiết kế message contract cho processing job
+  - Ghi chú: `DocumentProcessingMessage` gồm taskId/type/documentId/versionId/objectKey/mimeType/attempt/issuedAt.
+- [x] Tạo publisher từ API sang RabbitMQ
+  - Ghi chú: Upload-complete publish event AFTER_COMMIT, publisher gửi vào exchange `dms.tasks` routing key `extract`.
+- [x] Tạo worker listener cho `dms.extract`
+  - Ghi chú: `DocumentExtractWorker` active profile `worker`; hiện là skeleton, chưa extract/index thật của 1.6.
+- [x] Worker re-read DB state trước khi xử lý
+  - Ghi chú: Listener đọc lại `DocumentRepository` theo documentId trước khi gọi pipeline.
+- [x] Worker xử lý idempotent
+  - Ghi chú: Skip+ack khi document không tồn tại, DELETED, không còn PROCESSING hoặc objectKey lệch.
+- [x] Triển khai retry tối đa 3 lần
+  - Ghi chú: `DocumentProcessingRetryService` dùng `app.processing.max-retry-count` mặc định 3 và retry queues 30s/5m/30m.
+- [x] Chuyển DLQ khi vượt retry
+  - Ghi chú: Failure ở max attempt publish sang routing key `dlq`.
+- [x] Set document `EXTRACTION_FAILED` khi xử lý thất bại cuối cùng
+  - Ghi chú: Retry service set status `EXTRACTION_FAILED` trước khi route DLQ; extraction/indexing thật vẫn thuộc 1.6.
 
 ### 1.6 Text extraction và indexing MVP
 

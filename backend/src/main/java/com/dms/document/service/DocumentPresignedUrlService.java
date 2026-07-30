@@ -156,7 +156,7 @@ public class DocumentPresignedUrlService {
         if (document.getDocumentCode() == null) {
             document.setDocumentCode(generateDocumentCode());
         }
-        eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), document.getStoragePath()));
+        eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), null, document.getStoragePath(), document.getMimeType()));
         Document saved = documentRepository.save(document);
         return new UploadCompleteResponse(saved.getId(), saved.getStatus().name(), saved.getDocumentCode(), saved.getVersionNumber(), saved.getCreatedAt());
     }
