@@ -2,7 +2,11 @@ package com.dms.common.exception;
 
 public final class ErrorCodes {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
+    public static final String DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND";
+    public static final String DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
+    public static final String INVALID_ACCESS_LEVEL = "INVALID_ACCESS_LEVEL";
+    public static final String INVALID_ACL_RULE = "INVALID_ACL_RULE";
     public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
     public static final String REFRESH_TOKEN_INVALID = "REFRESH_TOKEN_INVALID";
     public static final String UNAUTHORIZED = "UNAUTHORIZED";
