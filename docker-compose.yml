@@ -33,8 +33,8 @@ services:
             - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
             - SPRING_DATASOURCE_USERNAME=postgres
             - SPRING_DATASOURCE_PASSWORD=123456
-            - SPRING_REDIS_HOST=redis
-            - SPRING_REDIS_PORT=6379
+            - SPRING_DATA_REDIS_HOST=redis
+            - SPRING_DATA_REDIS_PORT=6379
             - JWT_SECRET=your-256-bit-secret-key-here
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000

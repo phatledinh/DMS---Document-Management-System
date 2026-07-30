@@ -98,6 +98,10 @@ CREATE TABLE documents (
     expiry_date DATE,
     archived_at TIMESTAMPTZ,
     deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT REFERENCES users(id),
+    purge_after TIMESTAMPTZ,
+    previous_status VARCHAR(30),
+    permanently_deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ
 );
@@ -218,6 +222,8 @@ CREATE INDEX idx_documents_access_level ON documents(access_level);
 CREATE INDEX idx_documents_file_type ON documents(file_type);
 CREATE INDEX idx_documents_effective_date ON documents(effective_date);
 CREATE INDEX idx_documents_created_at ON documents(created_at);
+CREATE INDEX idx_documents_deleted_at ON documents(deleted_at);
+CREATE INDEX idx_documents_purge_after ON documents(purge_after);
 
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
 CREATE INDEX idx_audit_logs_actor_date ON audit_logs(actor_id, created_at);
@@ -229,6 +235,7 @@ CREATE INDEX idx_search_logs_user_date ON search_logs(user_id, created_at);
 -- Composite Indexes
 CREATE INDEX idx_documents_cat_status_date ON documents(category_id, status, created_at);
 CREATE INDEX idx_documents_dept_type ON documents(department_id, file_type);
+CREATE INDEX idx_documents_status_purge ON documents(status, purge_after);
 CREATE INDEX idx_doc_dept_access_dept ON document_department_accesses(department_id, document_id);
 CREATE INDEX idx_doc_user_access_user ON document_user_accesses(user_id, document_id);
 
