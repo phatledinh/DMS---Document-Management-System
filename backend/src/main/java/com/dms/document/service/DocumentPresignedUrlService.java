@@ -187,6 +187,7 @@ public class DocumentPresignedUrlService {
         }
         String key = previewKey(document);
         PresignedGetUrl url = objectStorageService.presignGet(key, "inline; filename=\"" + document.getFileName() + "\"");
+        document.setViewCount(document.getViewCount() + 1);
         logAccess(user, document, AccessLogAction.PREVIEW, true, null, request);
         return new PresignedUrlResponse(url.url(), document.getFileName(), url.expiresIn());
     }

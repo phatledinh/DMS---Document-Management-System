@@ -1,11 +1,16 @@
 package com.dms.document.service;
 
+import com.dms.common.exception.AppException;
 import com.dms.common.security.CurrentUserProvider;
+import com.dms.document.dto.PresignedUrlResponse;
 import com.dms.document.dto.UploadInitRequest;
 import com.dms.document.dto.UploadInitResponse;
+import com.dms.document.entity.AccessLog;
+import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
+import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.repository.AccessLogRepository;
 import com.dms.document.repository.DocumentDepartmentAccessRepository;
@@ -18,8 +23,10 @@ import com.dms.identity.repository.UserRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
 import com.dms.storage.ObjectStorageService;
+import com.dms.storage.PresignedGetUrl;
 import com.dms.storage.PresignedPutUrl;
 import com.dms.storage.ValidatedFile;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +39,10 @@ import java.time.OffsetDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -59,6 +69,8 @@ class DocumentPresignedUrlServiceTest {
     private MimeDetectionService mimeDetectionService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private HttpServletRequest servletRequest;
 
     private DocumentPresignedUrlService service;
 
@@ -118,9 +130,77 @@ class DocumentPresignedUrlServiceTest {
         assertThat(response.status()).isEqualTo(DocumentStatus.AWAITING_UPLOAD.name());
         assertThat(response.uploadUrl()).isEqualTo("http://storage/upload");
         ArgumentCaptor<Document> documentCaptor = ArgumentCaptor.forClass(Document.class);
-        org.mockito.Mockito.verify(documentRepository).save(documentCaptor.capture());
+        verify(documentRepository).save(documentCaptor.capture());
         assertThat(documentCaptor.getValue().getStoragePath()).isEqualTo("documents/object-id");
         assertThat(documentCaptor.getValue().getUploadExpiresAt()).isEqualTo(expiresAt);
+    }
+
+    @Test
+    void createPreviewUrl_allowedLogsAccessAndIncrementsViewCount() {
+        User user = user();
+        Document document = document();
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(accessPolicyService.canPreview(user, document)).thenReturn(AccessDecision.allow());
+        when(fileValidationService.canPreviewOriginal("PDF")).thenReturn(true);
+        when(objectStorageService.presignGet("documents/object-id", "inline; filename=\"Policy.pdf\""))
+                .thenReturn(new PresignedGetUrl("http://storage/preview", 300));
+        when(servletRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(servletRequest.getHeader("User-Agent")).thenReturn("JUnit");
+
+        PresignedUrlResponse response = service.createPreviewUrl(1L, servletRequest);
+
+        assertThat(response.url()).isEqualTo("http://storage/preview");
+        assertThat(document.getViewCount()).isEqualTo(8);
+        assertThat(document.getDownloadCount()).isEqualTo(3);
+        ArgumentCaptor<AccessLog> logCaptor = ArgumentCaptor.forClass(AccessLog.class);
+        verify(accessLogRepository).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getAction()).isEqualTo(AccessLogAction.PREVIEW);
+        assertThat(logCaptor.getValue().getAccessGranted()).isTrue();
+        assertThat(logCaptor.getValue().getIpAddress()).isEqualTo("127.0.0.1");
+        assertThat(logCaptor.getValue().getUserAgent()).isEqualTo("JUnit");
+    }
+
+    @Test
+    void createPreviewUrl_deniedLogsAccessWithoutIncrementingViewCount() {
+        User user = user();
+        Document document = document();
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(accessPolicyService.canPreview(user, document)).thenReturn(AccessDecision.denied("ACCESS_DENIED"));
+
+        assertThatThrownBy(() -> service.createPreviewUrl(1L, servletRequest))
+                .isInstanceOf(AppException.class)
+                .hasMessage("Access denied");
+
+        assertThat(document.getViewCount()).isEqualTo(7);
+        ArgumentCaptor<AccessLog> logCaptor = ArgumentCaptor.forClass(AccessLog.class);
+        verify(accessLogRepository).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getAction()).isEqualTo(AccessLogAction.PREVIEW);
+        assertThat(logCaptor.getValue().getAccessGranted()).isFalse();
+        assertThat(logCaptor.getValue().getDenialReason()).isEqualTo("ACCESS_DENIED");
+        verify(objectStorageService, never()).presignGet(any(), any());
+    }
+
+    @Test
+    void createDownloadUrl_allowedLogsAccessAndIncrementsDownloadCount() {
+        User user = user();
+        Document document = document();
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(accessPolicyService.canDownload(user, document)).thenReturn(AccessDecision.allow());
+        when(objectStorageService.presignGet("documents/object-id", "attachment; filename=\"Policy.pdf\""))
+                .thenReturn(new PresignedGetUrl("http://storage/download", 300));
+
+        PresignedUrlResponse response = service.createDownloadUrl(1L, servletRequest);
+
+        assertThat(response.url()).isEqualTo("http://storage/download");
+        assertThat(document.getViewCount()).isEqualTo(7);
+        assertThat(document.getDownloadCount()).isEqualTo(4);
+        ArgumentCaptor<AccessLog> logCaptor = ArgumentCaptor.forClass(AccessLog.class);
+        verify(accessLogRepository).save(logCaptor.capture());
+        assertThat(logCaptor.getValue().getAction()).isEqualTo(AccessLogAction.DOWNLOAD);
+        assertThat(logCaptor.getValue().getAccessGranted()).isTrue();
     }
 
     private User admin() {
@@ -132,5 +212,36 @@ class DocumentPresignedUrlServiceTest {
         user.setRole(Role.ADMIN);
         user.setStatus(UserStatus.ACTIVE);
         return user;
+    }
+
+    private User user() {
+        User user = new User();
+        user.setId(10L);
+        user.setEmail("user@dms.com");
+        user.setName("User");
+        user.setPassword("hash");
+        user.setRole(Role.USER);
+        user.setStatus(UserStatus.ACTIVE);
+        return user;
+    }
+
+    private Document document() {
+        Document document = new Document();
+        document.setId(1L);
+        document.setTitle("Policy");
+        document.setSlug("policy");
+        document.setCategoryId(10L);
+        document.setUploadedBy(1L);
+        document.setOwnerId(10L);
+        document.setFileName("Policy.pdf");
+        document.setFileType("PDF");
+        document.setMimeType("application/pdf");
+        document.setFileSize(1024L);
+        document.setStoragePath("documents/object-id");
+        document.setAccessLevel(DocumentAccessLevel.PUBLIC);
+        document.setStatus(DocumentStatus.INDEXED);
+        document.setViewCount(7);
+        document.setDownloadCount(3);
+        return document;
     }
 }

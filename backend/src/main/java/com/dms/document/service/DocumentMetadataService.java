@@ -121,8 +121,8 @@ public class DocumentMetadataService {
         if (request.fileType() != null && !request.fileType().isBlank()) {
             predicates.add(builder.equal(builder.upper(root.get("fileType")), request.fileType().trim().toUpperCase()));
         }
-        if (request.visibility() != null) {
-            predicates.add(builder.equal(root.get("accessLevel"), request.visibility()));
+        if (request.resolvedAccessLevel() != null) {
+            predicates.add(builder.equal(root.get("accessLevel"), request.resolvedAccessLevel()));
         }
         if (request.ownerId() != null) {
             predicates.add(builder.equal(root.get("ownerId"), request.ownerId()));
@@ -133,11 +133,11 @@ public class DocumentMetadataService {
         if (!admin && request.status() != null && request.status() != DocumentStatus.INDEXED) {
             predicates.add(builder.disjunction());
         }
-        LocalDate from = request.effectiveDateFrom();
+        LocalDate from = request.resolvedDateFrom();
         if (from != null) {
             predicates.add(builder.greaterThanOrEqualTo(root.get("effectiveDate"), from));
         }
-        LocalDate to = request.effectiveDateTo();
+        LocalDate to = request.resolvedDateTo();
         if (to != null) {
             predicates.add(builder.lessThanOrEqualTo(root.get("effectiveDate"), to));
         }
@@ -191,7 +191,7 @@ public class DocumentMetadataService {
     }
 
     private DocumentDetailResponse toDetail(Document document) {
-        String baseEndpoint = "/api/v1/documents/" + document.getId();
+        String baseEndpoint = "/documents/" + document.getId();
         return new DocumentDetailResponse(
                 document.getId(),
                 document.getTitle(),

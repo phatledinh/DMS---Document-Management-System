@@ -57,7 +57,7 @@ class DocumentMetadataServiceTest {
         when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(document)));
 
-        PageResponse<?> response = service.listDocuments(new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null));
+        PageResponse<?> response = service.listDocuments(new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.totalElements()).isEqualTo(1);
@@ -76,7 +76,8 @@ class DocumentMetadataServiceTest {
 
         assertThat(response.id()).isEqualTo(1L);
         assertThat(response.viewCount()).isEqualTo(7);
-        assertThat(response.previewUrlEndpoint()).isEqualTo("/api/v1/documents/1/preview-url");
+        assertThat(response.previewUrlEndpoint()).isEqualTo("/documents/1/preview-url");
+        assertThat(response.downloadUrlEndpoint()).isEqualTo("/documents/1/download-url");
         verify(documentRepository, never()).save(any());
     }
 
