@@ -1,0 +1,115 @@
+.form {
+  width: 100%;
+  padding: 24px;
+}
+
+.field + .field {
+  margin-top: 16px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.05em;
+  color: #5f6368;
+  text-transform: uppercase;
+}
+
+.inputShell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.inputShell:focus-within {
+  border-color: #005bbf;
+  box-shadow: 0 0 0 2px rgba(0, 91, 191, 0.1);
+}
+
+.leftIcon {
+  position: absolute;
+  left: 12px;
+  font-size: 20px;
+  color: #5f6368;
+  pointer-events: none;
+}
+
+.input {
+  width: 100%;
+  border: 0 !important;
+  padding-left: 40px !important;
+  padding-right: 40px !important;
+  height: 40px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.input input {
+  font-size: 14px;
+}
+
+.input:focus,
+.input:hover {
+  box-shadow: none !important;
+}
+
+.visibilityButton {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: #5f6368;
+  cursor: pointer;
+}
+
+.visibilityButton:hover {
+  color: #005bbf;
+}
+
+.visibilityIcon {
+  font-size: 20px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.checkbox {
+  color: #5f6368;
+}
+
+.checkbox :global(.ant-checkbox-inner) {
+  border-radius: 4px;
+}
+
+.forgotLink {
+  color: #005bbf;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.submitButton {
+  margin-top: 16px;
+  background: #005bbf;
+  box-shadow: none;
+}
+
+.submitButton:hover {
+  background: #004493 !important;
+}

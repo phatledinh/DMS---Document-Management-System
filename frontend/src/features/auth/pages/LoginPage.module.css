@@ -1,0 +1,183 @@
+.page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background-color: #f8f9fa;
+  background-image: radial-gradient(#dadce0 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(248, 249, 250, 0.96), rgba(248, 249, 250, 0.8));
+}
+
+.page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
+}
+
+.backdrop {
+  display: none;
+}
+
+.cardShell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+}
+
+.card {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+}
+
+.header {
+  padding: 24px;
+  text-align: center;
+  border-bottom: 1px solid #dadce0;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.brandIcon {
+  font-size: 32px;
+  color: #005bbf;
+}
+
+.brandTitle {
+  margin: 0 !important;
+  font-size: 32px !important;
+  line-height: 40px !important;
+  letter-spacing: -0.02em;
+  color: #005bbf !important;
+}
+
+.subtitle {
+  color: #5f6368 !important;
+}
+
+.footer {
+  margin-top: 32px;
+  text-align: center;
+}
+
+.footerText {
+  display: block;
+  color: #5f6368 !important;
+}
+
+.footerLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  color: #5b5f64;
+}
+
+.footerLinks a {
+  color: inherit;
+}
+
+.footerLinks a:hover {
+  color: #005bbf;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(248, 249, 250, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.cardShell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+}
+
+.card {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+}
+
+.header {
+  padding: 24px;
+  text-align: center;
+  border-bottom: 1px solid #dadce0;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.brandIcon {
+  font-size: 32px;
+  color: #005bbf;
+}
+
+.brandTitle {
+  margin: 0 !important;
+  font-size: 32px !important;
+  line-height: 40px !important;
+  letter-spacing: -0.02em;
+  color: #005bbf !important;
+}
+
+.subtitle {
+  color: #5f6368 !important;
+}
+
+.footer {
+  margin-top: 32px;
+  text-align: center;
+}
+
+.footerText {
+  display: block;
+  color: #5f6368 !important;
+}
+
+.footerLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  color: #5b5f64;
+}
+
+.footerLinks a {
+  color: inherit;
+}
+
+.footerLinks a:hover {
+  color: #005bbf;
+}
