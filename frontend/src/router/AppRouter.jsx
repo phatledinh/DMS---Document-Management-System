@@ -5,6 +5,7 @@ import { getCurrentUser } from '../api/userApi.js';
 import AppLayout from '../components/Layout/AppLayout.jsx';
 import PageLoading from '../components/PageLoading/PageLoading.jsx';
 import ProtectedRoute from '../components/ProtectedRoute/ProtectedRoute.jsx';
+import SearchAccessAnalyticsPage from '../features/analytics/pages/SearchAccessAnalyticsPage.jsx';
 import AuditLogsPage from '../features/auditLogs/pages/AuditLogsPage.jsx';
 import ProcessingErrorsPage from '../features/auditLogs/pages/ProcessingErrorsPage.jsx';
 import { LoginPage } from '../features/auth/index.js';
@@ -19,6 +20,7 @@ import UploadDocumentPage from '../features/documents/pages/UploadDocumentPage.j
 import HomePage from '../features/search/pages/HomePage.jsx';
 import SearchPage from '../features/search/pages/SearchPage.jsx';
 import TagsPage from '../features/tags/pages/TagsPage.jsx';
+import ProfilePage from '../features/users/pages/ProfilePage.jsx';
 import UsersPage from '../features/users/pages/UsersPage.jsx';
 import DashboardPage from '../pages/DashboardPage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
@@ -31,7 +33,9 @@ function AdminDocumentRedirect({ suffix }) {
 
 export default function AppRouter() {
   const hasTriedBootstrap = useAuthStore((state) => state.hasTriedBootstrap);
-  const setHasTriedBootstrap = useAuthStore((state) => state.setHasTriedBootstrap);
+  const setHasTriedBootstrap = useAuthStore(
+    (state) => state.setHasTriedBootstrap,
+  );
   const setSession = useAuthStore((state) => state.setSession);
   const clearSession = useAuthStore((state) => state.clearSession);
 
@@ -79,6 +83,7 @@ export default function AppRouter() {
           <Route path="search" element={<SearchPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="documents/:id" element={<DocumentDetailPage />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
       </Route>
       <Route element={<ProtectedRoute roles={['ADMIN']} />}>
@@ -88,6 +93,7 @@ export default function AppRouter() {
         <Route path="/admin/documents/:id/edit" element={<EditDocumentPage />} />
         <Route path="/admin/documents/:id/history" element={<DocumentHistoryPage />} />
         <Route path="/admin/trash" element={<DocumentTrashPage />} />
+        <Route path="/analytics" element={<SearchAccessAnalyticsPage />} />
         <Route path="/audit-logs" element={<AuditLogsPage />} />
         <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
         <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
@@ -104,4 +110,3 @@ export default function AppRouter() {
     </Routes>
   );
 }
-
