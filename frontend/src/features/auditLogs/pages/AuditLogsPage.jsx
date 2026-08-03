@@ -21,15 +21,6 @@ import {
 } from '@ant-design/icons';
 import styles from './AuditLogsPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined />, active: true },
-];
 
 const logs = [
   { id: 1, time: '21/10/2023 10:12:45', user: 'Nguyen Van A', initials: 'NA', action: 'Upload', target: 'Tài liệu:', detail: 'Quy trình ISO 9001.pdf', ip: '192.168.1.45', tone: 'upload', icon: <UploadOutlined /> },
@@ -41,36 +32,9 @@ const logs = [
 
 export default function AuditLogsPage() {
   return (
-    <div className={styles.shell}>
-      <header className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <strong>Deep Trust</strong>
-          <label className={styles.globalSearch}>
-            <SearchOutlined />
-            <input placeholder="Global search..." type="text" />
-          </label>
-        </div>
-        <div className={styles.topbarActions}>
-          <button type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-          <button type="button"><QuestionCircleOutlined /></button>
-          <button type="button"><SettingOutlined /></button>
-          <div className={styles.avatar}>A</div>
-        </div>
-      </header>
+    <div className={styles.page}>
 
-      <aside className={styles.sidebar}>
-        <button className={styles.uploadButton} type="button"><PlusOutlined />Upload Document</button>
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-      </aside>
-
-      <main className={styles.mainArea}>
+      <main className={styles.pageBody}>
         <div className={styles.container}>
           <section className={styles.pageHeader}>
             <h1>NHẬT KÝ HỆ THỐNG</h1>

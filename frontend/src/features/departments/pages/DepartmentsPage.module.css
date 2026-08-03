@@ -1,3 +1,17 @@
+.page {
+  min-height: 100%;
+}
+
+.pageBody {
+  width: 100%;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 :root {
   --dt-primary: #005bbf;
   --dt-primary-container: #1a73e8;

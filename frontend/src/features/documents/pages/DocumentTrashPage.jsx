@@ -22,16 +22,6 @@ import {
 } from '@ant-design/icons';
 import styles from './DocumentTrashPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-  { label: 'Trash', icon: <DeleteOutlined />, active: true },
-];
 
 const trashDocuments = [
   {
@@ -108,47 +98,9 @@ export default function DocumentTrashPage() {
   }
 
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}>DT</div>
-          <div>
-            <h1>Deep Trust Admin</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <button className={styles.primaryButton} type="button"><UploadOutlined />Upload Document</button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Help Center</span></a>
-        </div>
-      </aside>
-
-      <div className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <div className={styles.topbarBrand}>DocuTrust DMS</div>
-          <div className={styles.topbarActions}>
-            <label className={styles.quickSearch}>
-              <SearchOutlined />
-              <input placeholder="Tìm kiếm nhanh..." type="text" />
-            </label>
-            <button className={styles.iconButton} type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-            <button className={styles.iconButton} type="button"><QuestionCircleOutlined /></button>
-            <button className={styles.iconButton} type="button"><AppstoreOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <div className={styles.pageBody}>
 
         <main className={styles.content}>
           <div className={styles.container}>

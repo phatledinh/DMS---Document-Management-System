@@ -19,17 +19,9 @@ import {
   TeamOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import styles from './DocumentHistoryPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined />, active: true },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
 
 const versions = [
   {
@@ -61,54 +53,14 @@ const versions = [
 
 export default function DocumentHistoryPage() {
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}><SecurityScanOutlined /></div>
-          <div>
-            <h1>Deep Trust Admin</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <button className={styles.uploadButton} type="button"><UploadOutlined />Upload Document</button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Help Center</span></a>
-        </div>
-      </aside>
-
-      <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <div className={styles.topbarLeft}>
-            <strong>Deep Trust</strong>
-            <label className={styles.searchBox}>
-              <SearchOutlined />
-              <input placeholder="Search documents..." type="text" />
-            </label>
-          </div>
-          <div className={styles.topbarActions}>
-            <button type="button"><BellOutlined /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <button type="button"><SettingOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <main className={styles.pageBody}>
 
         <div className={styles.canvas}>
           <div className={styles.container}>
             <nav className={styles.breadcrumbs}>
-              <a href="#">Home</a><span>›</span><a href="#">Admin</a><span>›</span><a href="#">Documents</a><span>›</span><strong>Lịch sử phiên bản</strong>
+              <Link to="/">Home</Link><span>›</span><Link to="/admin/dashboard">Admin</Link><span>›</span><Link to="/admin/documents">Documents</Link><span>›</span><strong>Lịch sử phiên bản</strong>
             </nav>
 
             <section className={styles.documentHeader}>

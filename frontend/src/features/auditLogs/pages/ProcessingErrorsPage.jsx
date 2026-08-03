@@ -19,17 +19,9 @@ import {
   UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import styles from './ProcessingErrorsPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined />, active: true },
-];
 
 const summaryCards = [
   { label: 'Tổng số lỗi', value: '124', helper: '12%', tone: 'error', icon: <WarningOutlined /> },
@@ -52,47 +44,15 @@ function FileIcon({ type }) {
 
 export default function ProcessingErrorsPage() {
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}><SecurityScanOutlined /></div>
-          <div>
-            <h1>Deep Trust</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
-        <button className={styles.uploadButton} type="button"><UploadOutlined />Upload Document</button>
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}<span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Support</span></a>
-        </div>
-      </aside>
+    <div className={styles.page}>
 
-      <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <label className={styles.searchBox}>
-            <SearchOutlined />
-            <input placeholder="Tìm kiếm tài liệu, lỗi..." type="text" />
-          </label>
-          <div className={styles.topbarActions}>
-            <button type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <main className={styles.pageBody}>
 
         <div className={styles.canvas}>
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
-                <div className={styles.breadcrumbs}><a href="#">Audit Logs</a><span>›</span><strong>Processing Errors</strong></div>
+                <div className={styles.breadcrumbs}><Link to="/audit-logs">Audit Logs</Link><span>›</span><strong>Processing Errors</strong></div>
                 <h2>TÀI LIỆU LỖI XỬ LÝ</h2>
               </div>
               <button className={styles.retryAllButton} type="button"><SyncOutlined />Retry tất cả</button>

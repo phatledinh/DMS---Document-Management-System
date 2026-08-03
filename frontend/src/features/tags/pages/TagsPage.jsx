@@ -1,34 +1,20 @@
+import { useState } from 'react';
 import {
   AppstoreOutlined,
-  BellOutlined,
   DeleteOutlined,
   EditOutlined,
-  FileTextOutlined,
   FilterOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
   PlusOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  ShopOutlined,
   TagsOutlined,
+  SettingOutlined,
   TeamOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
+import { Button, Form, Input, Modal, Select } from 'antd';
+import { toast } from 'react-toastify';
 import styles from './TagsPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined />, active: true },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
 
-const tags = [
+const initialTags = [
   { id: 1, name: 'ISO 9001', slug: 'iso-9001', count: 142, createdAt: '12/10/2023', tone: 'primary', icon: <TagsOutlined /> },
   { id: 2, name: 'Quy Trình', slug: 'quy-trinh', count: 85, createdAt: '15/10/2023', tone: 'success', icon: <AppstoreOutlined /> },
   { id: 3, name: 'Kỹ Thuật', slug: 'ky-thuat', count: 210, createdAt: '18/10/2023', tone: 'tertiary', icon: <SettingOutlined /> },
@@ -36,48 +22,49 @@ const tags = [
   { id: 5, name: 'Quan Trọng', slug: 'quan-trong', count: 24, createdAt: '22/10/2023', tone: 'danger', icon: <PlusOutlined /> },
 ];
 
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 export default function TagsPage() {
+  const [form] = Form.useForm();
+  const [tags, setTags] = useState(initialTags);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+
+  function closeCreateModal() {
+    setCreateModalOpen(false);
+    form.resetFields();
+  }
+
+  function handleCreateTag(values) {
+    const nextId = Math.max(...tags.map((tag) => tag.id), 0) + 1;
+    const name = values.name.trim();
+    setTags((current) => [
+      ...current,
+      {
+        id: nextId,
+        name,
+        slug: values.slug?.trim() || slugify(name),
+        count: 0,
+        createdAt: new Date().toLocaleDateString('vi-VN'),
+        tone: values.tone,
+        icon: <TagsOutlined />,
+      },
+    ]);
+    toast.success('Đã thêm tag mới');
+    closeCreateModal();
+  }
+
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}>DT</div>
-          <div>
-            <h1>Deep Trust</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <button className={styles.uploadButton} type="button"><UploadOutlined />Upload Document</button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Support</span></a>
-        </div>
-      </aside>
-
-      <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <label className={styles.searchBox}>
-            <SearchOutlined />
-            <input placeholder="Search documents, tags..." type="text" />
-          </label>
-          <div className={styles.topbarActions}>
-            <button type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <button type="button"><SettingOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <main className={styles.pageBody}>
 
         <div className={styles.canvas}>
           <div className={styles.container}>
@@ -86,7 +73,7 @@ export default function TagsPage() {
                 <h2>QUẢN LÝ TAGS</h2>
                 <p>Quản lý danh sách các thẻ phân loại tài liệu trong hệ thống.</p>
               </div>
-              <button className={styles.primaryButton} type="button"><PlusOutlined />Thêm tag mới</button>
+              <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}><PlusOutlined />Thêm tag mới</button>
             </section>
 
             <section className={styles.tablePanel}>
@@ -146,6 +133,40 @@ export default function TagsPage() {
           </div>
         </div>
       </main>
+
+      <Modal
+        title="Thêm tag mới"
+        open={isCreateModalOpen}
+        onCancel={closeCreateModal}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" onFinish={handleCreateTag} initialValues={{ tone: 'primary' }}>
+          <Form.Item name="name" label="Tên tag" rules={[{ required: true, message: 'Vui lòng nhập tên tag.' }]}>
+            <Input placeholder="Ví dụ: Quan trọng" />
+          </Form.Item>
+          <Form.Item name="slug" label="Slug">
+            <Input placeholder="Tự tạo nếu bỏ trống" />
+          </Form.Item>
+          <Form.Item name="tone" label="Màu hiển thị" rules={[{ required: true, message: 'Vui lòng chọn màu hiển thị.' }]}>
+            <Select
+              options={[
+                { label: 'Xanh dương', value: 'primary' },
+                { label: 'Xanh lá', value: 'success' },
+                { label: 'Tím', value: 'tertiary' },
+                { label: 'Vàng', value: 'warning' },
+                { label: 'Đỏ', value: 'danger' },
+              ]}
+            />
+          </Form.Item>
+          <div className={styles.modalActions}>
+            <Button onClick={closeCreateModal}>Hủy</Button>
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+              Thêm tag
+            </Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }

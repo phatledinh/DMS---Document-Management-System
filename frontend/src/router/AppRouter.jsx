@@ -84,23 +84,23 @@ export default function AppRouter() {
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="documents/:id" element={<DocumentDetailPage />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route element={<ProtectedRoute roles={['ADMIN']} />}>
+            <Route path="/admin/dashboard" element={<DashboardPage />} />
+            <Route path="/admin/documents" element={<DocumentsPage />} />
+            <Route path="/admin/documents/upload" element={<UploadDocumentPage />} />
+            <Route path="/admin/documents/:id/edit" element={<EditDocumentPage />} />
+            <Route path="/admin/documents/:id/history" element={<DocumentHistoryPage />} />
+            <Route path="/admin/trash" element={<DocumentTrashPage />} />
+            <Route path="/analytics" element={<SearchAccessAnalyticsPage />} />
+            <Route path="/audit-logs" element={<AuditLogsPage />} />
+            <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
+            <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
+            <Route path="/categories" element={<CategoriesPage />} />
+            <Route path="/departments" element={<DepartmentsPage />} />
+            <Route path="/tags" element={<TagsPage />} />
+            <Route path="/users" element={<UsersPage />} />
+          </Route>
         </Route>
-      </Route>
-      <Route element={<ProtectedRoute roles={['ADMIN']} />}>
-        <Route path="/admin/dashboard" element={<DashboardPage />} />
-        <Route path="/admin/documents" element={<DocumentsPage />} />
-        <Route path="/admin/documents/upload" element={<UploadDocumentPage />} />
-        <Route path="/admin/documents/:id/edit" element={<EditDocumentPage />} />
-        <Route path="/admin/documents/:id/history" element={<DocumentHistoryPage />} />
-        <Route path="/admin/trash" element={<DocumentTrashPage />} />
-        <Route path="/analytics" element={<SearchAccessAnalyticsPage />} />
-        <Route path="/audit-logs" element={<AuditLogsPage />} />
-        <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
-        <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
-        <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/departments" element={<DepartmentsPage />} />
-        <Route path="/tags" element={<TagsPage />} />
-        <Route path="/users" element={<UsersPage />} />
       </Route>
       <Route path="/documents/upload" element={<Navigate to="/admin/documents/upload" replace />} />
       <Route path="/documents/:id/edit" element={<AdminDocumentRedirect suffix="edit" />} />

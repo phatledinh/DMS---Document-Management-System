@@ -1,34 +1,17 @@
+import { useState } from 'react';
 import {
-  AppstoreOutlined,
-  BellOutlined,
   DownOutlined,
-  FileTextOutlined,
   FolderOpenFilled,
-  HistoryOutlined,
   MoreOutlined,
   PlusOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
   UpOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
+import { Button, Form, Input, Modal, Select } from 'antd';
+import { toast } from 'react-toastify';
 import styles from './CategoriesPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenFilled />, active: true },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
 
-const categoryTree = [
+const initialCategoryTree = [
   {
     name: 'Quy trình ISO',
     count: '25 tài liệu',
@@ -88,48 +71,43 @@ function TreeNode({ item, isLast }) {
 }
 
 export default function CategoriesPage() {
+  const [form] = Form.useForm();
+  const [categoryTree, setCategoryTree] = useState(initialCategoryTree);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+
+  function closeCreateModal() {
+    setCreateModalOpen(false);
+    form.resetFields();
+  }
+
+  function handleCreateCategory(values) {
+    const newCategory = {
+      name: values.name.trim(),
+      count: '0 tài liệu',
+      description: values.description?.trim(),
+    };
+
+    if (values.parentName) {
+      setCategoryTree((current) => current.map((category) => {
+        if (category.name !== values.parentName) return category;
+        return {
+          ...category,
+          expanded: true,
+          children: [...(category.children || []), { ...newCategory, count: '0' }],
+        };
+      }));
+    } else {
+      setCategoryTree((current) => [...current, newCategory]);
+    }
+
+    toast.success('Đã thêm danh mục mới');
+    closeCreateModal();
+  }
+
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}>D</div>
-          <div>
-            <h1>DocuTrust Admin</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <button className={styles.uploadButton} type="button"><UploadOutlined />Upload Document</button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Help Center</span></a>
-        </div>
-      </aside>
-
-      <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <strong>DocuTrust DMS</strong>
-          <div className={styles.topbarActions}>
-            <label className={styles.searchBox}>
-              <SearchOutlined />
-              <input placeholder="Search..." type="text" />
-            </label>
-            <button type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <button type="button"><AppstoreOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <main className={styles.pageBody}>
 
         <div className={styles.canvas}>
           <div className={styles.container}>
@@ -138,7 +116,7 @@ export default function CategoriesPage() {
                 <h2>QUẢN LÝ DANH MỤC</h2>
                 <p>Quản lý cấu trúc và phân loại tài liệu trong hệ thống.</p>
               </div>
-              <button className={styles.primaryButton} type="button"><PlusOutlined />Thêm mới</button>
+              <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}><PlusOutlined />Thêm mới</button>
             </section>
 
             <section className={styles.treePanel}>
@@ -158,6 +136,40 @@ export default function CategoriesPage() {
           </div>
         </div>
       </main>
+
+      <Modal
+        title="Thêm danh mục mới"
+        open={isCreateModalOpen}
+        onCancel={closeCreateModal}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" onFinish={handleCreateCategory}>
+          <Form.Item
+            name="name"
+            label="Tên danh mục"
+            rules={[{ required: true, message: 'Vui lòng nhập tên danh mục.' }]}
+          >
+            <Input placeholder="Ví dụ: Quy trình nội bộ" />
+          </Form.Item>
+          <Form.Item name="parentName" label="Danh mục cha">
+            <Select
+              allowClear
+              placeholder="Không chọn nếu là danh mục gốc"
+              options={categoryTree.map((category) => ({ label: category.name, value: category.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <Input.TextArea rows={3} placeholder="Nhập mô tả ngắn cho danh mục" />
+          </Form.Item>
+          <div className={styles.modalActions}>
+            <Button onClick={closeCreateModal}>Hủy</Button>
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+              Thêm danh mục
+            </Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }

@@ -1,33 +1,15 @@
+import { useState } from 'react';
 import {
-  AppstoreOutlined,
-  BellOutlined,
   DeleteOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
   PlusOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SecurityScanOutlined,
   SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
+import { Button, Form, Input, Modal } from 'antd';
+import { toast } from 'react-toastify';
 import styles from './DepartmentsPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined />, active: true },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
 
-const departments = [
+const initialDepartments = [
   { id: 1, name: 'Phòng Kỹ thuật', code: 'DEPT-TECH', description: 'Quản lý hạ tầng và phát triển phần mềm' },
   { id: 2, name: 'Phòng Nhân sự', code: 'DEPT-HR', description: 'Quản lý nhân sự và tuyển dụng, đào tạo' },
   { id: 3, name: 'Phòng Kế toán', code: 'DEPT-ACC', description: 'Quản lý tài chính, kế toán và thuế' },
@@ -35,47 +17,34 @@ const departments = [
 ];
 
 export default function DepartmentsPage() {
+  const [form] = Form.useForm();
+  const [departments, setDepartments] = useState(initialDepartments);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+
+  function closeCreateModal() {
+    setCreateModalOpen(false);
+    form.resetFields();
+  }
+
+  function handleCreateDepartment(values) {
+    const nextId = Math.max(...departments.map((department) => department.id), 0) + 1;
+    setDepartments((current) => [
+      ...current,
+      {
+        id: nextId,
+        name: values.name.trim(),
+        code: values.code.trim().toUpperCase(),
+        description: values.description?.trim() || '—',
+      },
+    ]);
+    toast.success('Đã thêm phòng ban mới');
+    closeCreateModal();
+  }
+
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}><SecurityScanOutlined /></div>
-          <div>
-            <h1>Deep Trust DMS</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <button className={styles.uploadButton} type="button"><UploadOutlined />Upload Document</button>
-        </div>
-      </aside>
-
-      <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <div className={styles.topbarLeft}>
-            <strong>DocuTrust Admin</strong>
-            <label className={styles.searchBox}>
-              <SearchOutlined />
-              <input placeholder="Search departments..." type="text" />
-            </label>
-          </div>
-          <div className={styles.topbarActions}>
-            <button type="button"><BellOutlined /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <button type="button"><SettingOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <main className={styles.pageBody}>
 
         <div className={styles.canvas}>
           <div className={styles.container}>
@@ -84,7 +53,7 @@ export default function DepartmentsPage() {
                 <h1>Quản lý phòng ban</h1>
                 <p>Quản lý danh sách các phòng ban và bộ phận trong tổ chức.</p>
               </div>
-              <button className={styles.primaryButton} type="button"><PlusOutlined />Thêm phòng ban</button>
+              <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}><PlusOutlined />Thêm phòng ban</button>
             </section>
 
             <section className={styles.tablePanel}>
@@ -131,6 +100,32 @@ export default function DepartmentsPage() {
           </div>
         </div>
       </main>
+
+      <Modal
+        title="Thêm phòng ban"
+        open={isCreateModalOpen}
+        onCancel={closeCreateModal}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={form} layout="vertical" onFinish={handleCreateDepartment}>
+          <Form.Item name="name" label="Tên phòng ban" rules={[{ required: true, message: 'Vui lòng nhập tên phòng ban.' }]}>
+            <Input placeholder="Ví dụ: Phòng Kinh doanh" />
+          </Form.Item>
+          <Form.Item name="code" label="Mã phòng" rules={[{ required: true, message: 'Vui lòng nhập mã phòng.' }]}>
+            <Input placeholder="Ví dụ: DEPT-SALES" />
+          </Form.Item>
+          <Form.Item name="description" label="Mô tả">
+            <Input.TextArea rows={3} placeholder="Nhập mô tả ngắn cho phòng ban" />
+          </Form.Item>
+          <div className={styles.modalActions}>
+            <Button onClick={closeCreateModal}>Hủy</Button>
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
+              Thêm phòng ban
+            </Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }

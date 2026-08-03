@@ -30,15 +30,6 @@ const metricCards = [
   { label: 'Phòng ban', value: '8', icon: <ShopOutlined />, tone: 'primaryDim', trend: 'Không đổi', trendType: 'neutral' },
 ];
 
-const navItems = [
-  { label: 'Dashboard', icon: <HomeOutlined />, active: true },
-  { label: 'Documents', icon: <FileTextOutlined /> },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
 
 const topViewed = [
   { name: 'Quy_trinh_nhan_su_2023.pdf', views: '1,245', type: 'pdf' },
@@ -66,50 +57,9 @@ function FileBadge({ type }) {
 
 export default function DashboardPage() {
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}><span>DT</span></div>
-          <div>
-            <h1>Deep Trust Admin</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
+    <div className={styles.page}>
 
-        <button className={styles.uploadButton} type="button">
-          <UploadOutlined />
-          Upload Document
-        </button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Help Center</span></a>
-        </div>
-      </aside>
-
-      <div className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <strong>DocuTrust DMS</strong>
-          <div className={styles.topbarActions}>
-            <label className={styles.searchBox}>
-              <SearchOutlined />
-              <input placeholder="Search documents..." type="text" />
-            </label>
-            <button type="button"><BellOutlined /></button>
-            <button type="button"><QuestionCircleOutlined /></button>
-            <button type="button"><AppstoreOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
+      <div className={styles.pageBody}>
 
         <main className={styles.content}>
           <section className={styles.metricsGrid}>
