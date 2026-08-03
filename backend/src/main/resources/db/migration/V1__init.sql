@@ -66,7 +66,7 @@ CREATE TABLE refresh_tokens (
 
 -- Default Admin Account (Optional, added as requested/good practice)
 INSERT INTO users (name, email, password, role, status)
-VALUES ('System Admin', 'admin@dms.com', '$2a$10$3m.j.O0tA42gH9vJvDk3EOCd0X92U9U9X0.q/3bQ0A0a1pZ6q0iM2', 'ADMIN', 'ACTIVE');
+VALUES ('System Admin', 'admin@dms.com', '$2a$10$5OjzLbScdSUHVRtoDBaXduV9BNJGHLIerPPkjED0sMFvn7V7WEHk.', 'ADMIN', 'ACTIVE');
 -- Note: Password is 'admin' BCrypt hashed.
 
 -- Document Domain

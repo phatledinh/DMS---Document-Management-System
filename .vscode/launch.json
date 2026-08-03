@@ -9,6 +9,16 @@
             "projectName": "backend",
             "args": "",
             "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-DmsApplication<dms>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.dms.DmsApplication",
+            "projectName": "dms",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
         }
     ]
 }

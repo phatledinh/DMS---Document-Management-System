@@ -4,13 +4,18 @@ import com.dms.common.dto.ApiResponse;
 import com.dms.document.dto.DocumentDetailResponse;
 import com.dms.document.dto.DocumentListItemResponse;
 import com.dms.document.dto.DocumentSearchRequest;
+import com.dms.document.dto.DocumentSearchResponse;
 import com.dms.document.dto.PageResponse;
 import com.dms.document.dto.PresignedUrlResponse;
+import com.dms.document.dto.SearchSuggestionResponse;
 import com.dms.document.dto.UploadCompleteResponse;
 import com.dms.document.dto.UploadInitRequest;
 import com.dms.document.dto.UploadInitResponse;
 import com.dms.document.service.DocumentMetadataService;
 import com.dms.document.service.DocumentPresignedUrlService;
+import com.dms.document.service.DocumentSearchService;
+
+import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -27,15 +32,31 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentController {
     private final DocumentPresignedUrlService presignedUrlService;
     private final DocumentMetadataService metadataService;
+    private final DocumentSearchService searchService;
 
-    public DocumentController(DocumentPresignedUrlService presignedUrlService, DocumentMetadataService metadataService) {
+    public DocumentController(
+            DocumentPresignedUrlService presignedUrlService,
+            DocumentMetadataService metadataService,
+            DocumentSearchService searchService
+    ) {
         this.presignedUrlService = presignedUrlService;
         this.metadataService = metadataService;
+        this.searchService = searchService;
     }
 
     @GetMapping
     public ApiResponse<PageResponse<DocumentListItemResponse>> listDocuments(DocumentSearchRequest request) {
         return ApiResponse.success(metadataService.listDocuments(request));
+    }
+
+    @GetMapping("/search")
+    public ApiResponse<DocumentSearchResponse> searchDocuments(DocumentSearchRequest request) {
+        return ApiResponse.success(searchService.search(request));
+    }
+
+    @GetMapping("/search/suggestions")
+    public ApiResponse<List<SearchSuggestionResponse>> searchSuggestions(String q, Integer limit) {
+        return ApiResponse.success(searchService.suggestions(q, limit));
     }
 
     @GetMapping("/{id}")

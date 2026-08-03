@@ -212,86 +212,86 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 1.8 PostgreSQL Full Text Search
 
-- [ ] Triển khai `GET /api/v1/search`
-    - Ghi chú:
-- [ ] Dùng `websearch_to_tsquery` cho keyword search
-    - Ghi chú:
-- [ ] Dùng `ts_rank_cd` cho ranking
-    - Ghi chú:
-- [ ] Dùng `ts_headline` cho snippet/highlight
-    - Ghi chú:
-- [ ] Áp dụng `unaccent` cho tiếng Việt
-    - Ghi chú:
-- [ ] Áp dụng resource access policy trực tiếp trong SQL search query
-    - Ghi chú:
-- [ ] Đảm bảo không leak title/snippet/count của document không có quyền
-    - Ghi chú:
-- [ ] Triển khai `GET /api/v1/search/suggestions`
-    - Ghi chú:
-- [ ] Áp dụng resource access policy cho suggestions
-    - Ghi chú:
-- [ ] Ghi `search_logs`
-    - Ghi chú:
+- [x] Triển khai `GET /api/v1/search`
+    - Ghi chú: Đã triển khai theo API spec tại `GET /api/v1/documents/search` trong `DocumentController`.
+- [x] Dùng `websearch_to_tsquery` cho keyword search
+    - Ghi chú: `DocumentSearchRepository` dùng `websearch_to_tsquery('simple', unaccent(:query))` khi `q` có giá trị.
+- [x] Dùng `ts_rank_cd` cho ranking
+    - Ghi chú: Ranking dùng `ts_rank_cd` và boost exact `document_code`.
+- [x] Dùng `ts_headline` cho snippet/highlight
+    - Ghi chú: Highlight title/description/content bằng `ts_headline`, service sanitize trước khi trả response.
+- [x] Áp dụng `unaccent` cho tiếng Việt
+    - Ghi chú: Search query, suggestion và search vector refresh đều dùng `unaccent`.
+- [x] Áp dụng resource access policy trực tiếp trong SQL search query
+    - Ghi chú: Result/count/facet query dùng ACL predicate trong SQL trước khi select dữ liệu.
+- [x] Đảm bảo không leak title/snippet/count của document không có quyền
+    - Ghi chú: Result, total count và facet đều tính từ ACL-filtered CTE; không filter hậu kỳ trong Java.
+- [x] Triển khai `GET /api/v1/search/suggestions`
+    - Ghi chú: Đã triển khai theo API spec tại `GET /api/v1/documents/search/suggestions`.
+- [x] Áp dụng resource access policy cho suggestions
+    - Ghi chú: Suggestions query dùng visible set đã lọc ACL trước khi lấy title/code/tag.
+- [x] Ghi `search_logs`
+    - Ghi chú: `DocumentSearchRepository` ghi `search_logs` cho search và suggestions kèm keyword/filter/result_count/latency_ms.
 
 ### 1.9 Frontend MVP
 
-- [ ] Tạo màn hình login
-    - Ghi chú:
-- [ ] Lưu access token trong memory only
-    - Ghi chú:
-- [ ] Cấu hình Axios/API client
-    - Ghi chú:
-- [ ] Cấu hình refresh token flow
-    - Ghi chú:
-- [ ] Tạo màn hình danh sách tài liệu
-    - Ghi chú:
-- [ ] Tạo màn hình upload tài liệu
-    - Ghi chú:
-- [ ] Frontend gọi `upload-init`
-    - Ghi chú:
-- [ ] Frontend PUT file trực tiếp lên presigned URL
-    - Ghi chú:
-- [ ] Frontend gọi `upload-complete`
-    - Ghi chú:
-- [ ] Hiển thị trạng thái `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`
-    - Ghi chú:
-- [ ] Tạo màn hình chi tiết tài liệu
-    - Ghi chú:
-- [ ] Tạo chức năng preview qua presigned URL
-    - Ghi chú:
-- [ ] Tạo chức năng download qua presigned URL
-    - Ghi chú:
-- [ ] Tạo màn hình search cơ bản
-    - Ghi chú:
+- [x] Tạo màn hình login
+    - Ghi chú: `frontend/src/features/auth/components/LoginForm.jsx` submit thật qua `useLoginAction`, hiển thị lỗi đăng nhập và redirect theo role.
+- [x] Lưu access token trong memory only
+    - Ghi chú: Access token giữ trong Zustand `authStore`, không dùng `localStorage`/`sessionStorage`.
+- [x] Cấu hình Axios/API client
+    - Ghi chú: `axiosClient` dùng `VITE_API_URL`, `withCredentials`, gắn Bearer token và unwrap response qua helper dùng chung.
+- [x] Cấu hình refresh token flow
+    - Ghi chú: Bootstrap session gọi `/auth/refresh`; interceptor xử lý 401 bằng refresh một lần rồi retry request gốc.
+- [x] Tạo màn hình danh sách tài liệu
+    - Ghi chú: `DocumentsPage` gọi `GET /api/v1/documents`, hỗ trợ filter cơ bản, pagination, loading/error/empty state.
+- [x] Tạo màn hình upload tài liệu
+    - Ghi chú: `UploadDocumentPage` có form metadata/file, validate size/extension/access level và progress upload.
+- [x] Frontend gọi `upload-init`
+    - Ghi chú: `useUploadDocument` gọi `POST /api/v1/documents/upload-init` với metadata và khai báo file.
+- [x] Frontend PUT file trực tiếp lên presigned URL
+    - Ghi chú: PUT dùng Axios riêng, không dùng `axiosClient`, để không gửi Authorization của app tới object storage.
+- [x] Frontend gọi `upload-complete`
+    - Ghi chú: Sau PUT thành công gọi `POST /api/v1/documents/{id}/upload-complete` và invalidate document/search queries.
+- [x] Hiển thị trạng thái `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`
+    - Ghi chú: Dùng status helper chung cho list/detail/search; list/detail polling nhẹ khi có trạng thái `PROCESSING`.
+- [x] Tạo màn hình chi tiết tài liệu
+    - Ghi chú: `DocumentDetailPage` gọi `GET /api/v1/documents/{id}`, hiển thị metadata thật và disable action khi chưa `INDEXED`.
+- [x] Tạo chức năng preview qua presigned URL
+    - Ghi chú: Detail gọi `GET /api/v1/documents/{id}/preview-url`; PDF/image mở trong modal iframe, HTML sanitize bằng DOMPurify nếu có.
+- [x] Tạo chức năng download qua presigned URL
+    - Ghi chú: Detail gọi `GET /api/v1/documents/{id}/download-url` rồi kích hoạt tải qua anchor tạm.
+- [x] Tạo màn hình search cơ bản
+    - Ghi chú: `SearchPage` gọi `GET /api/v1/documents/search`, đồng bộ query params, filter cơ bản, pagination và sanitize highlight.
 
 ### 1.10 Kiểm thử MVP
 
-- [ ] Test login/refresh/logout
-    - Ghi chú:
-- [ ] Test upload PDF thành công
-    - Ghi chú:
-- [ ] Test upload DOCX thành công
-    - Ghi chú:
-- [ ] Test file quá 50MB bị chặn
-    - Ghi chú:
-- [ ] Test file nguy hiểm bị chặn
-    - Ghi chú:
-- [ ] Test MIME spoofing bị chặn
-    - Ghi chú:
-- [ ] Test worker extract và index thành công
-    - Ghi chú:
-- [ ] Test search có kết quả đúng
-    - Ghi chú:
-- [ ] Test user không thuộc audience không thấy document khi enforcement bật
-    - Ghi chú:
-- [ ] Test preview URL hoạt động
-    - Ghi chú:
-- [ ] Test download URL hoạt động
-    - Ghi chú:
-- [ ] Test access/search logs được ghi
-    - Ghi chú:
-- [ ] Test Docker Compose chạy toàn bộ stack
-    - Ghi chú:
+- [x] Test login/refresh/logout
+    - Ghi chú: Covered by `AuthServiceTest`; full backend suite `backend/mvnw -f backend/pom.xml test` pass 61 tests.
+- [x] Test upload PDF thành công
+    - Ghi chú: `DocumentPresignedUrlServiceTest.completeUpload_pdfValidatesObjectAndPublishesExtractionRequest` cover upload-complete chuyển `PROCESSING` và publish extraction event.
+- [x] Test upload DOCX thành công
+    - Ghi chú: `DocumentPresignedUrlServiceTest.completeUpload_docxValidatesObjectAndPublishesExtractionRequest` cover DOCX MIME và publish extraction event.
+- [x] Test file quá 50MB bị chặn
+    - Ghi chú: `FileValidationServiceTest` cover boundary 50MB pass và 50MB + 1 byte fail.
+- [x] Test file nguy hiểm bị chặn
+    - Ghi chú: `FileValidationServiceTest` parameterized dangerous extensions `.exe/.sh/.bat/.cmd/.js/.html/.htm/.jar/.msi/.ps1/.vbs`; frontend smoke also rejects `.exe` before submit.
+- [x] Test MIME spoofing bị chặn
+    - Ghi chú: `FileValidationServiceTest.validateDetected_rejectsMimeMismatch` và `DocumentPresignedUrlServiceTest.completeUpload_mimeSpoofingDeletesObjectAndRejectsUpload`.
+- [x] Test worker extract và index thành công
+    - Ghi chú: `DocumentExtractionPipelineTest.process_successStoresContentRefreshesIndexAndSetsIndexed` và `DocumentExtractWorkerTest` pass.
+- [x] Test search có kết quả đúng
+    - Ghi chú: `DocumentSearchServiceTest` cover response/highlight/facets; `DocumentSearchRepositoryTest` cover PostgreSQL FTS SQL.
+- [x] Test user không thuộc audience không thấy document khi enforcement bật
+    - Ghi chú: `DocumentAccessPolicyServiceTest` cover ACL policy; `DocumentSearchRepositoryTest` assert SQL visible set gồm status `INDEXED`, `PUBLIC`, owner, department ACL và user ACL.
+- [x] Test preview URL hoạt động
+    - Ghi chú: `DocumentPresignedUrlServiceTest.createPreviewUrl_allowedLogsAccessAndIncrementsViewCount` cover presigned preview URL, log và counter.
+- [x] Test download URL hoạt động
+    - Ghi chú: `DocumentPresignedUrlServiceTest.createDownloadUrl_allowedLogsAccessAndIncrementsDownloadCount` cover presigned download URL, log và counter.
+- [x] Test access/search logs được ghi
+    - Ghi chú: Access logs covered by `DocumentPresignedUrlServiceTest`; search/suggestion logs covered by `DocumentSearchServiceTest` and `DocumentSearchRepositoryTest.logSearch_serializesNullFilters`.
+- [x] Test Docker Compose chạy toàn bộ stack
+    - Ghi chú: `docker compose down -v && docker compose up --build -d`; backend healthy, worker up, PostgreSQL/RabbitMQ/Redis/MinIO healthy, `/api/v1/actuator/health` returns `UP`. Added V2 migration, dev JWT secret, ObjectMapper bean and MinIO init fixes for clean startup.
 
 ---
 

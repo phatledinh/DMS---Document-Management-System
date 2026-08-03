@@ -35,7 +35,7 @@ services:
             - SPRING_DATASOURCE_PASSWORD=123456
             - SPRING_DATA_REDIS_HOST=redis
             - SPRING_DATA_REDIS_PORT=6379
-            - JWT_SECRET=your-256-bit-secret-key-here
+            - JWT_SECRET=qlktl-dev-jwt-secret-256-bit-minimum-32-bytes
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000
             - STORAGE_ENDPOINT=http://minio:9000
@@ -77,6 +77,7 @@ services:
             - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
             - SPRING_DATASOURCE_USERNAME=postgres
             - SPRING_DATASOURCE_PASSWORD=123456
+            - JWT_SECRET=qlktl-dev-jwt-secret-256-bit-minimum-32-bytes
             - SPRING_RABBITMQ_HOST=rabbitmq
             - SPRING_RABBITMQ_PORT=5672
             - SPRING_RABBITMQ_USERNAME=dms
@@ -162,10 +163,8 @@ services:
             mc alias set local http://minio:9000 dms_minio dms_minio_password &&
             mc mb --ignore-existing local/dms-documents &&
             mc anonymous set none local/dms-documents &&
-            cat > /tmp/cors.json <<'EOF'
-            [{"AllowedOrigins":["http://localhost:3000"],"AllowedMethods":["GET","PUT","HEAD"],"AllowedHeaders":["Authorization","Content-Type","Content-Length","x-amz-date","x-amz-content-sha256"],"ExposeHeaders":["ETag"],"MaxAgeSeconds":300}]
-            EOF
-            mc cors set /tmp/cors.json local/dms-documents
+            printf '%s' '<CORSConfiguration><CORSRule><AllowedOrigin>http://localhost:3000</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>Authorization</AllowedHeader><AllowedHeader>Content-Type</AllowedHeader><AllowedHeader>Content-Length</AllowedHeader><AllowedHeader>x-amz-date</AllowedHeader><AllowedHeader>x-amz-content-sha256</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>300</MaxAgeSeconds></CORSRule></CORSConfiguration>' > /tmp/cors.xml &&
+            (mc cors set local/dms-documents /tmp/cors.xml || true)
             "
 
 volumes:

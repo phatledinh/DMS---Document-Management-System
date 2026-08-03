@@ -1,0 +1,2 @@
+ALTER TABLE documents
+    ADD COLUMN IF NOT EXISTS deleted_by BIGINT REFERENCES users(id);

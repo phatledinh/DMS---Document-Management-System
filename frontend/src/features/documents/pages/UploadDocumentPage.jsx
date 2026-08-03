@@ -1,202 +1,182 @@
 import { useState } from 'react';
-import {
-  AppstoreOutlined,
-  ArrowLeftOutlined,
-  BellOutlined,
-  CloudUploadOutlined,
-  CloseOutlined,
-  DownOutlined,
-  ExclamationCircleOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  PlusCircleOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UploadOutlined,
-  UserAddOutlined,
-} from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { InboxOutlined, UploadOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, DatePicker, Form, Input, Progress, Radio, Select, Space, Typography, Upload } from 'antd';
+import { toast } from 'react-toastify';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useUploadDocument } from '../hooks/useUploadDocument.js';
 import styles from './UploadDocumentPage.module.css';
 
-const navItems = [
-  { label: 'Dashboard', icon: <AppstoreOutlined /> },
-  { label: 'Documents', icon: <FileTextOutlined />, active: true },
-  { label: 'Categories', icon: <FolderOpenOutlined /> },
-  { label: 'Departments', icon: <ShopOutlined /> },
-  { label: 'Tags', icon: <TagsOutlined /> },
-  { label: 'Users', icon: <TeamOutlined /> },
-  { label: 'Audit Logs', icon: <HistoryOutlined /> },
-];
+const { Title, Text } = Typography;
+const { Dragger } = Upload;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png', 'tiff'];
+const DANGEROUS_EXTENSIONS = ['exe', 'sh', 'bat', 'cmd', 'js', 'html', 'htm', 'jar', 'msi', 'ps1', 'vbs'];
+
+function getExtension(fileName) {
+  return fileName.split('.').pop()?.toLowerCase() || '';
+}
+
+function validateFile(file) {
+  const extension = getExtension(file.name);
+  if (file.size > MAX_FILE_SIZE) return 'Kích thước file tối đa là 50MB.';
+  if (DANGEROUS_EXTENSIONS.includes(extension)) return 'Định dạng file này không được phép upload.';
+  if (!ALLOWED_EXTENSIONS.includes(extension)) return 'Chỉ hỗ trợ PDF, DOC/DOCX, XLS/XLSX, JPG/PNG/TIFF.';
+  return null;
+}
 
 export default function UploadDocumentPage() {
-  const [accessLevel, setAccessLevel] = useState('DEPARTMENT');
+  const [form] = Form.useForm();
+  const navigate = useNavigate();
+  const uploadMutation = useUploadDocument();
+  const [file, setFile] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [step, setStep] = useState('idle');
+  const accessLevel = Form.useWatch('accessLevel', form) || 'DEPARTMENT';
+
+  const uploadProps = {
+    name: 'file',
+    multiple: false,
+    maxCount: 1,
+    beforeUpload: (nextFile) => {
+      const error = validateFile(nextFile);
+      if (error) {
+        toast.error(error);
+        return Upload.LIST_IGNORE;
+      }
+      setFile(nextFile);
+      return false;
+    },
+    onRemove: () => {
+      setFile(null);
+      setProgress(0);
+    },
+  };
+
+  async function handleSubmit(values) {
+    if (!file) {
+      toast.error('Vui lòng chọn file cần upload.');
+      return;
+    }
+
+    const payload = {
+      title: values.title,
+      description: values.description,
+      categoryId: values.categoryId ? Number(values.categoryId) : undefined,
+      tagIds: values.tagIds?.map(Number),
+      accessLevel: values.accessLevel,
+      departmentIds: values.departmentIds?.map(Number),
+      sharedUserIds: values.sharedUserIds?.map(Number),
+      effectiveDate: values.effectiveDate?.format('YYYY-MM-DD'),
+      expiryDate: values.expiryDate?.format('YYYY-MM-DD'),
+      fileName: file.name,
+      fileSize: file.size,
+      contentType: file.type || 'application/octet-stream',
+    };
+
+    try {
+      const result = await uploadMutation.mutateAsync({
+        payload,
+        file,
+        onProgress: setProgress,
+        onStepChange: setStep,
+      });
+      toast.success('Upload hoàn tất, tài liệu đang được xử lý.');
+      navigate(`/documents/${result.documentId}`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    }
+  }
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.brandBlock}>
-          <div className={styles.brandMark}>DT</div>
-          <div>
-            <h1>Deep Trust Admin</h1>
-            <p>Enterprise DMS</p>
-          </div>
-        </div>
-
-        <button className={styles.sidebarUploadButton} type="button"><PlusCircleOutlined />Upload Document</button>
-
-        <nav className={styles.navList}>
-          {navItems.map((item) => (
-            <a key={item.label} className={item.active ? styles.navItemActive : styles.navItem} href="#">
-              {item.icon}
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <a className={styles.navItem} href="#"><SettingOutlined /><span>Settings</span></a>
-          <a className={styles.navItem} href="#"><QuestionCircleOutlined /><span>Help Center</span></a>
-        </div>
-      </aside>
-
       <main className={styles.mainArea}>
-        <header className={styles.topbar}>
-          <label className={styles.topbarSearch}>
-            <SearchOutlined />
-            <input placeholder="Search documents, IDs, or categories..." type="text" />
-          </label>
-          <div className={styles.topbarActions}>
-            <button className={styles.iconButton} title="notifications" type="button"><BellOutlined /><span className={styles.notificationDot} /></button>
-            <button className={styles.iconButton} title="help" type="button"><QuestionCircleOutlined /></button>
-            <button className={styles.iconButton} title="settings" type="button"><SettingOutlined /></button>
-            <div className={styles.avatar}>A</div>
-          </div>
-        </header>
-
         <div className={styles.canvas}>
-          <div className={styles.container}>
-            <div className={styles.pageHeader}>
-              <button className={styles.backButton} type="button"><ArrowLeftOutlined /></button>
+          <Card className={styles.container}>
+            <Space direction="vertical" size={24} style={{ width: '100%' }}>
               <div>
-                <h2>Upload tài liệu mới</h2>
-                <p>Add a new document to the repository with appropriate metadata and access controls.</p>
+                <Title level={3}>Upload tài liệu mới</Title>
+                <Text type="secondary">Tải file qua presigned URL và gửi metadata để worker xử lý sau upload.</Text>
               </div>
-            </div>
 
-            <form className={styles.form}>
-              <section className={styles.card}>
-                <label className={styles.dropZone}>
-                  <div className={styles.uploadIcon}><CloudUploadOutlined /></div>
-                  <h3>Drag and drop file here</h3>
-                  <p>or click to browse from your computer</p>
-                  <div className={styles.fileTypes}>
-                    <span>PDF</span>
-                    <span>DOCX</span>
-                    <span>XLSX</span>
-                    <span>IMAGE</span>
-                  </div>
-                  <small>Maximum file size: 50MB</small>
-                  <input accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.png,.tiff" type="file" />
-                </label>
-              </section>
+              {uploadMutation.isError && <Alert type="error" showIcon message={getApiErrorMessage(uploadMutation.error)} />}
 
-              <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>Document Metadata</h3>
-                <div className={styles.formGrid}>
-                  <label className={styles.fullField}>
-                    <span>Tiêu đề (Title) <strong>*</strong></span>
-                    <input placeholder="Enter document title" type="text" />
-                  </label>
-                  <label>
-                    <span>Mã tài liệu</span>
-                    <input disabled value="Tự sinh sau upload" />
-                  </label>
-                  <label>
-                    <span>Danh mục (Category) <strong>*</strong></span>
-                    <div className={styles.selectWrap}>
-                      <select defaultValue=""><option value="" disabled>Select category...</option><option>Human Resources</option><option>Finance & Accounting</option><option>Legal Contracts</option><option>Technical Specs</option></select>
-                      <DownOutlined />
-                    </div>
-                  </label>
-                  <label className={styles.fullField}>
-                    <span>Mô tả (Description)</span>
-                    <textarea placeholder="Briefly describe the contents or purpose of this document..." rows={3} />
-                  </label>
-                  <label className={styles.fullField}>
-                    <span>Tags</span>
-                    <div className={styles.tagsInput}>
-                      <span>ISO 9001 <button type="button"><CloseOutlined /></button></span>
-                      <span>QA Procedure <button type="button"><CloseOutlined /></button></span>
-                      <input placeholder="Add tag..." type="text" />
-                    </div>
-                  </label>
-                  <label>
-                    <span>Ngày hiệu lực (Effective Date)</span>
-                    <input type="date" />
-                  </label>
-                  <label>
-                    <span>Ngày hết hạn (Expiration Date)</span>
-                    <input type="date" />
-                  </label>
-                </div>
-              </section>
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ accessLevel: 'DEPARTMENT' }}
+                onFinish={handleSubmit}
+              >
+                <Form.Item label="File tài liệu" required>
+                  <Dragger {...uploadProps} disabled={uploadMutation.isPending}>
+                    <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+                    <p className="ant-upload-text">Kéo thả file vào đây hoặc bấm để chọn file</p>
+                    <p className="ant-upload-hint">PDF, DOC/DOCX, XLS/XLSX, JPG/PNG/TIFF. Tối đa 50MB.</p>
+                  </Dragger>
+                </Form.Item>
 
-              <section className={styles.card}>
-                <h3 className={styles.sectionTitle}>Access & Permissions</h3>
-                <div className={styles.radioGroup}>
-                  {['PUBLIC', 'DEPARTMENT', 'RESTRICTED'].map((level) => (
-                    <label key={level}>
-                      <input checked={accessLevel === level} name="access_level" onChange={() => setAccessLevel(level)} type="radio" value={level} />
-                      <span>{level}</span>
-                    </label>
-                  ))}
-                </div>
+                {uploadMutation.isPending && (
+                  <Form.Item label={`Trạng thái: ${step}`}>
+                    <Progress percent={step === 'completing' ? 100 : progress} />
+                  </Form.Item>
+                )}
 
-                <div className={styles.conditionalPanel}>
-                  {accessLevel === 'DEPARTMENT' && (
-                    <label>
-                      <span>Phòng ban (Departments) <strong>*</strong></span>
-                      <select multiple defaultValue={['all']}>
-                        <option value="all">All Internal Departments</option>
-                        <option value="hr">Human Resources</option>
-                        <option value="it">IT & Operations</option>
-                        <option value="finance">Finance</option>
-                        <option value="legal">Legal</option>
-                      </select>
-                      <small>Hold Ctrl/Cmd to select multiple.</small>
-                    </label>
-                  )}
+                <Form.Item name="title" label="Tiêu đề" rules={[{ required: true, message: 'Vui lòng nhập tiêu đề.' }]}>
+                  <Input placeholder="Nhập tiêu đề tài liệu" />
+                </Form.Item>
 
-                  {accessLevel === 'RESTRICTED' && (
-                    <div className={styles.restrictedFields}>
-                      <label><span>Owner</span><input disabled value="Current User (Admin)" /></label>
-                      <label>
-                        <span>Shared Users</span>
-                        <div className={styles.userSearch}><UserAddOutlined /><input placeholder="Search by email or name..." type="text" /></div>
-                      </label>
-                    </div>
-                  )}
+                <Form.Item name="description" label="Mô tả">
+                  <Input.TextArea rows={3} placeholder="Mô tả ngắn nội dung tài liệu" />
+                </Form.Item>
 
-                  {accessLevel === 'PUBLIC' && (
-                    <div className={styles.publicWarning}>
-                      <ExclamationCircleOutlined />
-                      <p>Warning: This document will be accessible to anyone with the link, including external parties without an account.</p>
-                    </div>
-                  )}
-                </div>
-              </section>
+                <Form.Item name="categoryId" label="Danh mục" rules={[{ required: true, message: 'Vui lòng nhập ID danh mục.' }]}>
+                  <Input placeholder="Nhập categoryId khi API danh mục chưa sẵn sàng" />
+                </Form.Item>
 
-              <div className={styles.bottomSpacer} />
-              <div className={styles.actionBar}>
-                <button className={styles.cancelButton} type="button">Hủy</button>
-                <button className={styles.submitButton} type="submit"><UploadOutlined />Upload</button>
-              </div>
-            </form>
-          </div>
+                <Form.Item name="tagIds" label="Tags">
+                  <Select mode="tags" placeholder="Nhập tagId rồi Enter" tokenSeparators={[',']} />
+                </Form.Item>
+
+                <Space size="middle" style={{ width: '100%' }} align="start">
+                  <Form.Item name="effectiveDate" label="Ngày hiệu lực">
+                    <DatePicker format="DD/MM/YYYY" />
+                  </Form.Item>
+                  <Form.Item name="expiryDate" label="Ngày hết hạn">
+                    <DatePicker format="DD/MM/YYYY" />
+                  </Form.Item>
+                </Space>
+
+                <Form.Item name="accessLevel" label="Quyền truy cập" rules={[{ required: true }]}>
+                  <Radio.Group>
+                    <Radio value="PUBLIC">Công khai</Radio>
+                    <Radio value="DEPARTMENT">Theo phòng ban</Radio>
+                    <Radio value="RESTRICTED">Giới hạn</Radio>
+                  </Radio.Group>
+                </Form.Item>
+
+                {accessLevel === 'DEPARTMENT' && (
+                  <Form.Item name="departmentIds" label="Phòng ban" rules={[{ required: true, message: 'Vui lòng nhập ít nhất một departmentId.' }]}>
+                    <Select mode="tags" placeholder="Nhập departmentId rồi Enter" tokenSeparators={[',']} />
+                  </Form.Item>
+                )}
+
+                {accessLevel === 'RESTRICTED' && (
+                  <Form.Item name="sharedUserIds" label="Người được chia sẻ" rules={[{ required: true, message: 'Vui lòng nhập ít nhất một userId.' }]}>
+                    <Select mode="tags" placeholder="Nhập userId rồi Enter" tokenSeparators={[',']} />
+                  </Form.Item>
+                )}
+
+                <Space>
+                  <Button onClick={() => navigate('/admin/documents')} disabled={uploadMutation.isPending}>
+                    Hủy
+                  </Button>
+                  <Button type="primary" htmlType="submit" icon={<UploadOutlined />} loading={uploadMutation.isPending}>
+                    Upload
+                  </Button>
+                </Space>
+              </Form>
+            </Space>
+          </Card>
         </div>
       </main>
     </div>

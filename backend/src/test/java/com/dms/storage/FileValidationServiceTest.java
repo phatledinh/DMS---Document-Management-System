@@ -3,6 +3,8 @@ package com.dms.storage;
 import com.dms.common.exception.AppException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 
@@ -33,15 +35,23 @@ class FileValidationServiceTest {
     }
 
     @Test
+    void validateDeclared_acceptsMaxAllowedSize() {
+        ValidatedFile file = service.validateDeclared("a.pdf", 52_428_800, "application/pdf");
+
+        assertThat(file.fileType()).isEqualTo("PDF");
+    }
+
+    @Test
     void validateDeclared_rejectsOversizedFile() {
         assertThatThrownBy(() -> service.validateDeclared("a.pdf", 52_428_801, "application/pdf"))
                 .isInstanceOf(AppException.class)
                 .hasMessage("Invalid file size");
     }
 
-    @Test
-    void validateDeclared_rejectsDangerousExtension() {
-        assertThatThrownBy(() -> service.validateDeclared("payload.exe", 1024, "application/octet-stream"))
+    @ParameterizedTest
+    @ValueSource(strings = {"exe", "sh", "bat", "cmd", "js", "html", "htm", "jar", "msi", "ps1", "vbs"})
+    void validateDeclared_rejectsDangerousExtension(String extension) {
+        assertThatThrownBy(() -> service.validateDeclared("payload." + extension, 1024, "application/octet-stream"))
                 .isInstanceOf(AppException.class)
                 .hasMessage("Dangerous file type is not allowed");
     }

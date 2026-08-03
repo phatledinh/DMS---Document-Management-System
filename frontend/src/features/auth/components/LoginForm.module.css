@@ -7,6 +7,10 @@
   margin-top: 16px;
 }
 
+.errorAlert {
+  margin-bottom: 16px;
+}
+
 .label {
   display: block;
   margin-bottom: 4px;

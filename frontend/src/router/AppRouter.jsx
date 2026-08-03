@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { refresh } from '../api/authApi.js';
 import { getCurrentUser } from '../api/userApi.js';
 import AppLayout from '../components/Layout/AppLayout.jsx';
@@ -23,6 +23,11 @@ import UsersPage from '../features/users/pages/UsersPage.jsx';
 import DashboardPage from '../pages/DashboardPage.jsx';
 import NotFoundPage from '../pages/NotFoundPage.jsx';
 import { useAuthStore } from '../store/authStore.js';
+
+function AdminDocumentRedirect({ suffix }) {
+  const { id } = useParams();
+  return <Navigate to={`/admin/documents/${id}/${suffix}`} replace />;
+}
 
 export default function AppRouter() {
   const hasTriedBootstrap = useAuthStore((state) => state.hasTriedBootstrap);
@@ -68,28 +73,32 @@ export default function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/admin/dashboard" element={<DashboardPage />} />
-      <Route path="/audit-logs" element={<AuditLogsPage />} />
-      <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
-      <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
-      <Route path="/categories" element={<CategoriesPage />} />
-      <Route path="/departments" element={<DepartmentsPage />} />
-      <Route path="/tags" element={<TagsPage />} />
-      <Route path="/users" element={<UsersPage />} />
-      <Route path="/documents" element={<DocumentsPage />} />
-      <Route path="/admin/trash" element={<DocumentTrashPage />} />
-      <Route path="/documents/upload" element={<UploadDocumentPage />} />
-      <Route path="/documents/:id/edit" element={<EditDocumentPage />} />
-      <Route path="/documents/:id/history" element={<DocumentHistoryPage />} />
-      <Route element={<AppLayout />}>
-        <Route index element={<HomePage />} />
-        <Route path="search" element={<SearchPage />} />
-      </Route>
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
+          <Route index element={<HomePage />} />
+          <Route path="search" element={<SearchPage />} />
+          <Route path="documents" element={<DocumentsPage />} />
           <Route path="documents/:id" element={<DocumentDetailPage />} />
         </Route>
       </Route>
+      <Route element={<ProtectedRoute roles={['ADMIN']} />}>
+        <Route path="/admin/dashboard" element={<DashboardPage />} />
+        <Route path="/admin/documents" element={<DocumentsPage />} />
+        <Route path="/admin/documents/upload" element={<UploadDocumentPage />} />
+        <Route path="/admin/documents/:id/edit" element={<EditDocumentPage />} />
+        <Route path="/admin/documents/:id/history" element={<DocumentHistoryPage />} />
+        <Route path="/admin/trash" element={<DocumentTrashPage />} />
+        <Route path="/audit-logs" element={<AuditLogsPage />} />
+        <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
+        <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
+        <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/departments" element={<DepartmentsPage />} />
+        <Route path="/tags" element={<TagsPage />} />
+        <Route path="/users" element={<UsersPage />} />
+      </Route>
+      <Route path="/documents/upload" element={<Navigate to="/admin/documents/upload" replace />} />
+      <Route path="/documents/:id/edit" element={<AdminDocumentRedirect suffix="edit" />} />
+      <Route path="/documents/:id/history" element={<AdminDocumentRedirect suffix="history" />} />
       <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

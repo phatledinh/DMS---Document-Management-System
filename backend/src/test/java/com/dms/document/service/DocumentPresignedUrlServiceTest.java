@@ -12,6 +12,7 @@ import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
+import com.dms.document.processing.DocumentExtractionRequestedEvent;
 import com.dms.document.repository.AccessLogRepository;
 import com.dms.document.repository.DocumentDepartmentAccessRepository;
 import com.dms.document.repository.DocumentRepository;
@@ -22,6 +23,7 @@ import com.dms.identity.entity.UserStatus;
 import com.dms.identity.repository.UserRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
+import com.dms.storage.ObjectMetadata;
 import com.dms.storage.ObjectStorageService;
 import com.dms.storage.PresignedGetUrl;
 import com.dms.storage.PresignedPutUrl;
@@ -35,6 +37,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
@@ -203,6 +206,84 @@ class DocumentPresignedUrlServiceTest {
         assertThat(logCaptor.getValue().getAccessGranted()).isTrue();
     }
 
+    @Test
+    void completeUpload_pdfValidatesObjectAndPublishesExtractionRequest() {
+        User admin = admin();
+        Document document = awaitingUploadDocument("Policy.pdf", "PDF", "application/pdf");
+        when(currentUserProvider.getRequiredUser()).thenReturn(admin);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(objectStorageService.headObject("documents/object-id"))
+                .thenReturn(new ObjectMetadata(1024, "application/pdf", "etag"));
+        when(objectStorageService.openStream("documents/object-id"))
+                .thenReturn(new ByteArrayInputStream("pdf".getBytes()));
+        when(mimeDetectionService.detect(any(), any())).thenReturn("application/pdf");
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = service.completeUpload(1L);
+
+        assertThat(response.status()).isEqualTo(DocumentStatus.PROCESSING.name());
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
+        assertThat(document.getUploadExpiresAt()).isNull();
+        assertThat(document.getDocumentCode()).isNotBlank();
+        verify(fileValidationService).validateDetected("PDF", "application/pdf");
+        ArgumentCaptor<DocumentExtractionRequestedEvent> eventCaptor = ArgumentCaptor.forClass(DocumentExtractionRequestedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().documentId()).isEqualTo(1L);
+        assertThat(eventCaptor.getValue().objectKey()).isEqualTo("documents/object-id");
+        assertThat(eventCaptor.getValue().mimeType()).isEqualTo("application/pdf");
+    }
+
+    @Test
+    void completeUpload_docxValidatesObjectAndPublishesExtractionRequest() {
+        User admin = admin();
+        Document document = awaitingUploadDocument(
+                "Policy.docx",
+                "DOCX",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        when(currentUserProvider.getRequiredUser()).thenReturn(admin);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(objectStorageService.headObject("documents/object-id"))
+                .thenReturn(new ObjectMetadata(1024, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "etag"));
+        when(objectStorageService.openStream("documents/object-id"))
+                .thenReturn(new ByteArrayInputStream("docx".getBytes()));
+        when(mimeDetectionService.detect(any(), any()))
+                .thenReturn("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = service.completeUpload(1L);
+
+        assertThat(response.status()).isEqualTo(DocumentStatus.PROCESSING.name());
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
+        verify(fileValidationService).validateDetected("DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        ArgumentCaptor<DocumentExtractionRequestedEvent> eventCaptor = ArgumentCaptor.forClass(DocumentExtractionRequestedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().mimeType()).isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    }
+
+    @Test
+    void completeUpload_mimeSpoofingDeletesObjectAndRejectsUpload() {
+        User admin = admin();
+        Document document = awaitingUploadDocument("Policy.pdf", "PDF", "application/pdf");
+        when(currentUserProvider.getRequiredUser()).thenReturn(admin);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(objectStorageService.headObject("documents/object-id"))
+                .thenReturn(new ObjectMetadata(1024, "application/pdf", "etag"));
+        when(objectStorageService.openStream("documents/object-id"))
+                .thenReturn(new ByteArrayInputStream("spoof".getBytes()));
+        when(mimeDetectionService.detect(any(), any())).thenReturn("text/plain");
+        org.mockito.Mockito.doThrow(new AppException("INVALID_FILE_TYPE", "File MIME type does not match the extension", org.springframework.http.HttpStatus.BAD_REQUEST))
+                .when(fileValidationService).validateDetected("PDF", "text/plain");
+
+        assertThatThrownBy(() -> service.completeUpload(1L))
+                .isInstanceOf(AppException.class)
+                .hasMessage("File MIME type does not match the extension");
+
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.AWAITING_UPLOAD);
+        verify(objectStorageService).deleteObject("documents/object-id");
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
     private User admin() {
         User user = new User();
         user.setId(1L);
@@ -223,6 +304,17 @@ class DocumentPresignedUrlServiceTest {
         user.setRole(Role.USER);
         user.setStatus(UserStatus.ACTIVE);
         return user;
+    }
+
+    private Document awaitingUploadDocument(String fileName, String fileType, String mimeType) {
+        Document document = document();
+        document.setFileName(fileName);
+        document.setFileType(fileType);
+        document.setMimeType(mimeType);
+        document.setStatus(DocumentStatus.AWAITING_UPLOAD);
+        document.setUploadExpiresAt(OffsetDateTime.now().plusMinutes(5));
+        document.setDocumentCode(null);
+        return document;
     }
 
     private Document document() {

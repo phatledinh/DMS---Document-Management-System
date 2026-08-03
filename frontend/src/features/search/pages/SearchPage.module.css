@@ -4,6 +4,24 @@
   padding: 12px 8px 36px;
 }
 
+.pageShell {
+  width: 100%;
+}
+
+.resultIcon {
+  color: #1677ff;
+  font-size: 22px;
+}
+
+.snippet em,
+.snippet mark {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: #fff1b8;
+  color: #874d00;
+  font-style: normal;
+}
+
 /* Hero Section */
 .heroSection {
   position: relative;

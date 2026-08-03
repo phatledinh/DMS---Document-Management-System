@@ -3,7 +3,6 @@ import {
   BellOutlined,
   DownOutlined,
   FileTextOutlined,
-  FolderAddOutlined,
   FolderOpenFilled,
   HistoryOutlined,
   MoreOutlined,

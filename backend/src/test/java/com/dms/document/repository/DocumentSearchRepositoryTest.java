@@ -1,0 +1,87 @@
+package com.dms.document.repository;
+
+import com.dms.document.dto.DocumentSearchRequest;
+import com.dms.identity.entity.Role;
+import com.dms.identity.entity.User;
+import com.dms.identity.entity.UserStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.ResultSetExtractor;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class DocumentSearchRepositoryTest {
+    @Mock
+    private NamedParameterJdbcTemplate jdbcTemplate;
+
+    private DocumentSearchRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        repository = new DocumentSearchRepository(jdbcTemplate, new ObjectMapper());
+    }
+
+    @Test
+    void search_buildsPostgresFtsSqlWithAclBeforeResults() {
+        User user = user(Role.USER);
+        DocumentSearchRequest request = new DocumentSearchRequest("quy che", null, null, null, null, null, null, null, null, null, null, null, null, null, "relevance", 0, 10);
+        when(jdbcTemplate.query(any(String.class), any(MapSqlParameterSource.class), any(RowMapper.class))).thenReturn(java.util.List.of());
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+
+        repository.search(user, request);
+
+        verify(jdbcTemplate).query(sqlCaptor.capture(), any(MapSqlParameterSource.class), any(RowMapper.class));
+        String sql = sqlCaptor.getValue();
+        assertThat(sql).contains("websearch_to_tsquery('simple', unaccent(:query))");
+        assertThat(sql).contains("si.search_vector @@ q.value");
+        assertThat(sql).contains("d.status = 'INDEXED'");
+        assertThat(sql).contains("d.access_level = 'PUBLIC'");
+        assertThat(sql).contains("d.owner_id = :currentUserId");
+        assertThat(sql).contains("document_department_accesses");
+        assertThat(sql).contains("dda.department_id = :userDepartmentId");
+        assertThat(sql).contains("document_user_accesses");
+        assertThat(sql).contains("dua.user_id = :currentUserId");
+        assertThat(sql).contains("ts_headline");
+    }
+
+    @Test
+    void logSearch_serializesNullFilters() {
+        User user = user(Role.USER);
+        DocumentSearchRequest request = new DocumentSearchRequest("doc", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        ArgumentCaptor<MapSqlParameterSource> parametersCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+
+        repository.logSearch(user, request, 0, 12);
+
+        verify(jdbcTemplate).update(eq("""
+                INSERT INTO search_logs (user_id, keyword, filters, result_count, latency_ms)
+                VALUES (:userId, :keyword, CAST(:filters AS jsonb), :resultCount, :latencyMs)
+                """), parametersCaptor.capture());
+        assertThat(parametersCaptor.getValue().getValue("filters").toString()).contains("categoryId");
+        assertThat(parametersCaptor.getValue().getValue("keyword")).isEqualTo("doc");
+    }
+
+    private User user(Role role) {
+        User user = new User();
+        user.setId(10L);
+        user.setEmail("user@example.com");
+        user.setName("User");
+        user.setPassword("hash");
+        user.setRole(role);
+        user.setDepartmentId(20L);
+        user.setStatus(UserStatus.ACTIVE);
+        return user;
+    }
+}
