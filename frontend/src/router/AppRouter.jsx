@@ -1,32 +1,36 @@
-import { useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
-import { refresh } from '../api/authApi.js';
-import { getCurrentUser } from '../api/userApi.js';
-import AppLayout from '../components/Layout/AppLayout.jsx';
-import PageLoading from '../components/PageLoading/PageLoading.jsx';
-import ProtectedRoute from '../components/ProtectedRoute/ProtectedRoute.jsx';
-import AuditLogsPage from '../features/auditLogs/pages/AuditLogsPage.jsx';
-import ProcessingErrorsPage from '../features/auditLogs/pages/ProcessingErrorsPage.jsx';
-import { LoginPage } from '../features/auth/index.js';
-import CategoriesPage from '../features/categories/pages/CategoriesPage.jsx';
-import DepartmentsPage from '../features/departments/pages/DepartmentsPage.jsx';
-import DocumentDetailPage from '../features/documents/pages/DocumentDetailPage.jsx';
-import DocumentHistoryPage from '../features/documents/pages/DocumentHistoryPage.jsx';
-import DocumentTrashPage from '../features/documents/pages/DocumentTrashPage.jsx';
-import DocumentsPage from '../features/documents/pages/DocumentsPage.jsx';
-import EditDocumentPage from '../features/documents/pages/EditDocumentPage.jsx';
-import UploadDocumentPage from '../features/documents/pages/UploadDocumentPage.jsx';
-import HomePage from '../features/search/pages/HomePage.jsx';
-import SearchPage from '../features/search/pages/SearchPage.jsx';
-import TagsPage from '../features/tags/pages/TagsPage.jsx';
-import UsersPage from '../features/users/pages/UsersPage.jsx';
-import DashboardPage from '../pages/DashboardPage.jsx';
-import NotFoundPage from '../pages/NotFoundPage.jsx';
-import { useAuthStore } from '../store/authStore.js';
+import { useEffect } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { refresh } from "../api/authApi.js";
+import { getCurrentUser } from "../api/userApi.js";
+import AppLayout from "../components/Layout/AppLayout.jsx";
+import PageLoading from "../components/PageLoading/PageLoading.jsx";
+import ProtectedRoute from "../components/ProtectedRoute/ProtectedRoute.jsx";
+import AuditLogsPage from "../features/auditLogs/pages/AuditLogsPage.jsx";
+import SearchAccessAnalyticsPage from "../features/analytics/pages/SearchAccessAnalyticsPage.jsx";
+import ProcessingErrorsPage from "../features/auditLogs/pages/ProcessingErrorsPage.jsx";
+import { LoginPage } from "../features/auth/index.js";
+import CategoriesPage from "../features/categories/pages/CategoriesPage.jsx";
+import DepartmentsPage from "../features/departments/pages/DepartmentsPage.jsx";
+import DocumentDetailPage from "../features/documents/pages/DocumentDetailPage.jsx";
+import DocumentHistoryPage from "../features/documents/pages/DocumentHistoryPage.jsx";
+import DocumentTrashPage from "../features/documents/pages/DocumentTrashPage.jsx";
+import DocumentsPage from "../features/documents/pages/DocumentsPage.jsx";
+import EditDocumentPage from "../features/documents/pages/EditDocumentPage.jsx";
+import UploadDocumentPage from "../features/documents/pages/UploadDocumentPage.jsx";
+import HomePage from "../features/search/pages/HomePage.jsx";
+import SearchPage from "../features/search/pages/SearchPage.jsx";
+import TagsPage from "../features/tags/pages/TagsPage.jsx";
+import ProfilePage from "../features/users/pages/ProfilePage.jsx";
+import UsersPage from "../features/users/pages/UsersPage.jsx";
+import DashboardPage from "../pages/DashboardPage.jsx";
+import NotFoundPage from "../pages/NotFoundPage.jsx";
+import { useAuthStore } from "../store/authStore.js";
 
 export default function AppRouter() {
   const hasTriedBootstrap = useAuthStore((state) => state.hasTriedBootstrap);
-  const setHasTriedBootstrap = useAuthStore((state) => state.setHasTriedBootstrap);
+  const setHasTriedBootstrap = useAuthStore(
+    (state) => state.setHasTriedBootstrap,
+  );
   const setSession = useAuthStore((state) => state.setSession);
   const clearSession = useAuthStore((state) => state.clearSession);
 
@@ -69,20 +73,25 @@ export default function AppRouter() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/admin/dashboard" element={<DashboardPage />} />
+      <Route path="/analytics" element={<SearchAccessAnalyticsPage />} />
       <Route path="/audit-logs" element={<AuditLogsPage />} />
-      <Route path="/audit-logs/processing-errors" element={<ProcessingErrorsPage />} />
+      <Route
+        path="/audit-logs/processing-errors"
+        element={<ProcessingErrorsPage />}
+      />
       <Route path="/processing-errors" element={<ProcessingErrorsPage />} />
       <Route path="/categories" element={<CategoriesPage />} />
       <Route path="/departments" element={<DepartmentsPage />} />
       <Route path="/tags" element={<TagsPage />} />
+      <Route path="/profile" element={<ProfilePage />} />
       <Route path="/users" element={<UsersPage />} />
       <Route path="/documents" element={<DocumentsPage />} />
-      <Route path="/admin/trash" element={<DocumentTrashPage />} />
+      <Route path="/documents/trash" element={<DocumentTrashPage />} />
       <Route path="/documents/upload" element={<UploadDocumentPage />} />
       <Route path="/documents/:id/edit" element={<EditDocumentPage />} />
       <Route path="/documents/:id/history" element={<DocumentHistoryPage />} />
+      <Route index element={<HomePage />} />
       <Route element={<AppLayout />}>
-        <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />
       </Route>
       <Route element={<ProtectedRoute />}>
@@ -90,9 +99,11 @@ export default function AppRouter() {
           <Route path="documents/:id" element={<DocumentDetailPage />} />
         </Route>
       </Route>
-      <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route
+        path="/admin"
+        element={<Navigate to="/admin/dashboard" replace />}
+      />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
-
