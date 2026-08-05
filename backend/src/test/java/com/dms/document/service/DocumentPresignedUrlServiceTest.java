@@ -165,6 +165,46 @@ class DocumentPresignedUrlServiceTest {
     }
 
     @Test
+    void createPreviewUrl_officeDocumentSignsPreviewArtifactOnly() {
+        User user = user();
+        Document document = document();
+        document.setFileName("Policy.docx");
+        document.setFileType("DOCX");
+        document.setPreviewObjectKey("preview/documents/object-id.pdf");
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(accessPolicyService.canPreview(user, document)).thenReturn(AccessDecision.allow());
+        when(fileValidationService.requiresPreviewConversion("DOCX")).thenReturn(true);
+        when(objectStorageService.presignGet("preview/documents/object-id.pdf", "inline; filename=\"Policy.pdf\""))
+                .thenReturn(new PresignedGetUrl("http://storage/preview", 300));
+
+        PresignedUrlResponse response = service.createPreviewUrl(1L, servletRequest);
+
+        assertThat(response.url()).isEqualTo("http://storage/preview");
+        assertThat(response.fileName()).isEqualTo("Policy.pdf");
+        verify(objectStorageService, never()).presignGet("documents/object-id", "inline; filename=\"Policy.docx\"");
+    }
+
+    @Test
+    void createPreviewUrl_officeDocumentWithoutArtifactIsNotReady() {
+        User user = user();
+        Document document = document();
+        document.setFileName("Policy.xlsx");
+        document.setFileType("XLSX");
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(documentRepository.findById(1L)).thenReturn(java.util.Optional.of(document));
+        when(accessPolicyService.canPreview(user, document)).thenReturn(AccessDecision.allow());
+        when(fileValidationService.requiresPreviewConversion("XLSX")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.createPreviewUrl(1L, servletRequest))
+                .isInstanceOf(AppException.class)
+                .hasMessage("Preview is not ready");
+
+        assertThat(document.getViewCount()).isEqualTo(7);
+        verify(objectStorageService, never()).presignGet(any(), any());
+    }
+
+    @Test
     void createPreviewUrl_deniedLogsAccessWithoutIncrementingViewCount() {
         User user = user();
         Document document = document();

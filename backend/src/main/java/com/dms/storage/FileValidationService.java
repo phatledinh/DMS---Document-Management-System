@@ -51,6 +51,11 @@ public class FileValidationService {
         return Set.of("pdf", "jpg", "jpeg", "png", "tif", "tiff").contains(extension);
     }
 
+    public boolean requiresPreviewConversion(String fileType) {
+        String extension = fileType.toLowerCase(Locale.ROOT);
+        return Set.of("doc", "docx", "xls", "xlsx").contains(extension);
+    }
+
     private void validateSize(long fileSize) {
         if (fileSize <= 0 || fileSize > properties.maxFileSize()) {
             throw new AppException(ErrorCodes.VALIDATION_ERROR, "Invalid file size", HttpStatus.BAD_REQUEST);

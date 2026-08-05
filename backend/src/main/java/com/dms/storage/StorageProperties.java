@@ -9,8 +9,15 @@ public record StorageProperties(
         S3 s3,
         long maxFileSize,
         Duration presignedUploadTtl,
-        Duration presignedDownloadTtl
+        Duration presignedDownloadTtl,
+        BatchUpload batchUpload
 ) {
+
+
+    public int batchUploadMaxFiles() {
+        return batchUpload == null || batchUpload.maxFiles() == null ? 20 : batchUpload.maxFiles();
+    }
+
     public record S3(
             String endpoint,
             String bucket,
@@ -18,6 +25,11 @@ public record StorageProperties(
             String secretKey,
             String region,
             boolean pathStyleAccess
+    ) {
+    }
+
+    public record BatchUpload(
+            Integer maxFiles
     ) {
     }
 }

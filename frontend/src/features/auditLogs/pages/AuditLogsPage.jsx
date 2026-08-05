@@ -1,39 +1,114 @@
-import {
-  AppstoreOutlined,
-  BellOutlined,
-  CalendarOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  FileTextOutlined,
-  FilterOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  LoginOutlined,
-  PlusOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UploadOutlined,
-  UserAddOutlined,
-} from '@ant-design/icons';
+import { CalendarOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, DatePicker, Input, Select, Space, Table, Tag } from 'antd';
+import { useMemo, useState } from 'react';
+import { useAdminLogs } from '../hooks/useAdminLogs.js';
 import styles from './AuditLogsPage.module.css';
 
+const { RangePicker } = DatePicker;
 
-const logs = [
-  { id: 1, time: '21/10/2023 10:12:45', user: 'Nguyen Van A', initials: 'NA', action: 'Upload', target: 'Tài liệu:', detail: 'Quy trình ISO 9001.pdf', ip: '192.168.1.45', tone: 'upload', icon: <UploadOutlined /> },
-  { id: 2, time: '21/10/2023 09:45:12', user: 'System Admin', initials: 'SA', action: 'Update', target: 'Cấu hình:', detail: 'SMTP Settings', ip: '10.0.0.12', tone: 'update', icon: <EditOutlined /> },
-  { id: 3, time: '20/10/2023 16:30:00', user: 'Tran Thi B', initials: 'TB', action: 'Delete', target: 'Tài liệu:', detail: 'Báo cáo Q2_old.docx', ip: '192.168.1.102', tone: 'delete', icon: <DeleteOutlined /> },
-  { id: 4, time: '20/10/2023 08:15:22', user: 'Nguyen Van A', initials: 'NA', action: 'Login', target: 'Hệ thống:', detail: 'Thành công', ip: '192.168.1.45', tone: 'login', icon: <LoginOutlined /> },
-  { id: 5, time: '19/10/2023 14:20:05', user: 'System Admin', initials: 'SA', action: 'Create', target: 'User:', detail: 'Le Van C', ip: '10.0.0.12', tone: 'create', icon: <UserAddOutlined /> },
+const tabs = [
+  { label: 'Tất cả', value: 'ALL' },
+  { label: 'Nhật ký hệ thống', value: 'AUDIT' },
+  { label: 'Truy cập tài liệu', value: 'ACCESS' },
+  { label: 'Lịch sử tìm kiếm', value: 'SEARCH' },
 ];
 
+const actionOptions = [
+  'LOGIN', 'UPLOAD', 'MOVE', 'ARCHIVE', 'DELETE', 'RESTORE', 'PURGE', 'VIEW', 'PREVIEW', 'DOWNLOAD', 'VERSION_DOWNLOAD', 'SEARCH',
+].map((value) => ({ value, label: value }));
+
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
+}
+
+function logTypeColor(type) {
+  if (type === 'ACCESS') return 'blue';
+  if (type === 'SEARCH') return 'purple';
+  return 'default';
+}
+
 export default function AuditLogsPage() {
+  const [activeTab, setActiveTab] = useState('ALL');
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const [filters, setFilters] = useState({});
+  const [draftFilters, setDraftFilters] = useState({});
+
+  const params = useMemo(() => ({
+    ...filters,
+    logType: activeTab,
+    page,
+    size,
+  }), [activeTab, filters, page, size]);
+
+  const logsQuery = useAdminLogs(params);
+  const logs = logsQuery.data?.content || [];
+
+  const columns = [
+    {
+      title: 'Thời gian',
+      dataIndex: 'createdAt',
+      width: 190,
+      render: formatDate,
+    },
+    {
+      title: 'Loại',
+      dataIndex: 'logType',
+      width: 110,
+      render: (type) => <Tag color={logTypeColor(type)}>{type}</Tag>,
+    },
+    {
+      title: 'Người thực hiện',
+      dataIndex: 'actorName',
+      render: (name, record) => name || (record.actorId ? `User #${record.actorId}` : 'System'),
+    },
+    {
+      title: 'Hành động',
+      dataIndex: 'action',
+      width: 160,
+      render: (action, record) => (
+        <Space direction="vertical" size={0}>
+          <strong>{action}</strong>
+          {record.accessGranted === false && <Tag color="red">DENIED</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'Đối tượng / Chi tiết',
+      render: (_, record) => {
+        if (record.logType === 'SEARCH') {
+          return <span>Từ khóa: <strong>{record.keyword || '—'}</strong> ({record.resultCount || 0} kết quả)</span>;
+        }
+        if (record.logType === 'ACCESS') {
+          return <span>Tài liệu: <strong>{record.documentTitle || `#${record.documentId}`}</strong>{record.denialReason ? ` — ${record.denialReason}` : ''}</span>;
+        }
+        return <span>{record.targetType || '—'} {record.targetId ? `#${record.targetId}` : ''}</span>;
+      },
+    },
+    {
+      title: 'IP',
+      dataIndex: 'ipAddress',
+      width: 150,
+      render: (value) => value || '—',
+    },
+  ];
+
+  function applyFilters() {
+    setFilters(draftFilters);
+    setPage(0);
+  }
+
+  function updateDateRange(range) {
+    setDraftFilters((current) => ({
+      ...current,
+      dateFrom: range?.[0]?.startOf('day').toISOString(),
+      dateTo: range?.[1]?.endOf('day').toISOString(),
+    }));
+  }
+
   return (
     <div className={styles.page}>
-
       <main className={styles.pageBody}>
         <div className={styles.container}>
           <section className={styles.pageHeader}>
@@ -42,66 +117,65 @@ export default function AuditLogsPage() {
           </section>
 
           <div className={styles.tabs}>
-            <button className={styles.tabActive} type="button">Nhật ký hệ thống</button>
-            <button className={styles.tab} type="button">Truy cập tài liệu</button>
-            <button className={styles.tab} type="button">Lịch sử tìm kiếm</button>
+            {tabs.map((tab) => (
+              <button
+                key={tab.value}
+                className={activeTab === tab.value ? styles.tabActive : styles.tab}
+                type="button"
+                onClick={() => { setActiveTab(tab.value); setPage(0); }}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           <section className={styles.filters}>
-            <div className={styles.dateGroup}>
-              <CalendarOutlined />
-              <input type="date" />
-              <span>-</span>
-              <input type="date" />
-            </div>
-            <select defaultValue=""><option value="">Người thực hiện</option><option>System Admin</option><option>Nguyen Van A</option></select>
-            <select defaultValue=""><option value="">Hành động</option><option>Upload</option><option>Update</option><option>Delete</option><option>Login</option></select>
+            <div className={styles.dateGroup}><CalendarOutlined /><RangePicker onChange={updateDateRange} /></div>
+            <Input
+              placeholder="Actor ID"
+              type="number"
+              onChange={(event) => setDraftFilters((current) => ({ ...current, actorId: event.target.value || undefined }))}
+            />
+            <Select
+              allowClear
+              placeholder="Hành động"
+              options={actionOptions}
+              onChange={(value) => setDraftFilters((current) => ({ ...current, action: value }))}
+            />
+            <Input
+              placeholder="Document ID"
+              type="number"
+              onChange={(event) => setDraftFilters((current) => ({ ...current, documentId: event.target.value || undefined }))}
+            />
             <label className={styles.detailSearch}>
               <SearchOutlined />
-              <input placeholder="Tìm kiếm chi tiết..." type="text" />
+              <input
+                placeholder="Từ khóa / chi tiết..."
+                type="text"
+                onChange={(event) => setDraftFilters((current) => ({ ...current, keyword: event.target.value || undefined }))}
+              />
             </label>
-            <button className={styles.filterButton} type="button"><FilterOutlined />Lọc</button>
+            <Button className={styles.filterButton} icon={<FilterOutlined />} onClick={applyFilters}>Lọc</Button>
           </section>
 
           <section className={styles.tablePanel}>
-            <div className={styles.tableScroller}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Thời gian</th>
-                    <th>Người thực hiện</th>
-                    <th>Hành động</th>
-                    <th>Đối tượng/Chi tiết</th>
-                    <th>IP Address</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id}>
-                      <td>{log.id}</td>
-                      <td className={styles.timeCell}>{log.time}</td>
-                      <td><div className={styles.userCell}><span>{log.initials}</span><strong>{log.user}</strong></div></td>
-                      <td><span className={`${styles.actionBadge} ${styles[log.tone]}`}>{log.icon}{log.action}</span></td>
-                      <td className={styles.detailCell}>{log.target} <strong>{log.detail}</strong></td>
-                      <td className={styles.timeCell}>{log.ip}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <footer className={styles.pagination}>
-              <span>Showing 1 to 5 of 124 entries</span>
-              <div>
-                <button type="button" disabled>‹</button>
-                <button className={styles.currentPage} type="button">1</button>
-                <button type="button">2</button>
-                <button type="button">3</button>
-                <span>...</span>
-                <button type="button">25</button>
-                <button type="button">›</button>
-              </div>
-            </footer>
+            <Table
+              rowKey={(record) => `${record.logType}-${record.id}`}
+              columns={columns}
+              dataSource={logs}
+              loading={logsQuery.isLoading || logsQuery.isFetching}
+              pagination={{
+                current: page + 1,
+                pageSize: size,
+                total: logsQuery.data?.totalElements || 0,
+                showSizeChanger: true,
+                onChange: (nextPage, nextSize) => {
+                  setPage(nextPage - 1);
+                  setSize(nextSize);
+                },
+              }}
+              scroll={{ x: 900 }}
+            />
           </section>
         </div>
       </main>

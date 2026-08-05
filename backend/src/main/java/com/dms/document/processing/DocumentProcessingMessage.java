@@ -14,9 +14,17 @@ public record DocumentProcessingMessage(
         OffsetDateTime issuedAt
 ) {
     public static DocumentProcessingMessage extract(Long documentId, Long versionId, String objectKey, String mimeType) {
+        return create(DocumentProcessingTaskType.EXTRACT, documentId, versionId, objectKey, mimeType);
+    }
+
+    public static DocumentProcessingMessage preview(Long documentId, Long versionId, String objectKey, String mimeType) {
+        return create(DocumentProcessingTaskType.PREVIEW, documentId, versionId, objectKey, mimeType);
+    }
+
+    private static DocumentProcessingMessage create(DocumentProcessingTaskType type, Long documentId, Long versionId, String objectKey, String mimeType) {
         return new DocumentProcessingMessage(
                 UUID.randomUUID().toString(),
-                DocumentProcessingTaskType.EXTRACT,
+                type,
                 documentId,
                 versionId,
                 objectKey,

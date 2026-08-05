@@ -3,6 +3,7 @@ package com.dms.document.processing;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentVersionRepository;
 import com.rabbitmq.client.Channel;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.context.annotation.Profile;
@@ -17,11 +18,18 @@ import java.io.IOException;
 @Profile("worker")
 public class DocumentExtractWorker {
     private final DocumentRepository documentRepository;
+    private final DocumentVersionRepository versionRepository;
     private final DocumentExtractionPipeline extractionPipeline;
     private final DocumentProcessingRetryService retryService;
 
-    public DocumentExtractWorker(DocumentRepository documentRepository, DocumentExtractionPipeline extractionPipeline, DocumentProcessingRetryService retryService) {
+    public DocumentExtractWorker(
+            DocumentRepository documentRepository,
+            DocumentVersionRepository versionRepository,
+            DocumentExtractionPipeline extractionPipeline,
+            DocumentProcessingRetryService retryService
+    ) {
         this.documentRepository = documentRepository;
+        this.versionRepository = versionRepository;
         this.extractionPipeline = extractionPipeline;
         this.retryService = retryService;
     }
@@ -50,6 +58,12 @@ public class DocumentExtractWorker {
         if (document.getStatus() != DocumentStatus.PROCESSING) {
             return true;
         }
-        return !message.objectKey().equals(document.getStoragePath());
+        if (message.versionId() == null) {
+            return !message.objectKey().equals(document.getStoragePath());
+        }
+        return versionRepository.findByIdAndDocumentId(message.versionId(), document.getId())
+                .filter(version -> version.getStatus() == DocumentStatus.PROCESSING)
+                .filter(version -> message.objectKey().equals(version.getStoragePath()))
+                .isEmpty();
     }
 }

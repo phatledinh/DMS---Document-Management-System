@@ -299,22 +299,22 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 2.1 OCR
 
-- [ ] Bổ sung Tesseract vào worker Docker image
-    - Ghi chú:
-- [ ] Cài language data `eng`
-    - Ghi chú:
-- [ ] Cài language data `vie`
-    - Ghi chú:
-- [ ] Tạo queue `dms.ocr`
-    - Ghi chú:
-- [ ] OCR ảnh JPG/PNG/TIFF
-    - Ghi chú:
-- [ ] OCR scanned PDF
-    - Ghi chú:
-- [ ] Lưu OCR text vào `document_contents`
-    - Ghi chú:
-- [ ] Refresh search index sau OCR
-    - Ghi chú:
+- [x] Bổ sung Tesseract vào worker Docker image
+    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr`; API/worker hiện vẫn dùng chung image theo phạm vi 2.1.
+- [x] Cài language data `eng`
+    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr-eng`.
+- [x] Cài language data `vie`
+    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr-vie`.
+- [x] Tạo queue `dms.ocr`
+    - Ghi chú: `DocumentProcessingRabbitConfig` khai báo durable queue `dms.ocr` và binding routing key `ocr`; OCR vẫn chạy trong extract pipeline để tái sử dụng retry hiện có.
+- [x] OCR ảnh JPG/PNG/TIFF
+    - Ghi chú: `DocumentTextExtractionService` route `jpg/jpeg/png/tif/tiff` sang `DocumentOcrService` dùng Tesseract CLI.
+- [x] OCR scanned PDF
+    - Ghi chú: PDFBox extract trước; nếu text native dưới ngưỡng cấu hình thì render từng page bằng PDFBox và OCR bằng Tesseract.
+- [x] Lưu OCR text vào `document_contents`
+    - Ghi chú: OCR trả `ExtractedDocumentText` với method `TESSERACT_IMAGE`/`TESSERACT_PDF`, dùng lại `DocumentExtractionPipeline` + `DocumentContentService.saveSuccess`.
+- [x] Refresh search index sau OCR
+    - Ghi chú: Dùng lại `PostgresSearchEngine.refreshIndex(document, extractedText.text())`; đã chạy `backend/mvnw -f backend/pom.xml test` pass 64 tests. Cần smoke Docker thực tế với ảnh/scanned PDF khi dựng stack.
 
 ### 2.2 Preview conversion
 
@@ -335,102 +335,102 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 2.3 Versioning
 
-- [ ] Triển khai `POST /api/v1/documents/{id}/versions/init`
-    - Ghi chú:
-- [ ] Triển khai `POST /api/v1/documents/{id}/versions/{versionId}/complete`
-    - Ghi chú:
-- [ ] Xử lý worker pipeline cho version mới
-    - Ghi chú:
-- [ ] Chỉ switch current version sau khi version mới xử lý thành công
-    - Ghi chú:
-- [ ] Giữ version hiện tại nếu version mới fail
-    - Ghi chú:
-- [ ] Triển khai version history API
-    - Ghi chú:
-- [ ] Triển khai version download URL
-    - Ghi chú:
-- [ ] Triển khai restore old version
-    - Ghi chú:
-- [ ] Refresh search index sau restore version
-    - Ghi chú:
+- [x] Triển khai `POST /api/v1/documents/{id}/versions/init`
+    - Ghi chú: Đã thêm version init dùng chung validation và presigned PUT flow.
+- [x] Triển khai `POST /api/v1/documents/{id}/versions/{versionId}/complete`
+    - Ghi chú: Đã validate object bằng HEAD/Tika, chuyển version/document sang `PROCESSING` và publish message có `versionId`.
+- [x] Xử lý worker pipeline cho version mới
+    - Ghi chú: Extract/preview worker xử lý candidate version theo `versionId` và object key của version.
+- [x] Chỉ switch current version sau khi version mới xử lý thành công
+    - Ghi chú: Current snapshot trên `documents` chỉ được cập nhật qua finalization sau extraction/preview thành công.
+- [x] Giữ version hiện tại nếu version mới fail
+    - Ghi chú: Failure path đánh dấu candidate `EXTRACTION_FAILED` và không ghi đè current content/preview/search.
+- [x] Triển khai version history API
+    - Ghi chú: Đã thêm `GET /documents/{id}/versions` với ACL đọc document.
+- [x] Triển khai version download URL
+    - Ghi chú: Đã thêm download URL theo object key của version và log `VERSION_DOWNLOAD`.
+- [x] Triển khai restore old version
+    - Ghi chú: Đã thêm restore endpoint, reprocess target version trước khi switch current.
+- [x] Refresh search index sau restore version
+    - Ghi chú: Restore dùng lại pipeline extraction/search refresh trước finalization.
 
 ### 2.4 Trash, archive, restore
 
-- [ ] Triển khai archive document
-    - Ghi chú:
-- [ ] Triển khai soft delete document
-    - Ghi chú:
-- [ ] Set `deleted_at`, `deleted_by`, `purge_after`, `previous_status`
-    - Ghi chú:
-- [ ] Triển khai trash list
-    - Ghi chú:
-- [ ] Triển khai restore from trash
-    - Ghi chú:
-- [ ] Triển khai permanent delete
-    - Ghi chú:
-- [ ] Triển khai daily purge job
-    - Ghi chú:
-- [ ] Đảm bảo purge idempotent
-    - Ghi chú:
+- [x] Triển khai archive document
+    - Ghi chú: Đã thêm `POST /documents/{id}/archive`, admin-only, chuyển `INDEXED`/`EXTRACTION_FAILED` sang `ARCHIVED` và loại khỏi search index.
+- [x] Triển khai soft delete document
+    - Ghi chú: Đã thêm `DELETE /documents/{id}`, admin-only, chuyển tài liệu hợp lệ vào trash mà không xóa object storage.
+- [x] Set `deleted_at`, `deleted_by`, `purge_after`, `previous_status`
+    - Ghi chú: `DocumentLifecycleService` set đủ trash metadata theo retention `app.trash.retention-days`.
+- [x] Triển khai trash list
+    - Ghi chú: Đã thêm `GET /documents/trash` và frontend `/admin/trash` dùng dữ liệu thật.
+- [x] Triển khai restore from trash
+    - Ghi chú: Đã thêm restore đơn `POST /documents/{id}/restore` và batch `POST /documents/trash/restore`.
+- [x] Triển khai permanent delete
+    - Ghi chú: Đã thêm `DELETE /documents/trash/permanent-delete`, xóa object/content/search và tombstone bằng `permanently_deleted_at` để bảo toàn log/FK.
+- [x] Triển khai daily purge job
+    - Ghi chú: Đã thêm scheduled `DocumentTrashPurgeJob` dùng cron `app.trash.purge-cron`.
+- [x] Đảm bảo purge idempotent
+    - Ghi chú: Purge bỏ qua document đã purge/missing metadata và xử lý lỗi theo từng document trong batch.
 
 ### 2.5 Batch upload và batch operations
 
-- [ ] Triển khai `POST /api/v1/documents/batch-upload-init` và `POST /api/v1/documents/batch-upload-complete`
-    - Ghi chú:
-- [ ] Áp dụng giới hạn `BATCH_UPLOAD_MAX_FILES`
-    - Ghi chú:
-- [ ] Trả presigned URL riêng cho từng file
-    - Ghi chú:
-- [ ] Xử lý partial success/failure theo từng file
-    - Ghi chú:
-- [ ] Triển khai batch move
-    - Ghi chú:
-- [ ] Triển khai batch archive
-    - Ghi chú:
-- [ ] Triển khai batch delete
-    - Ghi chú:
-- [ ] Triển khai batch restore nếu cần
-    - Ghi chú:
-- [ ] Ghi audit log theo từng document trong batch
-    - Ghi chú:
+- [x] Triển khai `POST /api/v1/documents/batch-upload-init` và `POST /api/v1/documents/batch-upload-complete`
+    - Ghi chú: Đã thêm endpoint `/documents/batch-upload-init` và `/documents/batch-upload-complete` trong `DocumentController`, dùng response partial `total/succeeded/failed/items`.
+- [x] Áp dụng giới hạn `BATCH_UPLOAD_MAX_FILES`
+    - Ghi chú: Đã thêm `app.storage.batch-upload.max-files` với env `BATCH_UPLOAD_MAX_FILES`, default 20.
+- [x] Trả presigned URL riêng cho từng file
+    - Ghi chú: Mỗi item hợp lệ tạo document riêng và presigned PUT URL riêng qua `DocumentPresignedUrlService`.
+- [x] Xử lý partial success/failure theo từng file
+    - Ghi chú: Batch init/complete và batch operations catch lỗi theo item, không rollback toàn batch.
+- [x] Triển khai batch move
+    - Ghi chú: Đã thêm `DocumentMoveService` và endpoint `/documents/batch-move`; cập nhật categoryId theo từng document, trả partial result.
+- [x] Triển khai batch archive
+    - Ghi chú: Đã thêm endpoint `/documents/batch-archive`, reuse lifecycle archive theo từng document.
+- [x] Triển khai batch delete
+    - Ghi chú: Đã thêm endpoint `/documents/batch-delete`, reuse soft delete/trash lifecycle theo từng document.
+- [x] Triển khai batch restore nếu cần
+    - Ghi chú: Đã thêm endpoint `/documents/batch-restore`, reuse restore lifecycle theo từng document.
+- [x] Ghi audit log theo từng document trong batch
+    - Ghi chú: Upload complete ghi `UPLOAD`; move ghi `MOVE`; archive/delete/restore reuse lifecycle audit theo từng document. Backend tests pass; frontend build pass; Vitest hiện fail do lỗi test environment React `Invalid hook call` ở cả test cũ `LoginForm`.
 
 ### 2.6 Dashboard và logs nâng cao
 
-- [ ] Triển khai dashboard tổng số tài liệu
-    - Ghi chú:
-- [ ] Triển khai dashboard theo trạng thái tài liệu
-    - Ghi chú:
-- [ ] Triển khai dashboard dung lượng active/trash/version từ DB metadata
-    - Ghi chú:
-- [ ] Triển khai dashboard lượt preview/download theo thời gian
-    - Ghi chú:
-- [ ] Triển khai màn hình audit logs
-    - Ghi chú:
-- [ ] Triển khai màn hình access logs
-    - Ghi chú:
-- [ ] Triển khai màn hình search logs nếu cần
-    - Ghi chú:
+- [x] Triển khai dashboard tổng số tài liệu
+    - Ghi chú: Đã thêm `GET /admin/dashboard/summary` và wire `DashboardPage.jsx` hiển thị KPI từ API.
+- [x] Triển khai dashboard theo trạng thái tài liệu
+    - Ghi chú: `summary` trả `documentsByStatus`; frontend render breakdown theo trạng thái.
+- [x] Triển khai dashboard dung lượng active/trash/version từ DB metadata
+    - Ghi chú: Đã thêm `GET /admin/dashboard/storage`, tính active/trash từ `documents.file_size` và version từ `document_versions.file_size`.
+- [x] Triển khai dashboard lượt preview/download theo thời gian
+    - Ghi chú: Đã thêm `GET /admin/dashboard/access-stats`, gom `access_logs` theo granularity ngày/tuần/tháng và render chart preview/download.
+- [x] Triển khai màn hình audit logs
+    - Ghi chú: Đã thêm `GET /admin/audit-logs` unified feed và wire tab Audit trong `AuditLogsPage.jsx` với filter/pagination.
+- [x] Triển khai màn hình access logs
+    - Ghi chú: Dùng cùng `GET /admin/audit-logs` với `logType=ACCESS`, tab Access có filter theo action/document/date/keyword.
+- [x] Triển khai màn hình search logs nếu cần
+    - Ghi chú: Dùng cùng `GET /admin/audit-logs` với `logType=SEARCH`; dashboard cũng có top search keywords. Verification: `mvn -q -f backend/pom.xml -DskipTests compile` và `npm --prefix frontend run build` passed.
 
 ### 2.7 Frontend nghiệp vụ mở rộng
 
-- [ ] Tạo UI version history
-    - Ghi chú:
-- [ ] Tạo UI restore version
-    - Ghi chú:
-- [ ] Tạo UI trash
-    - Ghi chú:
-- [ ] Tạo UI archive/restore
-    - Ghi chú:
-- [ ] Tạo UI batch upload
-    - Ghi chú:
-- [ ] Tạo UI batch operations
-    - Ghi chú:
-- [ ] Tạo UI dashboard
-    - Ghi chú:
-- [ ] Tạo UI audit logs
-    - Ghi chú:
-- [ ] Tạo UI retry indexing
-    - Ghi chú:
+- [x] Tạo UI version history
+    - Ghi chú: `DocumentHistoryPage.jsx` hiển thị version history từ `GET /documents/{id}/versions`, download version cũ và upload version mới.
+- [x] Tạo UI restore version
+    - Ghi chú: `DocumentHistoryPage.jsx` gọi `POST /documents/{id}/versions/{versionId}/restore` với confirm trước khi restore.
+- [x] Tạo UI trash
+    - Ghi chú: `DocumentTrashPage.jsx` hiển thị `/admin/trash`, filter/pagination, restore và permanent delete một/nhiều tài liệu.
+- [x] Tạo UI archive/restore
+    - Ghi chú: `DocumentsPage.jsx` có action archive tài liệu `INDEXED`, restore tài liệu `ARCHIVED`, delete mềm sang trash.
+- [x] Tạo UI batch upload
+    - Ghi chú: `UploadDocumentPage.jsx` hỗ trợ nhiều file qua batch presigned URL, validate extension/size và progress từng file.
+- [x] Tạo UI batch operations
+    - Ghi chú: `DocumentsPage.jsx` hỗ trợ chọn nhiều tài liệu để batch move/archive/delete và hiển thị partial result.
+- [x] Tạo UI dashboard
+    - Ghi chú: `DashboardPage.jsx` dùng API dashboard thật cho KPI, status breakdown, storage và access stats.
+- [x] Tạo UI audit logs
+    - Ghi chú: `AuditLogsPage.jsx` dùng `GET /admin/audit-logs` cho audit/access/search logs với filter/pagination.
+- [x] Tạo UI retry indexing
+    - Ghi chú: `ProcessingErrorsPage.jsx` gọi `POST /documents/{id}/retry-indexing`; backend chuyển `EXTRACTION_FAILED` về `PROCESSING` và publish lại extract task.
 
 ---
 

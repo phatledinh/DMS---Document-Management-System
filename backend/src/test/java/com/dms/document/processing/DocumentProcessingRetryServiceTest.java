@@ -45,6 +45,18 @@ class DocumentProcessingRetryServiceTest {
     }
 
     @Test
+    void handleFailure_previewBeforeMaxAttemptsPublishesPreviewRetryMessage() {
+        DocumentProcessingMessage message = new DocumentProcessingMessage("task", DocumentProcessingTaskType.PREVIEW, 42L, null, "documents/object", "application/pdf", 1, OffsetDateTime.now());
+
+        service.handleFailure(message);
+
+        ArgumentCaptor<DocumentProcessingMessage> messageCaptor = ArgumentCaptor.forClass(DocumentProcessingMessage.class);
+        verify(publisher).publish(org.mockito.ArgumentMatchers.eq(DocumentProcessingRabbitConfig.PREVIEW_RETRY_30S_ROUTING_KEY), messageCaptor.capture());
+        assertThat(messageCaptor.getValue().attempt()).isEqualTo(2);
+        verify(documentRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void handleFailure_atMaxAttemptsSetsExtractionFailedAndPublishesDlq() {
         Document document = new Document();
         document.setId(42L);

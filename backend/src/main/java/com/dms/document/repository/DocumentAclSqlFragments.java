@@ -3,6 +3,7 @@ package com.dms.document.repository;
 public final class DocumentAclSqlFragments {
     public static final String USER_VISIBLE_PREDICATE = """
             d.status = 'INDEXED'
+            AND d.permanently_deleted_at IS NULL
             AND (
                 d.access_level = 'PUBLIC'
                 OR d.owner_id = :currentUserId
@@ -21,9 +22,9 @@ public final class DocumentAclSqlFragments {
             )
             """;
 
-    public static final String ADMIN_VISIBLE_PREDICATE = "d.status = 'INDEXED'";
+    public static final String ADMIN_VISIBLE_PREDICATE = "d.status <> 'DELETED' AND d.permanently_deleted_at IS NULL";
 
-    public static final String ADMIN_PREVIEW_DOWNLOAD_PREDICATE = "d.status IN ('INDEXED', 'ARCHIVED')";
+    public static final String ADMIN_PREVIEW_DOWNLOAD_PREDICATE = "d.status IN ('INDEXED', 'ARCHIVED') AND d.permanently_deleted_at IS NULL";
 
     private DocumentAclSqlFragments() {
     }

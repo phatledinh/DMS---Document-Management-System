@@ -145,6 +145,7 @@ services:
         environment:
             - MINIO_ROOT_USER=dms_minio
             - MINIO_ROOT_PASSWORD=dms_minio_password
+            - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000,http://localhost:5173
         volumes:
             - minio-data:/data
         healthcheck:
@@ -162,11 +163,8 @@ services:
             /bin/sh -c "
             mc alias set local http://minio:9000 dms_minio dms_minio_password &&
             mc mb --ignore-existing local/dms-documents &&
-            mc anonymous set none local/dms-documents &&
-            printf '%s' '<CORSConfiguration><CORSRule><AllowedOrigin>http://localhost:3000</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>Authorization</AllowedHeader><AllowedHeader>Content-Type</AllowedHeader><AllowedHeader>Content-Length</AllowedHeader><AllowedHeader>x-amz-date</AllowedHeader><AllowedHeader>x-amz-content-sha256</AllowedHeader><ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>300</MaxAgeSeconds></CORSRule></CORSConfiguration>' > /tmp/cors.xml &&
-            (mc cors set local/dms-documents /tmp/cors.xml || true)
+            mc anonymous set none local/dms-documents
             "
-
 volumes:
     postgresql-data:
     redis-data:

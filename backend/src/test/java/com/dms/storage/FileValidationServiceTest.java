@@ -20,7 +20,8 @@ class FileValidationServiceTest {
                 new StorageProperties.S3("http://localhost:9000", "dms-documents", "access", "secret", "auto", true),
                 52_428_800,
                 Duration.ofMinutes(5),
-                Duration.ofMinutes(5)
+                Duration.ofMinutes(5),
+                null
         );
         service = new FileValidationService(properties);
     }

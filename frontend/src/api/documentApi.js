@@ -22,6 +22,31 @@ export async function completeUpload(documentId) {
   return unwrapApiResponse(response);
 }
 
+export async function batchUploadInit(payload) {
+  const response = await axiosClient.post('/documents/batch-upload-init', payload);
+  return unwrapApiResponse(response);
+}
+
+export async function batchUploadComplete(payload) {
+  const response = await axiosClient.post('/documents/batch-upload-complete', payload);
+  return unwrapApiResponse(response);
+}
+
+export async function batchDeleteDocuments(documentIds) {
+  const response = await axiosClient.post('/documents/batch-delete', { documentIds });
+  return unwrapApiResponse(response);
+}
+
+export async function batchArchiveDocuments(documentIds) {
+  const response = await axiosClient.post('/documents/batch-archive', { documentIds });
+  return unwrapApiResponse(response);
+}
+
+export async function batchMoveDocuments(documentIds, targetCategoryId) {
+  const response = await axiosClient.post('/documents/batch-move', { documentIds, targetCategoryId });
+  return unwrapApiResponse(response);
+}
+
 export async function uploadToPresignedUrl({ uploadUrl, file, requiredHeaders = {}, onUploadProgress }) {
   await axios.put(uploadUrl, file, {
     headers: requiredHeaders,
@@ -36,5 +61,65 @@ export async function getPreviewUrl(documentId) {
 
 export async function getDownloadUrl(documentId) {
   const response = await axiosClient.get(`/documents/${documentId}/download-url`);
+  return unwrapApiResponse(response);
+}
+
+export async function getDocumentVersions(documentId) {
+  const response = await axiosClient.get(`/documents/${documentId}/versions`);
+  return unwrapApiResponse(response);
+}
+
+export async function initDocumentVersionUpload(documentId, payload) {
+  const response = await axiosClient.post(`/documents/${documentId}/versions/init`, payload);
+  return unwrapApiResponse(response);
+}
+
+export async function completeDocumentVersionUpload(documentId, versionId) {
+  const response = await axiosClient.post(`/documents/${documentId}/versions/${versionId}/complete`);
+  return unwrapApiResponse(response);
+}
+
+export async function getDocumentVersionDownloadUrl(documentId, versionId) {
+  const response = await axiosClient.get(`/documents/${documentId}/versions/${versionId}/download-url`);
+  return unwrapApiResponse(response);
+}
+
+export async function restoreDocumentVersion(documentId, versionId) {
+  const response = await axiosClient.post(`/documents/${documentId}/versions/${versionId}/restore`);
+  return unwrapApiResponse(response);
+}
+
+export async function archiveDocument(documentId) {
+  const response = await axiosClient.post(`/documents/${documentId}/archive`);
+  return unwrapApiResponse(response);
+}
+
+export async function deleteDocument(documentId) {
+  const response = await axiosClient.delete(`/documents/${documentId}`);
+  return unwrapApiResponse(response);
+}
+
+export async function restoreDocument(documentId) {
+  const response = await axiosClient.post(`/documents/${documentId}/restore`);
+  return unwrapApiResponse(response);
+}
+
+export async function retryDocumentIndexing(documentId) {
+  const response = await axiosClient.post(`/documents/${documentId}/retry-indexing`);
+  return unwrapApiResponse(response);
+}
+
+export async function getTrashDocuments(params) {
+  const response = await axiosClient.get('/documents/trash', { params });
+  return unwrapApiResponse(response);
+}
+
+export async function restoreTrashDocuments(documentIds) {
+  const response = await axiosClient.post('/documents/trash/restore', { documentIds });
+  return unwrapApiResponse(response);
+}
+
+export async function permanentDeleteTrashDocuments(documentIds) {
+  const response = await axiosClient.delete('/documents/trash/permanent-delete', { data: { documentIds } });
   return unwrapApiResponse(response);
 }

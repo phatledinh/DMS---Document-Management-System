@@ -3,6 +3,7 @@ package com.dms.document.processing;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentVersionRepository;
 import com.rabbitmq.client.Channel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,8 @@ class DocumentExtractWorkerTest {
     @Mock
     private DocumentRepository documentRepository;
     @Mock
+    private DocumentVersionRepository versionRepository;
+    @Mock
     private DocumentExtractionPipeline extractionPipeline;
     @Mock
     private DocumentProcessingRetryService retryService;
@@ -34,7 +37,7 @@ class DocumentExtractWorkerTest {
 
     @BeforeEach
     void setUp() {
-        worker = new DocumentExtractWorker(documentRepository, extractionPipeline, retryService);
+        worker = new DocumentExtractWorker(documentRepository, versionRepository, extractionPipeline, retryService);
     }
 
     @Test

@@ -37,7 +37,12 @@ spring:
         date-format: yyyy-MM-dd'T'HH:mm:ss
         time-zone: Asia/Ho_Chi_Minh
 
+logging:
+    level:
+        org.springframework.security: TRACE
+
 app:
+
     jwt:
         secret: ${JWT_SECRET}
         access-expiration: ${JWT_ACCESS_EXPIRATION:900000}
@@ -51,6 +56,8 @@ app:
             region: ${STORAGE_REGION:auto}
             path-style-access: ${STORAGE_PATH_STYLE_ACCESS:true}
         max-file-size: ${FILE_MAX_SIZE:52428800}
+        batch-upload:
+            max-files: ${BATCH_UPLOAD_MAX_FILES:20}
         presigned-upload-ttl: ${STORAGE_PRESIGNED_UPLOAD_TTL:PT5M}
         presigned-download-ttl: ${STORAGE_PRESIGNED_DOWNLOAD_TTL:PT5M}
     cors:
@@ -60,7 +67,22 @@ app:
         enable-unaccent: true
         enable-trigram: true
         enable-vector-search: ${SEARCH_ENABLE_VECTOR:false}
+    trash:
+        retention-days: ${TRASH_RETENTION_DAYS:30}
+        purge-cron: ${TRASH_PURGE_CRON:0 0 2 * * *}
     processing:
         thread-pool-size: ${PROCESSING_THREAD_POOL_SIZE:4}
         retry-interval: ${PROCESSING_RETRY_INTERVAL:PT30M}
         max-retry-count: ${PROCESSING_MAX_RETRY_COUNT:3}
+    ocr:
+        languages: ${OCR_LANGUAGES:vie+eng}
+        dpi: ${OCR_DPI:200}
+        max-pages: ${OCR_MAX_PAGES:20}
+        timeout-per-page: ${OCR_TIMEOUT_PER_PAGE:PT30S}
+        min-pdf-text-length: ${OCR_MIN_PDF_TEXT_LENGTH:20}
+    preview:
+        enabled: ${PREVIEW_ENABLED:true}
+        timeout: ${PREVIEW_TIMEOUT:PT2M}
+        office-home: ${PREVIEW_OFFICE_HOME:}
+        max-tasks-per-process: ${PREVIEW_MAX_TASKS_PER_PROCESS:20}
+        object-prefix: ${PREVIEW_OBJECT_PREFIX:preview}

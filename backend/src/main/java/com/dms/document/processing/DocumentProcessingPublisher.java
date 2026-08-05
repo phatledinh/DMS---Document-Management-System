@@ -25,6 +25,10 @@ public class DocumentProcessingPublisher {
         publish(DocumentProcessingRabbitConfig.EXTRACT_ROUTING_KEY, message);
     }
 
+    public void publishPreview(Long documentId, Long versionId, String objectKey, String mimeType) {
+        publish(DocumentProcessingRabbitConfig.PREVIEW_ROUTING_KEY, DocumentProcessingMessage.preview(documentId, versionId, objectKey, mimeType));
+    }
+
     public void publish(String routingKey, DocumentProcessingMessage message) {
         rabbitTemplate.convertAndSend(
                 DocumentProcessingRabbitConfig.TASKS_EXCHANGE,

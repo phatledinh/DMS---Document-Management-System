@@ -1,191 +1,245 @@
 import { useMemo, useState } from 'react';
+import { DeleteOutlined, ReloadOutlined, SearchOutlined, UndoOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Empty, Flex, Input, Modal, Pagination, Select, Space, Spin, Table, Tag, Typography } from 'antd';
+import { toast } from 'react-toastify';
+import { getApiErrorMessage } from '../../../utils/response.js';
 import {
-  AppstoreOutlined,
-  BellOutlined,
-  CalendarOutlined,
-  DeleteOutlined,
-  FileExcelOutlined,
-  FileImageOutlined,
-  FilePdfOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UndoOutlined,
-  UploadOutlined,
-  WarningOutlined,
-} from '@ant-design/icons';
-import styles from './DocumentTrashPage.module.css';
+  usePermanentDeleteTrashDocuments,
+  useRestoreTrashDocuments,
+  useTrashDocuments,
+} from '../hooks/useDocumentLifecycle.js';
+import {
+  formatDateTime,
+  formatFileSize,
+  getDocumentStatusMeta,
+  getPageContent,
+  normalizeDocument,
+} from '../utils/documentFormatters.js';
 
+const { Title, Text } = Typography;
 
-const trashDocuments = [
-  {
-    id: 1,
-    title: 'Hop_dong_thue_nha.pdf',
-    category: 'Pháp lý',
-    deletedBy: 'Nguyen Van A',
-    deletedAt: '10/10/2023',
-    deadline: 'Còn 15 ngày',
-    urgency: 'warning',
-    fileType: 'pdf',
-  },
-  {
-    id: 2,
-    title: 'Bao_cao_marketing_2022.xlsx',
-    category: 'Marketing',
-    deletedBy: 'Tran Thi B',
-    deletedAt: '12/10/2023',
-    deadline: 'Còn 28 ngày',
-    urgency: 'safe',
-    fileType: 'sheet',
-  },
-  {
-    id: 3,
-    title: 'Hinh_anh_su_kien.jpg',
-    category: 'Truyền thông',
-    deletedBy: 'Le Van C',
-    deletedAt: '20/09/2023',
-    deadline: 'Còn 2 ngày',
-    urgency: 'danger',
-    fileType: 'image',
-  },
-];
-
-function FileIcon({ type }) {
-  if (type === 'pdf') return <FilePdfOutlined className={styles.fileIconPdf} />;
-  if (type === 'sheet') return <FileExcelOutlined className={styles.fileIconSheet} />;
-  if (type === 'image') return <FileImageOutlined className={styles.fileIconImage} />;
-  return <FileTextOutlined className={styles.fileIconDoc} />;
-}
-
-function DeadlineBadge({ urgency, label }) {
-  const className = {
-    safe: styles.deadlineSafe,
-    warning: styles.deadlineWarning,
-    danger: styles.deadlineDanger,
-  }[urgency];
-
-  return (
-    <span className={className}>
-      {urgency === 'danger' ? <WarningOutlined /> : <CalendarOutlined />}
-      {label}
-    </span>
-  );
+function PurgeBadge({ days }) {
+  const value = Number(days ?? 0);
+  if (value <= 3) return <Tag color="error">Còn {value} ngày</Tag>;
+  if (value <= 15) return <Tag color="warning">Còn {value} ngày</Tag>;
+  return <Tag color="success">Còn {value} ngày</Tag>;
 }
 
 export default function DocumentTrashPage() {
-  const [selectedRows, setSelectedRows] = useState([]);
+  const [keyword, setKeyword] = useState('');
+  const [fileType, setFileType] = useState();
+  const [page, setPage] = useState(1);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const pageSize = 10;
 
-  const allSelected = selectedRows.length === trashDocuments.length;
-  const batchClassName = selectedRows.length > 0 ? styles.batchBar : styles.batchBarHidden;
-
-  const rows = useMemo(
-    () => trashDocuments.map((doc) => ({ ...doc, selected: selectedRows.includes(doc.id) })),
-    [selectedRows]
+  const params = useMemo(
+    () => ({
+      page: page - 1,
+      size: pageSize,
+      q: keyword.trim() || undefined,
+      fileType,
+    }),
+    [fileType, keyword, page],
   );
 
-  function toggleAllRows() {
-    setSelectedRows(allSelected ? [] : trashDocuments.map((doc) => doc.id));
+  const trashQuery = useTrashDocuments(params);
+  const restoreMutation = useRestoreTrashDocuments();
+  const permanentDeleteMutation = usePermanentDeleteTrashDocuments();
+  const documents = getPageContent(trashQuery.data).map(normalizeDocument).filter(Boolean);
+  const totalElements = trashQuery.data?.totalElements ?? trashQuery.data?.total ?? documents.length;
+
+  function resetToFirstPage(next) {
+    setPage(1);
+    next();
   }
 
-  function toggleRow(rowId) {
-    setSelectedRows((current) => current.includes(rowId) ? current.filter((id) => id !== rowId) : [...current, rowId]);
+  function runBatchAction({ title, content, documentIds, mutation, successMessage, danger = false }) {
+    if (!documentIds.length) {
+      toast.info('Chọn ít nhất một tài liệu');
+      return;
+    }
+    Modal.confirm({
+      title,
+      content,
+      okText: 'Xác nhận',
+      cancelText: 'Hủy',
+      okButtonProps: { danger },
+      async onOk() {
+        try {
+          const result = await mutation.mutateAsync(documentIds);
+          setSelectedRowKeys([]);
+          const failed = result?.failureCount ?? 0;
+          if (failed > 0) {
+            toast.warn(`${successMessage}, ${failed} tài liệu thất bại`);
+          } else {
+            toast.success(successMessage);
+          }
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+          throw error;
+        }
+      },
+    });
   }
+
+  function restoreDocuments(documentIds) {
+    runBatchAction({
+      title: 'Khôi phục tài liệu?',
+      content: 'Tài liệu được chọn sẽ được đưa ra khỏi thùng rác và quay về trạng thái trước khi xóa.',
+      documentIds,
+      mutation: restoreMutation,
+      successMessage: 'Đã khôi phục tài liệu',
+    });
+  }
+
+  function permanentlyDeleteDocuments(documentIds) {
+    runBatchAction({
+      title: 'Xóa vĩnh viễn tài liệu?',
+      content: 'Hành động này sẽ xóa file lưu trữ và không thể khôi phục từ thùng rác.',
+      documentIds,
+      mutation: permanentDeleteMutation,
+      successMessage: 'Đã xóa vĩnh viễn tài liệu',
+      danger: true,
+    });
+  }
+
+  const columns = [
+    {
+      title: 'Tài liệu',
+      dataIndex: 'title',
+      render: (_, record) => (
+        <div>
+          <Text strong>{record.title || record.fileName || 'Không có tiêu đề'}</Text>
+          <div><Text type="secondary">{record.documentCode || record.fileName || '—'}</Text></div>
+        </div>
+      ),
+    },
+    {
+      title: 'Loại file',
+      dataIndex: 'fileType',
+      render: (value) => value || '—',
+    },
+    {
+      title: 'Dung lượng',
+      dataIndex: 'fileSize',
+      render: formatFileSize,
+    },
+    {
+      title: 'Trạng thái trước đó',
+      dataIndex: 'previousStatus',
+      render: (value) => {
+        const meta = getDocumentStatusMeta(value);
+        return <Tag color={meta.color}>{meta.label}</Tag>;
+      },
+    },
+    {
+      title: 'Người xóa',
+      dataIndex: 'deletedBy',
+      render: (value) => value || '—',
+    },
+    {
+      title: 'Ngày xóa',
+      dataIndex: 'deletedAt',
+      render: formatDateTime,
+    },
+    {
+      title: 'Hạn purge',
+      dataIndex: 'daysUntilPurge',
+      render: (_, record) => <PurgeBadge days={record.daysUntilPurge} />,
+    },
+    {
+      title: 'Thao tác',
+      key: 'actions',
+      render: (_, record) => (
+        <Space>
+          <Button icon={<UndoOutlined />} onClick={() => restoreDocuments([record.id])} loading={restoreMutation.isPending}>
+            Khôi phục
+          </Button>
+          <Button danger icon={<DeleteOutlined />} onClick={() => permanentlyDeleteDocuments([record.id])} loading={permanentDeleteMutation.isPending}>
+            Xóa vĩnh viễn
+          </Button>
+        </Space>
+      ),
+    },
+  ];
 
   return (
-    <div className={styles.page}>
+    <Card>
+      <Flex justify="space-between" align="flex-start" gap={16} wrap="wrap">
+        <div>
+          <Title level={3}>Thùng rác tài liệu</Title>
+          <Text type="secondary">Tài liệu đã xóa tạm thời sẽ được purge tự động sau thời hạn lưu giữ.</Text>
+        </div>
+        <Button icon={<ReloadOutlined />} onClick={() => trashQuery.refetch()}>
+          Làm mới
+        </Button>
+      </Flex>
 
-      <div className={styles.pageBody}>
+      <Space size="middle" wrap style={{ marginTop: 24, marginBottom: 16 }}>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="Tìm theo tiêu đề, mã tài liệu..."
+          value={keyword}
+          onChange={(event) => resetToFirstPage(() => setKeyword(event.target.value))}
+          style={{ width: 320 }}
+        />
+        <Select
+          allowClear
+          placeholder="Loại file"
+          value={fileType}
+          onChange={(value) => resetToFirstPage(() => setFileType(value))}
+          style={{ width: 160 }}
+          options={[
+            { value: 'PDF', label: 'PDF' },
+            { value: 'DOCX', label: 'DOCX' },
+            { value: 'XLSX', label: 'XLSX' },
+            { value: 'IMAGE', label: 'Ảnh' },
+          ]}
+        />
+      </Space>
 
-        <main className={styles.content}>
-          <div className={styles.container}>
-            <section className={styles.pageHeader}>
-              <div>
-                <h2>THÙNG RÁC TÀI LIỆU</h2>
-                <p>Quản lý tài liệu đã xóa tạm thời. Tài liệu sẽ tự động xóa vĩnh viễn sau 30 ngày.</p>
-              </div>
-            </section>
+      {selectedRowKeys.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`${selectedRowKeys.length} tài liệu được chọn`}
+          action={(
+            <Space>
+              <Button size="small" icon={<UndoOutlined />} onClick={() => restoreDocuments(selectedRowKeys)} loading={restoreMutation.isPending}>
+                Khôi phục
+              </Button>
+              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => permanentlyDeleteDocuments(selectedRowKeys)} loading={permanentDeleteMutation.isPending}>
+                Xóa vĩnh viễn
+              </Button>
+            </Space>
+          )}
+        />
+      )}
 
-            <section className={styles.filterPanel}>
-              <div className={styles.filterGrid}>
-                <label className={styles.searchField}>
-                  <SearchOutlined />
-                  <input placeholder="Tìm theo tên/mã..." type="text" />
-                </label>
-                <label className={styles.selectField}>
-                  <select defaultValue=""><option value="">Danh mục</option><option>Hợp đồng</option><option>Báo cáo</option><option>Truyền thông</option></select>
-                </label>
-                <label className={styles.selectField}>
-                  <select defaultValue=""><option value="">Loại file</option><option>PDF</option><option>Excel</option><option>Ảnh</option></select>
-                </label>
-                <label className={styles.dateField}>
-                  <CalendarOutlined />
-                  <input type="date" />
-                </label>
-              </div>
-            </section>
+      {trashQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(trashQuery.error)} />}
 
-            <div className={batchClassName}>
-              <div className={styles.batchInfo}><span className={styles.batchCount}>{selectedRows.length}</span><span>tài liệu được chọn</span></div>
-              <div className={styles.batchActions}>
-                <button className={styles.batchAction} type="button"><UndoOutlined />Khôi phục</button>
-                <button className={styles.deleteAction} type="button"><DeleteOutlined />Xóa vĩnh viễn</button>
-              </div>
-            </div>
+      <Spin spinning={trashQuery.isLoading}>
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={documents}
+          pagination={false}
+          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+          locale={{ emptyText: <Empty description="Thùng rác trống" /> }}
+        />
+      </Spin>
 
-            <section className={styles.tablePanel}>
-              <div className={styles.tableScroller}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th className={styles.centerCell}><input checked={allSelected} onChange={toggleAllRows} type="checkbox" /></th>
-                      <th>Tài liệu</th>
-                      <th>Danh mục</th>
-                      <th>Người xóa</th>
-                      <th>Ngày xóa</th>
-                      <th>Hạn chót</th>
-                      <th className={styles.rightCell}>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((doc) => (
-                      <tr key={doc.id}>
-                        <td className={styles.centerCell}><input checked={doc.selected} onChange={() => toggleRow(doc.id)} type="checkbox" /></td>
-                        <td><div className={styles.documentTitle}><FileIcon type={doc.fileType} /><span title={doc.title}>{doc.title}</span></div></td>
-                        <td>{doc.category}</td>
-                        <td>{doc.deletedBy}</td>
-                        <td>{doc.deletedAt}</td>
-                        <td><DeadlineBadge urgency={doc.urgency} label={doc.deadline} /></td>
-                        <td>
-                          <div className={styles.rowActions}>
-                            <button title="Khôi phục" type="button"><UndoOutlined /></button>
-                            <button className={styles.rowDangerAction} title="Xóa vĩnh viễn" type="button"><DeleteOutlined /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className={styles.pagination}>
-                <div className={styles.paginationText}>Hiển thị <strong>1-3</strong> của <strong>24</strong> tài liệu</div>
-                <div className={styles.pageControls}>
-                  <button className={styles.navPageButton} type="button" disabled>‹</button>
-                  <button className={styles.currentPage} type="button">1</button>
-                  <button className={styles.pageButton} type="button">2</button>
-                  <button className={styles.pageButton} type="button">3</button>
-                  <button className={styles.navPageButton} type="button">›</button>
-                </div>
-              </div>
-            </section>
-          </div>
-        </main>
-      </div>
-    </div>
+      <Flex justify="flex-end" style={{ marginTop: 16 }}>
+        <Pagination
+          current={page}
+          pageSize={pageSize}
+          total={totalElements}
+          onChange={setPage}
+          showSizeChanger={false}
+        />
+      </Flex>
+    </Card>
   );
 }

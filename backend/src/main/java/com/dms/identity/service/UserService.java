@@ -45,4 +45,11 @@ public class UserService {
         }
         return authentication.getName();
     }
+
+    @Transactional(readOnly = true)
+    public java.util.List<UserResponse> getAllUsers() {
+        return userRepository.findByDeletedAtIsNull().stream()
+                .map(userMapper::toResponse)
+                .collect(java.util.stream.Collectors.toList());
+    }
 }

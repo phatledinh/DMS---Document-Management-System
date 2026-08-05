@@ -3,6 +3,11 @@ package com.dms.document.service;
 import com.dms.common.exception.AppException;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.common.security.CurrentUserProvider;
+import com.dms.document.dto.BatchUploadCompleteRequest;
+import com.dms.document.dto.BatchUploadInitFileRequest;
+import com.dms.document.dto.BatchUploadInitRequest;
+import com.dms.document.dto.BatchUploadItemResponse;
+import com.dms.document.dto.BatchUploadResponse;
 import com.dms.document.dto.PresignedUrlResponse;
 import com.dms.document.dto.UploadCompleteResponse;
 import com.dms.document.dto.UploadInitRequest;
@@ -40,7 +45,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -157,8 +165,59 @@ public class DocumentPresignedUrlService {
             document.setDocumentCode(generateDocumentCode());
         }
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), null, document.getStoragePath(), document.getMimeType()));
+        logUpload(admin, document);
         Document saved = documentRepository.save(document);
         return new UploadCompleteResponse(saved.getId(), saved.getStatus().name(), saved.getDocumentCode(), saved.getVersionNumber(), saved.getCreatedAt());
+    }
+
+    public BatchUploadResponse initiateBatchUpload(BatchUploadInitRequest request) {
+        User admin = currentUserProvider.getRequiredUser();
+        requireAdmin(admin);
+        validateBatchUploadRequest(request);
+        List<BatchUploadItemResponse> items = new ArrayList<>();
+        Set<String> clientItemIds = new HashSet<>();
+        for (BatchUploadInitFileRequest file : request.files()) {
+            if (!clientItemIds.add(file.clientItemId())) {
+                items.add(BatchUploadItemResponse.failure(file.clientItemId(), file.fileName(), ErrorCodes.VALIDATION_ERROR, "Duplicate client item id"));
+                continue;
+            }
+            try {
+                UploadInitRequest itemRequest = new UploadInitRequest(
+                        file.fileName(),
+                        file.fileSize(),
+                        file.contentType(),
+                        file.title(),
+                        null,
+                        request.categoryId(),
+                        request.departmentId(),
+                        request.tagIds(),
+                        request.resolvedAccessLevel(),
+                        request.departmentIds(),
+                        request.ownerId(),
+                        request.sharedUserIds(),
+                        request.effectiveDate(),
+                        request.expiryDate()
+                );
+                items.add(BatchUploadItemResponse.success(file.clientItemId(), file.fileName(), initiateUpload(itemRequest)));
+            } catch (AppException exception) {
+                items.add(BatchUploadItemResponse.failure(file.clientItemId(), file.fileName(), exception.getCode(), exception.getMessage()));
+            }
+        }
+        return BatchUploadResponse.from(items);
+    }
+
+    public BatchUploadResponse completeBatchUpload(BatchUploadCompleteRequest request) {
+        User admin = currentUserProvider.getRequiredUser();
+        requireAdmin(admin);
+        List<BatchUploadItemResponse> items = new ArrayList<>();
+        for (var item : request.items()) {
+            try {
+                items.add(BatchUploadItemResponse.completeSuccess(item.clientItemId(), completeUpload(item.documentId())));
+            } catch (AppException exception) {
+                items.add(BatchUploadItemResponse.documentFailure(item.clientItemId(), item.documentId(), exception.getCode(), exception.getMessage()));
+            }
+        }
+        return BatchUploadResponse.from(items);
     }
 
     @Transactional
@@ -186,20 +245,33 @@ public class DocumentPresignedUrlService {
             throw denied(decision);
         }
         String key = previewKey(document);
-        PresignedGetUrl url = objectStorageService.presignGet(key, "inline; filename=\"" + document.getFileName() + "\"");
+        String fileName = previewFileName(document);
+        PresignedGetUrl url = objectStorageService.presignGet(key, "inline; filename=\"" + fileName + "\"");
         document.setViewCount(document.getViewCount() + 1);
         logAccess(user, document, AccessLogAction.PREVIEW, true, null, request);
-        return new PresignedUrlResponse(url.url(), document.getFileName(), url.expiresIn());
+        return new PresignedUrlResponse(url.url(), fileName, url.expiresIn());
     }
 
     private String previewKey(Document document) {
-        if (document.getPreviewObjectKey() != null && !document.getPreviewObjectKey().isBlank()) {
-            return document.getPreviewObjectKey();
+        if (fileValidationService.requiresPreviewConversion(document.getFileType())) {
+            if (document.getPreviewObjectKey() != null && !document.getPreviewObjectKey().isBlank()) {
+                return document.getPreviewObjectKey();
+            }
+            throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Preview is not ready", HttpStatus.CONFLICT);
         }
         if (fileValidationService.canPreviewOriginal(document.getFileType())) {
             return document.getStoragePath();
         }
         throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Preview is not ready", HttpStatus.CONFLICT);
+    }
+
+    private String previewFileName(Document document) {
+        if (!fileValidationService.requiresPreviewConversion(document.getFileType())) {
+            return document.getFileName();
+        }
+        int extensionIndex = document.getFileName().lastIndexOf('.');
+        String baseName = extensionIndex > 0 ? document.getFileName().substring(0, extensionIndex) : document.getFileName();
+        return baseName + ".pdf";
     }
 
     private void saveAudience(Long documentId, Long grantedBy, List<Long> departmentIds, List<Long> sharedUserIds) {
@@ -224,6 +296,21 @@ public class DocumentPresignedUrlService {
         }
     }
 
+    private void validateBatchUploadRequest(BatchUploadInitRequest request) {
+        if (request.files().size() > objectStorageService.batchUploadMaxFiles()) {
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Batch upload file count exceeds the configured limit", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void logUpload(User user, Document document) {
+        AccessLog log = new AccessLog();
+        log.setUserId(user.getId());
+        log.setDocumentId(document.getId());
+        log.setAction(AccessLogAction.UPLOAD);
+        log.setAccessGranted(true);
+        accessLogRepository.save(log);
+    }
+
     private void logAccess(User user, Document document, AccessLogAction action, boolean granted, String denialReason, HttpServletRequest request) {
         AccessLog log = new AccessLog();
         log.setUserId(user.getId());
@@ -237,8 +324,12 @@ public class DocumentPresignedUrlService {
     }
 
     private Document findDocument(Long documentId) {
-        return documentRepository.findById(documentId)
+        Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND));
+        if (document.getPermanentlyDeletedAt() != null) {
+            throw new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND);
+        }
+        return document;
     }
 
     private void requireAdmin(User user) {

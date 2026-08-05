@@ -1,17 +1,27 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  DeleteOutlined,
   EyeOutlined,
   FileImageOutlined,
   FilePdfOutlined,
   FileTextOutlined,
+  InboxOutlined,
   ReloadOutlined,
   SearchOutlined,
+  UndoOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Card, Empty, Flex, Input, Pagination, Select, Space, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Flex, Input, Modal, Pagination, Select, Space, Spin, Table, Tag, Typography } from 'antd';
+import { toast } from 'react-toastify';
+import { batchArchiveDocuments, batchDeleteDocuments, batchMoveDocuments } from '../../../api/documentApi.js';
 import { useAuthStore } from '../../../store/authStore.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
+import {
+  useArchiveDocument,
+  useDeleteDocument,
+  useRestoreDocument,
+} from '../hooks/useDocumentLifecycle.js';
 import { useDocuments } from '../hooks/useDocuments.js';
 import {
   formatDateTime,
@@ -46,8 +56,13 @@ export default function DocumentsPage() {
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState();
   const [fileType, setFileType] = useState();
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
+  const archiveMutation = useArchiveDocument();
+  const deleteMutation = useDeleteDocument();
+  const restoreMutation = useRestoreDocument();
 
   const params = useMemo(
     () => ({
@@ -64,6 +79,118 @@ export default function DocumentsPage() {
   const documentsQuery = useDocuments(params);
   const documents = getPageContent(documentsQuery.data).map(normalizeDocument).filter(Boolean);
   const totalElements = documentsQuery.data?.totalElements ?? documentsQuery.data?.total ?? documents.length;
+
+  function runLifecycleAction({ title, content, mutation, documentId, successMessage }) {
+    Modal.confirm({
+      title,
+      content,
+      okText: 'Xác nhận',
+      cancelText: 'Hủy',
+      okButtonProps: { danger: mutation === deleteMutation },
+      async onOk() {
+        try {
+          await mutation.mutateAsync(documentId);
+          toast.success(successMessage);
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+          throw error;
+        }
+      },
+    });
+  }
+
+  function archiveRecord(record) {
+    runLifecycleAction({
+      title: 'Lưu trữ tài liệu?',
+      content: `Tài liệu "${record.title || record.fileName}" sẽ bị ẩn khỏi danh sách mặc định và tìm kiếm.`,
+      mutation: archiveMutation,
+      documentId: record.id,
+      successMessage: 'Đã lưu trữ tài liệu',
+    });
+  }
+
+  function deleteRecord(record) {
+    runLifecycleAction({
+      title: 'Chuyển tài liệu vào thùng rác?',
+      content: `Tài liệu "${record.title || record.fileName}" có thể được khôi phục trước hạn purge.`,
+      mutation: deleteMutation,
+      documentId: record.id,
+      successMessage: 'Đã chuyển tài liệu vào thùng rác',
+    });
+  }
+
+  function restoreRecord(record) {
+    runLifecycleAction({
+      title: 'Khôi phục tài liệu?',
+      content: `Tài liệu "${record.title || record.fileName}" sẽ được đưa về trạng thái hoạt động.`,
+      mutation: restoreMutation,
+      documentId: record.id,
+      successMessage: 'Đã khôi phục tài liệu',
+    });
+  }
+
+  function showBatchResult(result, successText) {
+    const succeeded = result?.succeeded || 0;
+    const failed = result?.failed || 0;
+    if (failed) {
+      toast.warning(`${successText}: ${succeeded} thành công, ${failed} lỗi.`);
+    } else {
+      toast.success(successText);
+    }
+  }
+
+  async function runBatchAction(action, successText) {
+    setBulkActionLoading(true);
+    try {
+      const result = await action(selectedDocumentIds);
+      showBatchResult(result, successText);
+      setSelectedDocumentIds([]);
+      await documentsQuery.refetch();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+      throw error;
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }
+
+  function confirmBatchDelete() {
+    Modal.confirm({
+      title: 'Chuyển các tài liệu đã chọn vào thùng rác?',
+      content: `${selectedDocumentIds.length} tài liệu sẽ được xử lý theo từng item.`,
+      okText: 'Xóa',
+      okButtonProps: { danger: true },
+      cancelText: 'Hủy',
+      onOk: () => runBatchAction(batchDeleteDocuments, 'Batch delete completed'),
+    });
+  }
+
+  function confirmBatchArchive() {
+    Modal.confirm({
+      title: 'Lưu trữ các tài liệu đã chọn?',
+      content: `${selectedDocumentIds.length} tài liệu sẽ được xử lý theo từng item.`,
+      okText: 'Lưu trữ',
+      cancelText: 'Hủy',
+      onOk: () => runBatchAction(batchArchiveDocuments, 'Batch archive completed'),
+    });
+  }
+
+  function confirmBatchMove() {
+    let targetCategoryId;
+    Modal.confirm({
+      title: 'Chuyển danh mục các tài liệu đã chọn',
+      content: <Input placeholder="Nhập target categoryId" onChange={(event) => { targetCategoryId = Number(event.target.value); }} />,
+      okText: 'Chuyển',
+      cancelText: 'Hủy',
+      onOk: () => {
+        if (!targetCategoryId) {
+          toast.error('Vui lòng nhập target categoryId.');
+          return Promise.reject(new Error('target category required'));
+        }
+        return runBatchAction((ids) => batchMoveDocuments(ids, targetCategoryId), 'Batch move completed');
+      },
+    });
+  }
 
   const columns = [
     {
@@ -112,9 +239,26 @@ export default function DocumentsPage() {
       title: 'Thao tác',
       key: 'actions',
       render: (_, record) => (
-        <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/${record.id}`)}>
-          Chi tiết
-        </Button>
+        <Space wrap>
+          <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/${record.id}`)}>
+            Chi tiết
+          </Button>
+          {isAdmin && record.status === 'INDEXED' && (
+            <Button icon={<InboxOutlined />} onClick={() => archiveRecord(record)} loading={archiveMutation.isPending}>
+              Lưu trữ
+            </Button>
+          )}
+          {isAdmin && record.status === 'ARCHIVED' && (
+            <Button icon={<UndoOutlined />} onClick={() => restoreRecord(record)} loading={restoreMutation.isPending}>
+              Khôi phục
+            </Button>
+          )}
+          {isAdmin && ['INDEXED', 'ARCHIVED', 'EXTRACTION_FAILED'].includes(record.status) && (
+            <Button danger icon={<DeleteOutlined />} onClick={() => deleteRecord(record)} loading={deleteMutation.isPending}>
+              Xóa
+            </Button>
+          )}
+        </Space>
       ),
     },
   ];
@@ -159,6 +303,10 @@ export default function DocumentsPage() {
               { value: 'INDEXED', label: 'Sẵn sàng' },
               { value: 'EXTRACTION_FAILED', label: 'Lỗi trích xuất' },
               { value: 'AWAITING_UPLOAD', label: 'Chờ upload' },
+              ...(isAdmin ? [
+                { value: 'ARCHIVED', label: 'Lưu trữ' },
+                { value: 'DELETED', label: 'Đã xóa' },
+              ] : []),
             ]}
           />
           <Select
@@ -179,11 +327,31 @@ export default function DocumentsPage() {
           </Button>
         </Space>
 
+        {isAdmin && selectedDocumentIds.length > 0 && (
+          <Alert
+            type="info"
+            showIcon
+            message={
+              <Flex justify="space-between" align="center" gap={12} wrap="wrap">
+                <Text>Đã chọn {selectedDocumentIds.length} tài liệu</Text>
+                <Space wrap>
+                  <Button onClick={confirmBatchMove} loading={bulkActionLoading}>Chuyển danh mục</Button>
+                  <Button icon={<InboxOutlined />} onClick={confirmBatchArchive} loading={bulkActionLoading}>Lưu trữ</Button>
+                  <Button danger icon={<DeleteOutlined />} onClick={confirmBatchDelete} loading={bulkActionLoading}>Xóa</Button>
+                  <Button onClick={() => setSelectedDocumentIds([])}>Bỏ chọn</Button>
+                </Space>
+              </Flex>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
         {documentsQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(documentsQuery.error)} />}
 
         <Spin spinning={documentsQuery.isLoading}>
           <Table
             rowKey="id"
+            rowSelection={isAdmin ? { selectedRowKeys: selectedDocumentIds, onChange: setSelectedDocumentIds } : undefined}
             columns={columns}
             dataSource={documents}
             pagination={false}

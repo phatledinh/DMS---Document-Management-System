@@ -39,7 +39,7 @@ public class DocumentSearchService {
         this.searchRepository = searchRepository;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public DocumentSearchResponse search(DocumentSearchRequest request) {
         User user = currentUserProvider.getRequiredUser();
         Instant startedAt = Instant.now();
@@ -60,7 +60,7 @@ public class DocumentSearchService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<SearchSuggestionResponse> suggestions(String prefix, Integer limit) {
         User user = currentUserProvider.getRequiredUser();
         Instant startedAt = Instant.now();

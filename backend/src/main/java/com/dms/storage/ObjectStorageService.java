@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -13,6 +14,7 @@ import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -21,6 +23,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequ
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +42,10 @@ public class ObjectStorageService {
 
     public String generateDocumentObjectKey() {
         return "documents/" + UUID.randomUUID();
+    }
+
+    public String generatePreviewObjectKey(String sourceObjectKey) {
+        return "preview/" + sourceObjectKey + ".pdf";
     }
 
     public PresignedPutUrl presignPut(String objectKey, String contentType) {
@@ -102,6 +109,30 @@ public class ObjectStorageService {
                 .key(objectKey)
                 .build());
         return stream;
+    }
+
+    public void putObject(String objectKey, Path file, String contentType) {
+        s3Client.putObject(PutObjectRequest.builder()
+                .bucket(properties.s3().bucket())
+                .key(objectKey)
+                .contentType(contentType)
+                .build(), RequestBody.fromFile(file));
+    }
+
+    public int batchUploadMaxFiles() {
+        return properties.batchUploadMaxFiles();
+    }
+
+    public boolean objectExists(String objectKey) {
+        try {
+            headObject(objectKey);
+            return true;
+        } catch (AppException exception) {
+            if (ErrorCodes.UPLOAD_NOT_COMPLETED.equals(exception.getCode())) {
+                return false;
+            }
+            throw exception;
+        }
     }
 
     public void deleteObject(String objectKey) {

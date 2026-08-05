@@ -75,4 +75,8 @@ public class PostgresSearchEngine {
                 document.getId()
         );
     }
+
+    public void removeIndex(Long documentId) {
+        jdbcTemplate.update("DELETE FROM document_search_index WHERE document_id = ?", documentId);
+    }
 }

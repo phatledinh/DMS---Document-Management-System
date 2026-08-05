@@ -20,4 +20,9 @@ public class UserController {
     public ApiResponse<UserResponse> me() {
         return ApiResponse.success(userService.getCurrentUser());
     }
+
+    @GetMapping
+    public ApiResponse<java.util.List<UserResponse>> getAllUsers() {
+        return ApiResponse.success(userService.getAllUsers());
+    }
 }

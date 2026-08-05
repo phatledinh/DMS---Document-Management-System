@@ -20,11 +20,12 @@ vi.mock('react-toastify', () => ({
   toast: {
     error: vi.fn(),
     success: vi.fn(),
+    warning: vi.fn(),
   },
 }));
 
-vi.mock('../hooks/useUploadDocument.js', () => ({
-  useUploadDocument: () => uploadMutation,
+vi.mock('../hooks/useBatchUploadDocuments.js', () => ({
+  useBatchUploadDocuments: () => uploadMutation,
 }));
 
 vi.mock('../../../utils/response.js', () => ({
@@ -48,13 +49,16 @@ describe('UploadDocumentPage', () => {
   beforeEach(() => {
     navigate.mockClear();
     uploadMutation.mutateAsync.mockReset();
-    uploadMutation.mutateAsync.mockResolvedValue({ documentId: 42 });
+    uploadMutation.mutateAsync.mockResolvedValue({
+      init: { succeeded: 1, failed: 0, items: [] },
+      complete: { succeeded: 1, failed: 0, items: [] },
+    });
     uploadMutation.isPending = false;
     uploadMutation.isError = false;
     uploadMutation.error = null;
   });
 
-  it('rejects dangerous files before submitting upload-init', async () => {
+  it('rejects dangerous files before submitting batch upload-init', async () => {
     const user = userEvent.setup();
     const { toast } = await import('react-toastify');
     const { container } = renderPage();
@@ -66,13 +70,12 @@ describe('UploadDocumentPage', () => {
     expect(uploadMutation.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it('runs upload-init, presigned PUT, and upload-complete mutation for a valid PDF', async () => {
+  it('runs batch upload mutation for a valid PDF', async () => {
     const user = userEvent.setup();
     const { container } = renderPage();
 
     const file = new File(['pdf'], 'policy.pdf', { type: 'application/pdf' });
     await user.upload(getFileInput(container), file);
-    await user.type(screen.getByLabelText('Tiêu đề'), 'Chính sách chất lượng');
     await user.type(screen.getByLabelText('Danh mục'), '10');
     await user.click(screen.getByLabelText('Phòng ban'));
     await user.keyboard('20{Enter}');
@@ -80,16 +83,18 @@ describe('UploadDocumentPage', () => {
 
     await waitFor(() => expect(uploadMutation.mutateAsync).toHaveBeenCalled());
     const call = uploadMutation.mutateAsync.mock.calls[0][0];
-    expect(call.file).toBe(file);
-    expect(call.payload).toMatchObject({
-      title: 'Chính sách chất lượng',
-      categoryId: 10,
-      accessLevel: 'DEPARTMENT',
+    expect(Object.values(call.filesByClientItemId)).toContain(file);
+    expect(call.payload.files[0]).toMatchObject({
       fileName: 'policy.pdf',
       fileSize: file.size,
       contentType: 'application/pdf',
+      title: 'policy',
+    });
+    expect(call.payload).toMatchObject({
+      categoryId: 10,
+      accessLevel: 'DEPARTMENT',
+      visibility: 'DEPARTMENT',
     });
     expect(call.payload.departmentIds).toEqual([20]);
-    expect(navigate).toHaveBeenCalledWith('/documents/42');
   });
 });

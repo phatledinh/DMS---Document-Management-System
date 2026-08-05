@@ -1,53 +1,125 @@
 import {
-  AppstoreOutlined,
-  BellOutlined,
   EyeOutlined,
   FileImageOutlined,
   FilePdfOutlined,
   FileTextOutlined,
-  FilterOutlined,
-  FolderOpenOutlined,
   HistoryOutlined,
-  QuestionCircleOutlined,
-  SearchOutlined,
-  SecurityScanOutlined,
-  SettingOutlined,
-  ShopOutlined,
   SyncOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
+import { Alert, Button, Table, Tag } from 'antd';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useRetryDocumentIndexing } from '../../documents/hooks/useDocumentLifecycle.js';
+import { useProcessingErrors } from '../hooks/useProcessingErrors.js';
 import styles from './ProcessingErrorsPage.module.css';
 
-
-const summaryCards = [
-  { label: 'Tổng số lỗi', value: '124', helper: '12%', tone: 'error', icon: <WarningOutlined /> },
-  { label: 'Quá thời gian (Timeout)', value: '42', helper: 'tài liệu', tone: 'warning', icon: <HistoryOutlined /> },
-  { label: 'Lỗi trích xuất (Extraction)', value: '82', helper: 'tài liệu', tone: 'tertiary', icon: <FileTextOutlined /> },
-];
-
-const rows = [
-  { id: 1, title: 'Bao_cao_tai_chinh_Q3_2023_Final_Draft_v2.pdf', type: 'PDF', status: 'EXTRACTION_FAILED', retry: '2/3', failedAt: '10:45 12/10/2023', file: 'pdf' },
-  { id: 2, title: 'Hop_dong_lao_dong_Nguyen_Van_A_signed.docx', type: 'DOCX', status: 'TIMEOUT', retry: '1/3', failedAt: '09:15 12/10/2023', file: 'doc' },
-  { id: 3, title: 'Scan_CCCD_Mat_Truoc_HQ.png', type: 'PNG', status: 'CORRUPTED_FILE', retry: '3/3', failedAt: '16:30 11/10/2023', file: 'image', retryDisabled: true },
-  { id: 4, title: 'Quy_trinh_van_hanh_kho_v3.pdf', type: 'PDF', status: 'EXTRACTION_FAILED', retry: '0/3', failedAt: '14:20 11/10/2023', file: 'pdf' },
-];
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+}
 
 function FileIcon({ type }) {
-  if (type === 'pdf') return <span className={styles.pdfIcon}><FilePdfOutlined /></span>;
-  if (type === 'image') return <span className={styles.imageIcon}><FileImageOutlined /></span>;
+  const normalized = type?.toUpperCase();
+  if (normalized === 'PDF') return <span className={styles.pdfIcon}><FilePdfOutlined /></span>;
+  if (['PNG', 'JPG', 'JPEG'].includes(normalized)) return <span className={styles.imageIcon}><FileImageOutlined /></span>;
   return <span className={styles.docIcon}><FileTextOutlined /></span>;
 }
 
 export default function ProcessingErrorsPage() {
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(20);
+  const errorsQuery = useProcessingErrors({ page, size });
+  const retryMutation = useRetryDocumentIndexing();
+  const rows = errorsQuery.data?.content || [];
+
+  async function retryDocument(documentId) {
+    try {
+      await retryMutation.mutateAsync(documentId);
+      toast.success('Đã gửi yêu cầu retry indexing.');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+      throw error;
+    }
+  }
+
+  async function retryCurrentPage() {
+    const documentIds = rows.map((row) => row.documentId).filter(Boolean);
+    if (!documentIds.length) {
+      toast.info('Không có tài liệu lỗi trên trang hiện tại.');
+      return;
+    }
+    const results = await Promise.allSettled(documentIds.map(retryDocument));
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (failed) {
+      toast.warn(`Đã retry ${documentIds.length - failed}/${documentIds.length} tài liệu.`);
+    }
+  }
+
+  const summaryCards = useMemo(() => {
+    const total = errorsQuery.data?.totalElements || 0;
+    const extractionFailed = rows.filter((row) => row.status === 'EXTRACTION_FAILED').length;
+    const retrying = rows.filter((row) => (row.retryCount || 0) > 0).length;
+    return [
+      { label: 'Tổng số lỗi', value: total, helper: 'tài liệu', tone: 'error', icon: <WarningOutlined /> },
+      { label: 'Đã retry', value: retrying, helper: 'trong trang', tone: 'warning', icon: <HistoryOutlined /> },
+      { label: 'Extraction failed', value: extractionFailed, helper: 'trong trang', tone: 'tertiary', icon: <FileTextOutlined /> },
+    ];
+  }, [errorsQuery.data?.totalElements, rows]);
+
+  const columns = [
+    {
+      title: 'Tài liệu',
+      dataIndex: 'title',
+      render: (title, record) => <div className={styles.titleCell}><FileIcon type={record.fileType} /><strong>{title}</strong></div>,
+    },
+    {
+      title: 'Loại',
+      dataIndex: 'fileType',
+      width: 90,
+      render: (value) => <span className={styles.monoCell}>{value || '—'}</span>,
+    },
+    {
+      title: 'Trạng thái lỗi',
+      dataIndex: 'status',
+      width: 180,
+      render: (value) => <Tag color="red">{value || 'FAILED'}</Tag>,
+    },
+    {
+      title: 'Retry',
+      dataIndex: 'retryCount',
+      width: 100,
+      render: (value) => <span className={styles.monoCell}>{value || 0}</span>,
+    },
+    {
+      title: 'Thông báo lỗi',
+      dataIndex: 'errorMessage',
+      ellipsis: true,
+      render: (value) => value || '—',
+    },
+    {
+      title: 'Cập nhật',
+      dataIndex: 'updatedAt',
+      width: 170,
+      render: formatDate,
+    },
+    {
+      title: 'Thao tác',
+      width: 120,
+      render: (_, record) => (
+        <div className={styles.rowActions}>
+          <button disabled={retryMutation.isPending} title="Retry extraction/search refresh" type="button" onClick={() => retryDocument(record.documentId)}><SyncOutlined /></button>
+          <Link to={`/admin/documents/${record.documentId}`}><EyeOutlined /></Link>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className={styles.page}>
-
       <main className={styles.pageBody}>
-
         <div className={styles.canvas}>
           <div className={styles.container}>
             <section className={styles.pageHeader}>
@@ -55,8 +127,10 @@ export default function ProcessingErrorsPage() {
                 <div className={styles.breadcrumbs}><Link to="/audit-logs">Audit Logs</Link><span>›</span><strong>Processing Errors</strong></div>
                 <h2>TÀI LIỆU LỖI XỬ LÝ</h2>
               </div>
-              <button className={styles.retryAllButton} type="button"><SyncOutlined />Retry tất cả</button>
+              <Button icon={<SyncOutlined />} loading={retryMutation.isPending} onClick={retryCurrentPage}>Retry trang hiện tại</Button>
             </section>
+
+            {errorsQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(errorsQuery.error)} />}
 
             <section className={styles.summaryGrid}>
               {summaryCards.map((card) => (
@@ -71,42 +145,23 @@ export default function ProcessingErrorsPage() {
             </section>
 
             <section className={styles.tablePanel}>
-              <div className={styles.toolbar}>
-                <label className={styles.selectBox}>
-                  <FilterOutlined />
-                  <select defaultValue="all"><option value="all">Tất cả loại lỗi</option><option>TIMEOUT</option><option>EXTRACTION_FAILED</option><option>CORRUPTED_FILE</option></select>
-                </label>
-                <div className={styles.tableMeta}><span>Hiển thị 1-10 của 124</span><button type="button">‹</button><button type="button">›</button></div>
-              </div>
-
-              <div className={styles.tableScroller}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Tiêu đề tài liệu</th>
-                      <th>Loại</th>
-                      <th>Trạng thái lỗi</th>
-                      <th>Retry</th>
-                      <th>Thời gian lỗi</th>
-                      <th>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.id}</td>
-                        <td><div className={styles.titleCell}><FileIcon type={row.file} /><strong>{row.title}</strong></div></td>
-                        <td className={styles.monoCell}>{row.type}</td>
-                        <td><span className={row.status === 'TIMEOUT' ? styles.timeoutBadge : styles.errorBadge}><span />{row.status}</span></td>
-                        <td className={row.retryDisabled ? styles.retryError : styles.monoCell}>{row.retry}</td>
-                        <td className={styles.dateCell}>{row.failedAt}</td>
-                        <td><div className={styles.rowActions}><button disabled={row.retryDisabled} type="button"><SyncOutlined /></button><button type="button"><EyeOutlined /></button></div></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table
+                rowKey="documentId"
+                columns={columns}
+                dataSource={rows}
+                loading={errorsQuery.isLoading || errorsQuery.isFetching}
+                pagination={{
+                  current: page + 1,
+                  pageSize: size,
+                  total: errorsQuery.data?.totalElements || 0,
+                  showSizeChanger: true,
+                  onChange: (nextPage, nextSize) => {
+                    setPage(nextPage - 1);
+                    setSize(nextSize);
+                  },
+                }}
+                scroll={{ x: 900 }}
+              />
             </section>
           </div>
         </div>

@@ -16,23 +16,33 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(DocumentProcessingProperties.class)
+@EnableConfigurationProperties({DocumentProcessingProperties.class, DocumentOcrProperties.class, DocumentPreviewProperties.class, DocumentTrashProperties.class})
 public class DocumentProcessingRabbitConfig {
     public static final String TASKS_EXCHANGE = "dms.tasks";
     public static final String DEAD_LETTER_EXCHANGE = "dms.dlx";
     public static final String RETRY_EXCHANGE = "dms.retry";
     public static final String EXTRACT_QUEUE = "dms.extract";
+    public static final String OCR_QUEUE = "dms.ocr";
+    public static final String PREVIEW_QUEUE = "dms.preview";
     public static final String INDEX_QUEUE = "dms.index";
     public static final String DLQ = "dms.dlq";
     public static final String EXTRACT_RETRY_30S_QUEUE = "dms.extract.retry.30s";
     public static final String EXTRACT_RETRY_5M_QUEUE = "dms.extract.retry.5m";
     public static final String EXTRACT_RETRY_30M_QUEUE = "dms.extract.retry.30m";
+    public static final String PREVIEW_RETRY_30S_QUEUE = "dms.preview.retry.30s";
+    public static final String PREVIEW_RETRY_5M_QUEUE = "dms.preview.retry.5m";
+    public static final String PREVIEW_RETRY_30M_QUEUE = "dms.preview.retry.30m";
     public static final String EXTRACT_ROUTING_KEY = "extract";
+    public static final String OCR_ROUTING_KEY = "ocr";
+    public static final String PREVIEW_ROUTING_KEY = "preview";
     public static final String INDEX_ROUTING_KEY = "index";
     public static final String DLQ_ROUTING_KEY = "dlq";
     public static final String EXTRACT_RETRY_30S_ROUTING_KEY = "extract.retry.30s";
     public static final String EXTRACT_RETRY_5M_ROUTING_KEY = "extract.retry.5m";
     public static final String EXTRACT_RETRY_30M_ROUTING_KEY = "extract.retry.30m";
+    public static final String PREVIEW_RETRY_30S_ROUTING_KEY = "preview.retry.30s";
+    public static final String PREVIEW_RETRY_5M_ROUTING_KEY = "preview.retry.5m";
+    public static final String PREVIEW_RETRY_30M_ROUTING_KEY = "preview.retry.30m";
 
     @Bean
     DirectExchange tasksExchange() {
@@ -58,6 +68,22 @@ public class DocumentProcessingRabbitConfig {
     }
 
     @Bean
+    Queue ocrQueue() {
+        return QueueBuilder.durable(OCR_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
+    Queue previewQueue() {
+        return QueueBuilder.durable(PREVIEW_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(DLQ_ROUTING_KEY)
+                .build();
+    }
+
+    @Bean
     Queue indexQueue() {
         return QueueBuilder.durable(INDEX_QUEUE)
                 .deadLetterExchange(DEAD_LETTER_EXCHANGE)
@@ -72,22 +98,47 @@ public class DocumentProcessingRabbitConfig {
 
     @Bean
     Queue extractRetry30sQueue() {
-        return retryQueue(EXTRACT_RETRY_30S_QUEUE, 30_000);
+        return retryQueue(EXTRACT_RETRY_30S_QUEUE, 30_000, EXTRACT_ROUTING_KEY);
     }
 
     @Bean
     Queue extractRetry5mQueue() {
-        return retryQueue(EXTRACT_RETRY_5M_QUEUE, 300_000);
+        return retryQueue(EXTRACT_RETRY_5M_QUEUE, 300_000, EXTRACT_ROUTING_KEY);
     }
 
     @Bean
     Queue extractRetry30mQueue() {
-        return retryQueue(EXTRACT_RETRY_30M_QUEUE, 1_800_000);
+        return retryQueue(EXTRACT_RETRY_30M_QUEUE, 1_800_000, EXTRACT_ROUTING_KEY);
+    }
+
+    @Bean
+    Queue previewRetry30sQueue() {
+        return retryQueue(PREVIEW_RETRY_30S_QUEUE, 30_000, PREVIEW_ROUTING_KEY);
+    }
+
+    @Bean
+    Queue previewRetry5mQueue() {
+        return retryQueue(PREVIEW_RETRY_5M_QUEUE, 300_000, PREVIEW_ROUTING_KEY);
+    }
+
+    @Bean
+    Queue previewRetry30mQueue() {
+        return retryQueue(PREVIEW_RETRY_30M_QUEUE, 1_800_000, PREVIEW_ROUTING_KEY);
     }
 
     @Bean
     Binding extractBinding(Queue extractQueue, DirectExchange tasksExchange) {
         return BindingBuilder.bind(extractQueue).to(tasksExchange).with(EXTRACT_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding ocrBinding(Queue ocrQueue, DirectExchange tasksExchange) {
+        return BindingBuilder.bind(ocrQueue).to(tasksExchange).with(OCR_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding previewBinding(Queue previewQueue, DirectExchange tasksExchange) {
+        return BindingBuilder.bind(previewQueue).to(tasksExchange).with(PREVIEW_ROUTING_KEY);
     }
 
     @Bean
@@ -116,6 +167,21 @@ public class DocumentProcessingRabbitConfig {
     }
 
     @Bean
+    Binding previewRetry30sBinding(Queue previewRetry30sQueue, DirectExchange retryExchange) {
+        return BindingBuilder.bind(previewRetry30sQueue).to(retryExchange).with(PREVIEW_RETRY_30S_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding previewRetry5mBinding(Queue previewRetry5mQueue, DirectExchange retryExchange) {
+        return BindingBuilder.bind(previewRetry5mQueue).to(retryExchange).with(PREVIEW_RETRY_5M_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding previewRetry30mBinding(Queue previewRetry30mQueue, DirectExchange retryExchange) {
+        return BindingBuilder.bind(previewRetry30mQueue).to(retryExchange).with(PREVIEW_RETRY_30M_ROUTING_KEY);
+    }
+
+    @Bean
     MessageConverter messageConverter() {
         return new Jackson2JsonMessageConverter();
     }
@@ -137,11 +203,11 @@ public class DocumentProcessingRabbitConfig {
         return factory;
     }
 
-    private Queue retryQueue(String queueName, int ttlMillis) {
+    private Queue retryQueue(String queueName, int ttlMillis, String targetRoutingKey) {
         return QueueBuilder.durable(queueName)
                 .ttl(ttlMillis)
                 .deadLetterExchange(TASKS_EXCHANGE)
-                .deadLetterRoutingKey(EXTRACT_ROUTING_KEY)
+                .deadLetterRoutingKey(targetRoutingKey)
                 .build();
     }
 }

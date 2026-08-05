@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, EyeOutlined, HistoryOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Descriptions, Empty, Flex, Modal, Space, Spin, Tag, Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -18,7 +18,7 @@ import {
 import styles from './DocumentDetailPage.module.css';
 
 const { Title, Text, Paragraph } = Typography;
-const PREVIEWABLE_TYPES = ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'image'];
+const PREVIEWABLE_TYPES = ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'image', 'doc', 'docx', 'xls', 'xlsx'];
 
 function canPreviewFile(document) {
   const type = String(document?.fileType || document?.mimeType || document?.fileName || '').toLowerCase();
@@ -108,6 +108,9 @@ export default function DocumentDetailPage() {
             </Space>
           </Space>
           <Space>
+            <Button icon={<HistoryOutlined />} onClick={() => navigate(`/admin/documents/${document.id}/history`)}>
+              Versions
+            </Button>
             <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
               Preview
             </Button>
@@ -123,7 +126,7 @@ export default function DocumentDetailPage() {
             type={document.status === 'EXTRACTION_FAILED' ? 'error' : 'info'}
             showIcon
             message="Tài liệu chưa sẵn sàng để preview/download"
-            description="Backend chỉ cấp presigned URL cho tài liệu đã INDEXED."
+            description="Backend chỉ cấp presigned URL sau khi trích xuất/OCR và INDEXED."
           />
         )}
 

@@ -64,6 +64,9 @@ public class DocumentMetadataService {
         User user = currentUserProvider.getRequiredUser();
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND));
+        if (document.getPermanentlyDeletedAt() != null) {
+            throw new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND);
+        }
         AccessDecision decision = accessPolicyService.canViewMetadata(user, document);
         if (!decision.granted()) {
             throw detailDenied(decision);
@@ -75,6 +78,7 @@ public class DocumentMetadataService {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
             boolean admin = user.getRole() == Role.ADMIN;
+            predicates.add(builder.isNull(root.get("permanentlyDeletedAt")));
             if (admin && request.status() != null) {
                 predicates.add(builder.equal(root.get("status"), request.status()));
             } else {
