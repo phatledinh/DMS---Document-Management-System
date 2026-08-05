@@ -11,7 +11,7 @@ import {
 import { Button, Form, Input, Modal, Select } from "antd";
 import { toast } from "react-toastify";
 import { getDepartments } from "../../../api/departmentApi.js";
-import { createUser, getUsers } from "../../../api/userApi.js";
+import { createUser, deleteUser, getUsers, updateUser } from "../../../api/userApi.js";
 import { getApiErrorMessage } from "../../../utils/response.js";
 import styles from "./UsersPage.module.css";
 
@@ -49,11 +49,14 @@ function formatDateTime(value) {
 
 export default function UsersPage() {
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [isLoadingUsers, setLoadingUsers] = useState(false);
   const [isSubmitting, setSubmitting] = useState(false);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
 
   const departmentById = useMemo(
     () => new Map(departments.map((department) => [department.id, department])),
@@ -105,6 +108,12 @@ export default function UsersPage() {
     form.resetFields();
   }
 
+  function closeEditModal() {
+    setEditModalOpen(false);
+    setEditingUser(null);
+    editForm.resetFields();
+  }
+
   async function handleCreateUser(values) {
     setSubmitting(true);
     try {
@@ -126,6 +135,78 @@ export default function UsersPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleUpdateUser(values) {
+    if (!editingUser) return;
+    setSubmitting(true);
+    try {
+      await updateUser(editingUser.id, {
+        name: values.name.trim(),
+        password: values.password || null,
+        phone: values.phone?.trim() || null,
+        departmentId: values.departmentId || null,
+        role: values.role,
+        status: values.status,
+      });
+      toast.success("Đã cập nhật người dùng");
+      closeEditModal();
+      await loadUsers();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function openEditModal(user) {
+    setEditingUser(user);
+    editForm.setFieldsValue({
+      name: user.name,
+      phone: user.phone,
+      departmentId: user.departmentId,
+      role: user.role || "USER",
+      status: user.status || "ACTIVE",
+    });
+    setEditModalOpen(true);
+  }
+
+  function handleToggleLock(user) {
+    const nextStatus = user.status === "BANNED" ? "ACTIVE" : "BANNED";
+    Modal.confirm({
+      title: user.status === "BANNED" ? "Mở khóa người dùng" : "Khóa người dùng",
+      content: `Bạn có chắc chắn muốn ${user.status === "BANNED" ? "mở khóa" : "khóa"} người dùng "${user.name}"?`,
+      okText: user.status === "BANNED" ? "Mở khóa" : "Khóa",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          await updateUser(user.id, { status: nextStatus });
+          toast.success(user.status === "BANNED" ? "Đã mở khóa người dùng" : "Đã khóa người dùng");
+          await loadUsers();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+        }
+      },
+    });
+  }
+
+  function handleDeleteUser(user) {
+    Modal.confirm({
+      title: "Xác nhận xóa",
+      content: `Bạn có chắc chắn muốn xóa người dùng "${user.name}"?`,
+      okText: "Xóa",
+      okType: "danger",
+      cancelText: "Hủy",
+      onOk: async () => {
+        try {
+          await deleteUser(user.id);
+          toast.success("Đã xóa người dùng");
+          await loadUsers();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+        }
+      },
+    });
   }
 
   function getDepartmentName(departmentId) {
@@ -260,20 +341,13 @@ export default function UsersPage() {
                           <td>{formatDateTime(user.lastLogin)}</td>
                           <td>
                             <div className={styles.rowActions}>
-                              <button title="Sửa" type="button">
+                              <button title="Sửa" type="button" onClick={() => openEditModal(user)}>
                                 <EditOutlined />
                               </button>
-                              <button
-                                title={isLocked ? "Mở khóa" : "Khóa"}
-                                type="button"
-                              >
-                                {isLocked ? (
-                                  <UnlockOutlined />
-                                ) : (
-                                  <LockOutlined />
-                                )}
+                              <button title={isLocked ? "Mở khóa" : "Khóa"} type="button" onClick={() => handleToggleLock(user)}>
+                                {isLocked ? <UnlockOutlined /> : <LockOutlined />}
                               </button>
-                              <button title="Xóa" type="button">
+                              <button title="Xóa" type="button" onClick={() => handleDeleteUser(user)}>
                                 <DeleteOutlined />
                               </button>
                             </div>
@@ -316,11 +390,7 @@ export default function UsersPage() {
           initialValues={{ role: "USER", status: "ACTIVE" }}
           onFinish={handleCreateUser}
         >
-          <Form.Item
-            name="name"
-            label="Họ tên"
-            rules={[{ required: true, message: "Vui lòng nhập họ tên." }]}
-          >
+          <Form.Item name="name" label="Họ tên" rules={[{ required: true, message: "Vui lòng nhập họ tên." }]}>
             <Input placeholder="Ví dụ: Nguyễn Văn A" />
           </Form.Item>
           <Form.Item
@@ -333,11 +403,7 @@ export default function UsersPage() {
           >
             <Input placeholder="user@company.com" />
           </Form.Item>
-          <Form.Item
-            name="password"
-            label="Mật khẩu"
-            rules={[{ required: true, message: "Vui lòng nhập mật khẩu." }]}
-          >
+          <Form.Item name="password" label="Mật khẩu" rules={[{ required: true, message: "Vui lòng nhập mật khẩu." }]}>
             <Input.Password placeholder="Nhập mật khẩu" />
           </Form.Item>
           <Form.Item name="phone" label="Số điện thoại">
@@ -347,35 +413,47 @@ export default function UsersPage() {
             <Input placeholder="https://example.com/avatar.png" />
           </Form.Item>
           <Form.Item name="departmentId" label="Phòng ban">
-            <Select
-              allowClear
-              placeholder="Chọn phòng ban"
-              options={departmentOptions}
-            />
+            <Select allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
           </Form.Item>
-          <Form.Item
-            name="role"
-            label="Vai trò"
-            rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}
-          >
+          <Form.Item name="role" label="Vai trò" rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}>
             <Select options={roleOptions} />
           </Form.Item>
-          <Form.Item
-            name="status"
-            label="Trạng thái"
-            rules={[{ required: true, message: "Vui lòng chọn trạng thái." }]}
-          >
+          <Form.Item name="status" label="Trạng thái" rules={[{ required: true, message: "Vui lòng chọn trạng thái." }]}>
             <Select options={statusOptions} />
           </Form.Item>
           <div className={styles.modalActions}>
             <Button onClick={closeCreateModal}>Hủy</Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<PlusOutlined />}
-              loading={isSubmitting}
-            >
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={isSubmitting}>
               Thêm người dùng
+            </Button>
+          </div>
+        </Form>
+      </Modal>
+
+      <Modal title="Cập nhật người dùng" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnClose>
+        <Form form={editForm} layout="vertical" onFinish={handleUpdateUser}>
+          <Form.Item name="name" label="Họ tên" rules={[{ required: true, message: "Vui lòng nhập họ tên." }]}>
+            <Input placeholder="Ví dụ: Nguyễn Văn A" />
+          </Form.Item>
+          <Form.Item name="password" label="Mật khẩu mới">
+            <Input.Password placeholder="Bỏ trống nếu không đổi mật khẩu" />
+          </Form.Item>
+          <Form.Item name="phone" label="Số điện thoại">
+            <Input placeholder="Ví dụ: 0901234567" />
+          </Form.Item>
+          <Form.Item name="departmentId" label="Phòng ban">
+            <Select allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
+          </Form.Item>
+          <Form.Item name="role" label="Vai trò" rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}>
+            <Select options={roleOptions} />
+          </Form.Item>
+          <Form.Item name="status" label="Trạng thái" rules={[{ required: true, message: "Vui lòng chọn trạng thái." }]}>
+            <Select options={statusOptions} />
+          </Form.Item>
+          <div className={styles.modalActions}>
+            <Button onClick={closeEditModal}>Hủy</Button>
+            <Button type="primary" htmlType="submit" icon={<EditOutlined />} loading={isSubmitting}>
+              Cập nhật
             </Button>
           </div>
         </Form>

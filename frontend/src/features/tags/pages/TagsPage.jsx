@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AppstoreOutlined,
   DeleteOutlined,
@@ -6,66 +6,156 @@ import {
   FilterOutlined,
   PlusOutlined,
   TagsOutlined,
-  SettingOutlined,
-  TeamOutlined,
 } from '@ant-design/icons';
-import { Button, Form, Input, Modal, Select } from 'antd';
+import { Button, Form, Input, Modal } from 'antd';
 import { toast } from 'react-toastify';
+import {
+  createTag,
+  deleteTag,
+  getTags,
+  updateTag,
+} from '../../../api/tagApi.js';
+import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './TagsPage.module.css';
 
+function normalizeList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
 
-const initialTags = [
-  { id: 1, name: 'ISO 9001', slug: 'iso-9001', count: 142, createdAt: '12/10/2023', tone: 'primary', icon: <TagsOutlined /> },
-  { id: 2, name: 'Quy Trình', slug: 'quy-trinh', count: 85, createdAt: '15/10/2023', tone: 'success', icon: <AppstoreOutlined /> },
-  { id: 3, name: 'Kỹ Thuật', slug: 'ky-thuat', count: 210, createdAt: '18/10/2023', tone: 'tertiary', icon: <SettingOutlined /> },
-  { id: 4, name: 'Nhân Sự', slug: 'nhan-su', count: 56, createdAt: '20/10/2023', tone: 'warning', icon: <TeamOutlined /> },
-  { id: 5, name: 'Quan Trọng', slug: 'quan-trong', count: 24, createdAt: '22/10/2023', tone: 'danger', icon: <PlusOutlined /> },
-];
-
-function slugify(value) {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN').format(new Date(value));
 }
 
 export default function TagsPage() {
   const [form] = Form.useForm();
-  const [tags, setTags] = useState(initialTags);
+  const [editForm] = Form.useForm();
+  const [tags, setTags] = useState([]);
+  const [filterText, setFilterText] = useState('');
+  const [isLoading, setLoading] = useState(false);
+  const [isSubmitting, setSubmitting] = useState(false);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState(null);
+
+  const filteredTags = tags.filter((tag) => {
+    const keyword = filterText.trim().toLowerCase();
+    if (!keyword) return true;
+    return tag.name?.toLowerCase().includes(keyword) || tag.slug?.toLowerCase().includes(keyword);
+  });
+
+  async function loadTags() {
+    setLoading(true);
+    try {
+      const data = await getTags();
+      setTags(normalizeList(data));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+      setTags([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadTags();
+  }, []);
 
   function closeCreateModal() {
     setCreateModalOpen(false);
     form.resetFields();
   }
 
-  function handleCreateTag(values) {
-    const nextId = Math.max(...tags.map((tag) => tag.id), 0) + 1;
-    const name = values.name.trim();
-    setTags((current) => [
-      ...current,
-      {
-        id: nextId,
-        name,
-        slug: values.slug?.trim() || slugify(name),
-        count: 0,
-        createdAt: new Date().toLocaleDateString('vi-VN'),
-        tone: values.tone,
-        icon: <TagsOutlined />,
+  function closeEditModal() {
+    setEditModalOpen(false);
+    setEditingTag(null);
+    editForm.resetFields();
+  }
+
+  function openEditModal(tag) {
+    setEditingTag(tag);
+    editForm.setFieldsValue({ name: tag.name, slug: tag.slug });
+    setEditModalOpen(true);
+  }
+
+  function toPayload(values) {
+    return {
+      name: values.name.trim(),
+      slug: values.slug?.trim() || null,
+    };
+  }
+
+  async function handleCreateTag(values) {
+    setSubmitting(true);
+    try {
+      await createTag(toPayload(values));
+      toast.success('Đã thêm tag mới');
+      closeCreateModal();
+      await loadTags();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateTag(values) {
+    if (!editingTag) return;
+    setSubmitting(true);
+    try {
+      await updateTag(editingTag.id, toPayload(values));
+      toast.success('Đã cập nhật tag');
+      closeEditModal();
+      await loadTags();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleDeleteTag(tag) {
+    Modal.confirm({
+      title: 'Xác nhận xóa',
+      content: `Bạn có chắc chắn muốn xóa tag "${tag.name}"?`,
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          await deleteTag(tag.id);
+          toast.success('Đã xóa tag');
+          await loadTags();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+        }
       },
-    ]);
-    toast.success('Đã thêm tag mới');
-    closeCreateModal();
+    });
+  }
+
+  function renderTagForm(targetForm, onFinish, submitText) {
+    return (
+      <Form form={targetForm} layout="vertical" onFinish={onFinish}>
+        <Form.Item name="name" label="Tên tag" rules={[{ required: true, message: 'Vui lòng nhập tên tag.' }]}>
+          <Input placeholder="Ví dụ: Quan trọng" />
+        </Form.Item>
+        <Form.Item name="slug" label="Slug">
+          <Input placeholder="Tự tạo nếu bỏ trống" />
+        </Form.Item>
+        <div className={styles.modalActions}>
+          <Button onClick={submitText === 'Cập nhật' ? closeEditModal : closeCreateModal}>Hủy</Button>
+          <Button type="primary" htmlType="submit" icon={<PlusOutlined />} loading={isSubmitting}>{submitText}</Button>
+        </div>
+      </Form>
+    );
   }
 
   return (
     <div className={styles.page}>
-
       <main className={styles.pageBody}>
-
         <div className={styles.canvas}>
           <div className={styles.container}>
             <section className={styles.pageHeader}>
@@ -80,7 +170,7 @@ export default function TagsPage() {
               <div className={styles.toolbar}>
                 <label className={styles.filterBox}>
                   <FilterOutlined />
-                  <input placeholder="Lọc theo tên hoặc slug..." type="text" />
+                  <input placeholder="Lọc theo tên hoặc slug..." type="text" value={filterText} onChange={(event) => setFilterText(event.target.value)} />
                 </label>
                 <div className={styles.pageSize}>Hiển thị:<select defaultValue="10"><option>10</option><option>20</option><option>50</option></select><span>/ trang</span></div>
               </div>
@@ -98,17 +188,23 @@ export default function TagsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tags.map((tag) => (
-                      <tr key={tag.slug}>
-                        <td>{tag.id}</td>
-                        <td><span className={`${styles.tagPill} ${styles[tag.tone]}`}>{tag.icon}{tag.name}</span></td>
+                    {isLoading && (
+                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>Đang tải tags...</td></tr>
+                    )}
+                    {!isLoading && filteredTags.length === 0 && (
+                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>Chưa có tag nào</td></tr>
+                    )}
+                    {!isLoading && filteredTags.map((tag, index) => (
+                      <tr key={tag.id || tag.slug}>
+                        <td>{index + 1}</td>
+                        <td><span className={`${styles.tagPill} ${styles.primary}`}><TagsOutlined />{tag.name}</span></td>
                         <td className={styles.slugCell}>{tag.slug}</td>
-                        <td className={styles.countCell}><span>{tag.count}</span></td>
-                        <td className={styles.dateCell}>{tag.createdAt}</td>
+                        <td className={styles.countCell}><span>{tag.documentCount ?? 0}</span></td>
+                        <td className={styles.dateCell}>{formatDate(tag.createdAt)}</td>
                         <td>
                           <div className={styles.rowActions}>
-                            <button title="Chỉnh sửa" type="button"><EditOutlined /></button>
-                            <button title="Xóa" type="button"><DeleteOutlined /></button>
+                            <button title="Chỉnh sửa" type="button" onClick={() => openEditModal(tag)}><EditOutlined /></button>
+                            <button title="Xóa" type="button" onClick={() => handleDeleteTag(tag)}><DeleteOutlined /></button>
                           </div>
                         </td>
                       </tr>
@@ -118,15 +214,11 @@ export default function TagsPage() {
               </div>
 
               <footer className={styles.pagination}>
-                <span>Hiển thị 1-5 trong số 24 tags</span>
+                <span>Hiển thị <strong>{filteredTags.length ? 1 : 0}</strong> đến <strong>{filteredTags.length}</strong> trong <strong>{filteredTags.length}</strong> tags</span>
                 <div>
                   <button type="button" disabled>‹</button>
                   <button className={styles.currentPage} type="button">1</button>
-                  <button type="button">2</button>
-                  <button type="button">3</button>
-                  <span>...</span>
-                  <button type="button">5</button>
-                  <button type="button">›</button>
+                  <button type="button" disabled>›</button>
                 </div>
               </footer>
             </section>
@@ -134,38 +226,12 @@ export default function TagsPage() {
         </div>
       </main>
 
-      <Modal
-        title="Thêm tag mới"
-        open={isCreateModalOpen}
-        onCancel={closeCreateModal}
-        footer={null}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical" onFinish={handleCreateTag} initialValues={{ tone: 'primary' }}>
-          <Form.Item name="name" label="Tên tag" rules={[{ required: true, message: 'Vui lòng nhập tên tag.' }]}>
-            <Input placeholder="Ví dụ: Quan trọng" />
-          </Form.Item>
-          <Form.Item name="slug" label="Slug">
-            <Input placeholder="Tự tạo nếu bỏ trống" />
-          </Form.Item>
-          <Form.Item name="tone" label="Màu hiển thị" rules={[{ required: true, message: 'Vui lòng chọn màu hiển thị.' }]}>
-            <Select
-              options={[
-                { label: 'Xanh dương', value: 'primary' },
-                { label: 'Xanh lá', value: 'success' },
-                { label: 'Tím', value: 'tertiary' },
-                { label: 'Vàng', value: 'warning' },
-                { label: 'Đỏ', value: 'danger' },
-              ]}
-            />
-          </Form.Item>
-          <div className={styles.modalActions}>
-            <Button onClick={closeCreateModal}>Hủy</Button>
-            <Button type="primary" htmlType="submit" icon={<PlusOutlined />}>
-              Thêm tag
-            </Button>
-          </div>
-        </Form>
+      <Modal title="Thêm tag mới" open={isCreateModalOpen} onCancel={closeCreateModal} footer={null} destroyOnClose>
+        {renderTagForm(form, handleCreateTag, 'Thêm tag')}
+      </Modal>
+
+      <Modal title="Cập nhật tag" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnClose>
+        {renderTagForm(editForm, handleUpdateTag, 'Cập nhật')}
       </Modal>
     </div>
   );
