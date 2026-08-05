@@ -40,6 +40,10 @@ public class DepartmentService {
 
     @Transactional
     public DepartmentResponse createDepartment(DepartmentRequest request) {
+        if (departmentRepository.existsByCodeAndDeletedAtIsNull(request.code())) {
+            throw new AppException(ErrorCodes.CONFLICT, "Mã phòng ban đã được sử dụng", HttpStatus.CONFLICT);
+        }
+
         Department department = new Department();
         department.setName(request.name());
         department.setCode(request.code());
@@ -47,7 +51,7 @@ public class DepartmentService {
         if (request.isActive() != null) {
             department.setActive(request.isActive());
         }
-        
+
         department = departmentRepository.save(department);
         return departmentMapper.toResponse(department);
     }
@@ -55,7 +59,10 @@ public class DepartmentService {
     @Transactional
     public DepartmentResponse updateDepartment(Long id, DepartmentRequest request) {
         Department department = getDepartmentEntityById(id);
-        
+        if (departmentRepository.existsByCodeAndIdNotAndDeletedAtIsNull(request.code(), id)) {
+            throw new AppException(ErrorCodes.CONFLICT, "Mã phòng ban đã được sử dụng", HttpStatus.CONFLICT);
+        }
+
         department.setName(request.name());
         department.setCode(request.code());
         department.setDescription(request.description());
@@ -63,7 +70,7 @@ public class DepartmentService {
             department.setActive(request.isActive());
         }
         department.setUpdatedAt(OffsetDateTime.now());
-        
+
         department = departmentRepository.save(department);
         return departmentMapper.toResponse(department);
     }

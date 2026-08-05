@@ -11,4 +11,6 @@ import java.util.Optional;
 public interface DepartmentRepository extends JpaRepository<Department, Long> {
     List<Department> findByIsActiveTrueAndDeletedAtIsNull();
     Optional<Department> findByIdAndDeletedAtIsNull(Long id);
+    boolean existsByCodeAndDeletedAtIsNull(String code);
+    boolean existsByCodeAndIdNotAndDeletedAtIsNull(String code, Long id);
 }

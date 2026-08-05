@@ -2,6 +2,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "DmsApplication",
+            "request": "launch",
+            "mainClass": "com.dms.DmsApplication",
+            "projectName": ""
+        },
+        {
+            "type": "java",
             "name": "Spring Boot-DmsApplication<backend>",
             "request": "launch",
             "cwd": "${workspaceFolder}",
@@ -19,6 +26,17 @@
             "projectName": "dms",
             "args": "",
             "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-DmsApplication<ph.com-dms>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.dms.DmsApplication",
+            "projectName": "ph.com-dms",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env",
+            "vmArgs": " -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=56227 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Dspring.jmx.enabled=true -Djava.rmi.server.hostname=localhost -Dspring.application.admin.enabled=true -Dspring.boot.project.name=ph.com-dms"
         }
     ]
 }

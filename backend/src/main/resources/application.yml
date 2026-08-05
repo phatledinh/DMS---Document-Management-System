@@ -20,7 +20,7 @@ spring:
                 prefetch: ${SPRING_RABBITMQ_LISTENER_PREFETCH:1}
 
     datasource:
-        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/dms}
+        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/dms}
         username: ${SPRING_DATASOURCE_USERNAME:postgres}
         password: ${SPRING_DATASOURCE_PASSWORD:123456}
 
@@ -42,9 +42,8 @@ logging:
         org.springframework.security: TRACE
 
 app:
-
     jwt:
-        secret: ${JWT_SECRET}
+        secret: ${JWT_SECRET:this-is-a-default-secret-key-that-is-at-least-32-bytes-long}
         access-expiration: ${JWT_ACCESS_EXPIRATION:900000}
         refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
     storage:
