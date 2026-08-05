@@ -2,6 +2,8 @@ package com.dms.common.exception;
 
 public final class ErrorCodes {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
+    public static final String CONFLICT = "CONFLICT";
+    public static final String NOT_FOUND = "NOT_FOUND";
     public static final String BATCH_OPERATION_PARTIAL_FAILED = "BATCH_OPERATION_PARTIAL_FAILED";
     public static final String DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND";
     public static final String DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY";
