@@ -81,6 +81,8 @@ public class DocumentMetadataService {
             predicates.add(builder.isNull(root.get("permanentlyDeletedAt")));
             if (admin && request.status() != null) {
                 predicates.add(builder.equal(root.get("status"), request.status()));
+            } else if (admin) {
+                predicates.add(builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED)));
             } else {
                 predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
             }

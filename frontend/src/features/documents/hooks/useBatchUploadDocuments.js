@@ -32,6 +32,7 @@ export function useBatchUploadDocuments() {
 
       const uploadableItems = initItems.filter((item) => item.success);
       const uploadedItems = [];
+      const uploadFailures = [];
 
       await runWithConcurrency(uploadableItems, async (item) => {
         const file = filesByClientItemId[item.clientItemId];
@@ -48,6 +49,7 @@ export function useBatchUploadDocuments() {
           uploadedItems.push({ clientItemId: item.clientItemId, documentId: item.documentId });
           onItemChange?.(item.clientItemId, { status: 'completing', progress: 100 });
         } catch (error) {
+          uploadFailures.push({ clientItemId: item.clientItemId, documentId: item.documentId, error });
           onItemChange?.(item.clientItemId, { status: 'upload_failed', error: error.message });
         }
       });
@@ -65,7 +67,7 @@ export function useBatchUploadDocuments() {
         );
       });
 
-      return { init: initResponse, complete: completeResponse };
+      return { init: initResponse, uploadFailures, complete: completeResponse };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });

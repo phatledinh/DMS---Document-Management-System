@@ -30,7 +30,7 @@ public class StorageConfig {
     public S3Presigner s3Presigner(StorageProperties properties) {
         StorageProperties.S3 s3 = properties.s3();
         return S3Presigner.builder()
-                .endpointOverride(URI.create(s3.endpoint()))
+                .endpointOverride(URI.create(s3.presignEndpoint()))
                 .region(Region.of(s3.region()))
                 .credentialsProvider(credentialsProvider(s3))
                 .serviceConfiguration(serviceConfiguration(s3))

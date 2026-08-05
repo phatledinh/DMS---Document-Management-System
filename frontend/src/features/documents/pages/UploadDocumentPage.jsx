@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { InboxOutlined, UploadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, DatePicker, Form, Input, Progress, Radio, Select, Space, Table, Tag, Typography, Upload } from 'antd';
+import { Alert, Button, Card, DatePicker, Form, Input, Progress, Select, Space, Table, Tag, TreeSelect, Typography, Upload } from 'antd';
 import { toast } from 'react-toastify';
+import { getCategories } from '../../../api/categoryApi.js';
+import { getTags } from '../../../api/tagApi.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import { formatFileSize } from '../utils/documentFormatters.js';
 import { useBatchUploadDocuments } from '../hooks/useBatchUploadDocuments.js';
@@ -45,12 +47,77 @@ function statusTag(status) {
   return <Tag color={meta[0]}>{meta[1]}</Tag>;
 }
 
+function buildCategoryTree(categories) {
+  const byId = new Map(categories.map((c) => [c.id, { ...c, children: [] }]));
+  const roots = [];
+  byId.forEach((c) => {
+    if (c.parentId && byId.has(c.parentId)) {
+      byId.get(c.parentId).children.push(c);
+    } else {
+      roots.push(c);
+    }
+  });
+  return roots;
+}
+
+function buildTreeSelectData(tree) {
+  return tree.map((node) => ({
+    title: node.name,
+    value: node.id,
+    children: node.children?.length > 0 ? buildTreeSelectData(node.children) : [],
+  }));
+}
+
 export default function UploadDocumentPage() {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const uploadMutation = useBatchUploadDocuments();
   const [items, setItems] = useState([]);
-  const accessLevel = Form.useWatch('accessLevel', form) || 'DEPARTMENT';
+  const [categoryList, setCategoryList] = useState([]);
+  const [tagList, setTagList] = useState([]);
+  const [isCategoryLoading, setCategoryLoading] = useState(false);
+  const [isTagLoading, setTagLoading] = useState(false);
+
+  const categoryTreeData = useMemo(() => {
+    const tree = buildCategoryTree(categoryList);
+    return buildTreeSelectData(tree);
+  }, [categoryList]);
+
+  const tagOptions = useMemo(
+    () => tagList.map((tag) => ({ label: tag.name, value: tag.id })),
+    [tagList],
+  );
+
+  useEffect(() => {
+    async function fetchCategories() {
+      setCategoryLoading(true);
+      try {
+        const data = await getCategories({ activeOnly: true });
+        const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
+        setCategoryList(list);
+      } catch {
+        setCategoryList([]);
+      } finally {
+        setCategoryLoading(false);
+      }
+    }
+
+    async function fetchTags() {
+      setTagLoading(true);
+      try {
+        const data = await getTags({ activeOnly: true });
+        const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
+        setTagList(list);
+      } catch {
+        setTagList([]);
+      } finally {
+        setTagLoading(false);
+      }
+    }
+
+    fetchCategories();
+    fetchTags();
+  }, []);
 
   const filesByClientItemId = useMemo(
     () => Object.fromEntries(items.map((item) => [item.clientItemId, item.file])),
@@ -102,10 +169,6 @@ export default function UploadDocumentPage() {
       })),
       categoryId: values.categoryId ? Number(values.categoryId) : undefined,
       tagIds: values.tagIds?.map(Number),
-      accessLevel: values.accessLevel,
-      visibility: values.accessLevel,
-      departmentIds: values.departmentIds?.map(Number),
-      sharedUserIds: values.sharedUserIds?.map(Number),
       effectiveDate: values.effectiveDate?.format('YYYY-MM-DD'),
       expiryDate: values.expiryDate?.format('YYYY-MM-DD'),
     };
@@ -113,11 +176,13 @@ export default function UploadDocumentPage() {
     try {
       const result = await uploadMutation.mutateAsync({ payload, filesByClientItemId, onItemChange: updateItem });
       const succeeded = result.complete?.succeeded || 0;
-      const failed = (result.init?.failed || 0) + (result.complete?.failed || 0);
+      const failed = (result.init?.failed || 0) + (result.uploadFailures?.length || 0) + (result.complete?.failed || 0);
       if (failed) {
         toast.warning(`Batch hoàn tất một phần: ${succeeded} thành công, ${failed} lỗi.`);
-      } else {
+      } else if (succeeded === items.length) {
         toast.success('Upload hoàn tất, tài liệu đang được xử lý.');
+      } else {
+        toast.warning('Upload chưa hoàn tất, vui lòng kiểm tra trạng thái từng file.');
       }
     } catch (error) {
       toast.error(getApiErrorMessage(error));
@@ -168,7 +233,7 @@ export default function UploadDocumentPage() {
 
               {uploadMutation.isError && <Alert type="error" showIcon message={getApiErrorMessage(uploadMutation.error)} />}
 
-              <Form form={form} layout="vertical" initialValues={{ accessLevel: 'DEPARTMENT' }} onFinish={handleSubmit}>
+              <Form form={form} layout="vertical" onFinish={handleSubmit}>
                 <Form.Item label="File tài liệu" required>
                   <Dragger {...uploadProps} disabled={uploadMutation.isPending}>
                     <p className="ant-upload-drag-icon"><InboxOutlined /></p>
@@ -183,12 +248,31 @@ export default function UploadDocumentPage() {
                   </Form.Item>
                 )}
 
-                <Form.Item name="categoryId" label="Danh mục" rules={[{ required: true, message: 'Vui lòng nhập ID danh mục.' }]}>
-                  <Input placeholder="Nhập categoryId khi API danh mục chưa sẵn sàng" />
+                <Form.Item name="categoryId" label="Danh mục" rules={[{ required: true, message: 'Vui lòng chọn danh mục.' }]}>
+                  <TreeSelect
+                    allowClear
+                    showSearch
+                    treeDefaultExpandAll
+                    placeholder="Chọn danh mục"
+                    treeData={categoryTreeData}
+                    loading={isCategoryLoading}
+                    treeLine
+                    filterTreeNode={(input, node) =>
+                      node.title.toLowerCase().includes(input.toLowerCase())
+                    }
+                  />
                 </Form.Item>
 
                 <Form.Item name="tagIds" label="Tags">
-                  <Select mode="tags" placeholder="Nhập tagId rồi Enter" tokenSeparators={[',']} />
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    placeholder="Chọn tags"
+                    options={tagOptions}
+                    loading={isTagLoading}
+                    optionFilterProp="label"
+                  />
                 </Form.Item>
 
                 <Space size="middle" style={{ width: '100%' }} align="start">
@@ -200,25 +284,6 @@ export default function UploadDocumentPage() {
                   </Form.Item>
                 </Space>
 
-                <Form.Item name="accessLevel" label="Quyền truy cập" rules={[{ required: true }]}>
-                  <Radio.Group>
-                    <Radio value="PUBLIC">Công khai</Radio>
-                    <Radio value="DEPARTMENT">Theo phòng ban</Radio>
-                    <Radio value="RESTRICTED">Giới hạn</Radio>
-                  </Radio.Group>
-                </Form.Item>
-
-                {accessLevel === 'DEPARTMENT' && (
-                  <Form.Item name="departmentIds" label="Phòng ban" rules={[{ required: true, message: 'Vui lòng nhập ít nhất một departmentId.' }]}>
-                    <Select mode="tags" placeholder="Nhập departmentId rồi Enter" tokenSeparators={[',']} />
-                  </Form.Item>
-                )}
-
-                {accessLevel === 'RESTRICTED' && (
-                  <Form.Item name="sharedUserIds" label="Người được chia sẻ" rules={[{ required: true, message: 'Vui lòng nhập ít nhất một userId.' }]}>
-                    <Select mode="tags" placeholder="Nhập userId rồi Enter" tokenSeparators={[',']} />
-                  </Form.Item>
-                )}
 
                 <Space>
                   <Button onClick={() => navigate('/admin/documents')} disabled={uploadMutation.isPending}>

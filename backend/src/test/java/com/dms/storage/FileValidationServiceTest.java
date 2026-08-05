@@ -17,7 +17,7 @@ class FileValidationServiceTest {
     @BeforeEach
     void setUp() {
         StorageProperties properties = new StorageProperties(
-                new StorageProperties.S3("http://localhost:9000", "dms-documents", "access", "secret", "auto", true),
+                new StorageProperties.S3("http://localhost:9000", null, "dms-documents", "access", "secret", "auto", true),
                 52_428_800,
                 Duration.ofMinutes(5),
                 Duration.ofMinutes(5),

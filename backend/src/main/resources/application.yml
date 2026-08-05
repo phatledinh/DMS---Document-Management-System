@@ -49,6 +49,7 @@ app:
     storage:
         s3:
             endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+            public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:${STORAGE_ENDPOINT:http://localhost:9000}}
             bucket: ${STORAGE_BUCKET:dms-documents}
             access-key: ${STORAGE_ACCESS_KEY}
             secret-key: ${STORAGE_SECRET_KEY}

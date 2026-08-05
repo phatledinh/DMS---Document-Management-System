@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
+  FolderFilled,
   FolderOpenFilled,
-  MoreOutlined,
   PlusOutlined,
+  RightOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Button, Form, Input, Modal, Select, Switch } from 'antd';
+import { Button, Form, Input, Modal, Switch, TreeSelect } from 'antd';
 import { toast } from 'react-toastify';
 import {
   createCategory,
@@ -41,15 +42,58 @@ function buildCategoryTree(categories) {
   return roots;
 }
 
-function TreeNode({ item, isLast, onAddChild, onEdit, onDelete }) {
+function buildTreeSelectData(tree, excludeId = null) {
+  return tree
+    .filter((node) => node.id !== excludeId)
+    .map((node) => ({
+      title: node.name,
+      value: node.id,
+      children: node.children?.length > 0 ? buildTreeSelectData(node.children, excludeId) : [],
+    }));
+}
+
+function collectAllIds(tree) {
+  const ids = new Set();
+  function walk(nodes) {
+    for (const node of nodes) {
+      if (node.children?.length > 0) {
+        ids.add(node.id);
+        walk(node.children);
+      }
+    }
+  }
+  walk(tree);
+  return ids;
+}
+
+function TreeNode({ item, isLast, level = 0, expandedIds, onToggle, onAddChild, onEdit, onDelete }) {
+  const hasChildren = item.children?.length > 0;
+  const isExpanded = expandedIds.has(item.id);
+
   return (
     <div className={`${styles.treeNode} ${isLast ? styles.lastNode : ''}`}>
       <div className={styles.nodeRow}>
+        {level > 0 && <div className={styles.childConnector} />}
         <div className={styles.nodeMain}>
-          {item.children?.length ? <DownOutlined className={styles.chevron} /> : <span className={styles.chevronPlaceholder}>›</span>}
-          <FolderOpenFilled className={item.isActive ? styles.folderPrimary : styles.folderIcon} />
+          {hasChildren ? (
+            <button
+              type="button"
+              className={styles.chevronButton}
+              onClick={() => onToggle(item.id)}
+              title={isExpanded ? 'Thu gọn' : 'Mở rộng'}
+            >
+              {isExpanded ? <DownOutlined className={styles.chevron} /> : <RightOutlined className={styles.chevron} />}
+            </button>
+          ) : (
+            <span className={styles.chevronPlaceholder}>›</span>
+          )}
+          {hasChildren && isExpanded
+            ? <FolderOpenFilled className={item.isActive ? styles.folderPrimary : styles.folderIcon} />
+            : <FolderFilled className={item.isActive ? styles.folderPrimary : styles.folderIcon} />
+          }
           <strong>{item.name}</strong>
           <span>({item.slug})</span>
+          {hasChildren && <span className={styles.childCount}>{item.children.length}</span>}
         </div>
         <div className={styles.nodeActions}>
           <button title="Thêm danh mục con" type="button" onClick={() => onAddChild(item)}><PlusOutlined /></button>
@@ -57,19 +101,20 @@ function TreeNode({ item, isLast, onAddChild, onEdit, onDelete }) {
           <button title="Xóa" type="button" onClick={() => onDelete(item)}><DeleteOutlined /></button>
         </div>
       </div>
-      {item.children?.length > 0 && (
+      {hasChildren && isExpanded && (
         <div className={styles.children}>
           {item.children.map((child, index) => (
-            <div key={child.id} className={styles.childRow}>
-              <div className={styles.childConnector} />
-              <span className={styles.childChevron}>›</span>
-              <FolderOpenFilled className={child.isActive ? styles.folderPrimary : styles.folderMuted} />
-              <span>{child.name}</span>
-              <small>({child.slug})</small>
-              <button title="Thao tác" type="button" onClick={() => onEdit(child)}><MoreOutlined /></button>
-              <button title="Xóa" type="button" onClick={() => onDelete(child)}><DeleteOutlined /></button>
-              {index === item.children.length - 1 && <div className={styles.lastChildMask} />}
-            </div>
+            <TreeNode
+              key={child.id}
+              item={child}
+              isLast={index === item.children.length - 1}
+              level={level + 1}
+              expandedIds={expandedIds}
+              onToggle={onToggle}
+              onAddChild={onAddChild}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       )}
@@ -86,12 +131,29 @@ export default function CategoriesPage() {
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
+  const [expandedIds, setExpandedIds] = useState(new Set());
 
   const categoryTree = useMemo(() => buildCategoryTree(categories), [categories]);
-  const parentOptions = useMemo(
-    () => categories.map((category) => ({ label: category.name, value: category.id })),
-    [categories],
-  );
+
+  const handleToggle = useCallback((id) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  function expandAll() {
+    setExpandedIds(collectAllIds(categoryTree));
+  }
+
+  function collapseAll() {
+    setExpandedIds(new Set());
+  }
 
   async function loadCategories() {
     setLoading(true);
@@ -201,9 +263,7 @@ export default function CategoriesPage() {
   }
 
   function renderCategoryForm(targetForm, onFinish, submitText) {
-    const options = editingCategory
-      ? parentOptions.filter((option) => option.value !== editingCategory.id)
-      : parentOptions;
+    const treeData = buildTreeSelectData(categoryTree, editingCategory?.id);
 
     return (
       <Form form={targetForm} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, sortOrder: 0 }}>
@@ -214,7 +274,17 @@ export default function CategoriesPage() {
           <Input placeholder="Tự tạo nếu bỏ trống" />
         </Form.Item>
         <Form.Item name="parentId" label="Danh mục cha">
-          <Select allowClear placeholder="Không chọn nếu là danh mục gốc" options={options} />
+          <TreeSelect
+            allowClear
+            showSearch
+            treeDefaultExpandAll
+            placeholder="Không chọn nếu là danh mục gốc"
+            treeData={treeData}
+            treeLine
+            filterTreeNode={(input, node) =>
+              node.title.toLowerCase().includes(input.toLowerCase())
+            }
+          />
         </Form.Item>
         <Form.Item name="description" label="Mô tả">
           <Input.TextArea rows={3} placeholder="Nhập mô tả ngắn cho danh mục" />
@@ -253,8 +323,8 @@ export default function CategoriesPage() {
               <div className={styles.treeHeader}>
                 <h3>Cấu trúc danh mục</h3>
                 <div>
-                  <button title="Mở rộng tất cả" type="button"><DownOutlined /></button>
-                  <button title="Thu gọn tất cả" type="button"><UpOutlined /></button>
+                  <button title="Mở rộng tất cả" type="button" onClick={expandAll}><DownOutlined /></button>
+                  <button title="Thu gọn tất cả" type="button" onClick={collapseAll}><UpOutlined /></button>
                 </div>
               </div>
               <div className={styles.treeContent}>
@@ -265,6 +335,8 @@ export default function CategoriesPage() {
                     key={item.id}
                     item={item}
                     isLast={index === categoryTree.length - 1}
+                    expandedIds={expandedIds}
+                    onToggle={handleToggle}
                     onAddChild={(category) => openCreateModal(category.id)}
                     onEdit={openEditModal}
                     onDelete={handleDeleteCategory}

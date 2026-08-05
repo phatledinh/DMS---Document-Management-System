@@ -20,12 +20,16 @@ public record StorageProperties(
 
     public record S3(
             String endpoint,
+            String publicEndpoint,
             String bucket,
             String accessKey,
             String secretKey,
             String region,
             boolean pathStyleAccess
     ) {
+        public String presignEndpoint() {
+            return publicEndpoint == null || publicEndpoint.isBlank() ? endpoint : publicEndpoint;
+        }
     }
 
     public record BatchUpload(
