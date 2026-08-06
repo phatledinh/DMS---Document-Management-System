@@ -309,9 +309,11 @@
   .pageWrapper {
     height: auto;
   }
+
   .splitLayout {
     flex-direction: column;
   }
+
   .sidebarSection {
     width: 100%;
   }

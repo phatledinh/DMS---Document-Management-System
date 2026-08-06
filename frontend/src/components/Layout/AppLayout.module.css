@@ -19,12 +19,84 @@
 
 .header {
   background: #ffffff;
-  border-bottom: 1px solid #edf0f5;
+  border-bottom: 1px solid #dadce0;
   padding: 0 24px;
+  height: 64px;
+  line-height: normal;
+  display: flex;
+  align-items: center;
 }
 
 .title {
   margin: 0 !important;
+}
+
+.brandInline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.brandText {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #005bbf;
+  letter-spacing: -0.01em;
+}
+
+/* Integrated header search bar */
+.headerSearchForm {
+  position: relative;
+  width: 380px;
+}
+
+.headerSearchInput {
+  width: 100%;
+  height: 40px;
+  padding: 8px 36px 8px 40px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  background: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: #202124;
+  outline: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.headerSearchInput:focus {
+  border-color: #005bbf;
+  box-shadow: 0 0 0 3px rgba(0, 91, 191, 0.1);
+}
+
+.headerSearchInput::placeholder {
+  color: #5f6368;
+}
+
+.headerSearchClear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 50%;
+  transition: background 0.15s, color 0.15s;
+}
+
+.headerSearchClear:hover {
+  background: #e7e8e9;
+  color: #005bbf;
 }
 
 .content {
