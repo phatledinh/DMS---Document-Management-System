@@ -15,9 +15,13 @@
 │     ├── (User) ──────────────────────────────────────┐              │
 │     │   [MH02] Trang tìm kiếm (Home)                │              │
 │     │   [MH03] Kết quả tìm kiếm                     │              │
-│     │   [MH04] Chi tiết tài liệu                    │              │
-│     │   [MH05] Preview tài liệu                     │              │
+│     │   [MH04] Chi tiết + Preview tài liệu          │              │
+│     │   [MH05] (gộp vào MH04)                       │              │
 │     │   [MH06] Profile cá nhân                       │              │
+│     │   [MH20] Dashboard cá nhân                     │              │
+│     │   [MH21] Tài liệu của tôi                      │              │
+│     │   [MH22] Version của tôi                       │              │
+│     │   [MH23] Lịch sử thao tác của tôi              │              │
 │     │                                                │              │
 │     └── (Admin) ─────────────────────────────────────┘              │
 │         [MH07] Dashboard (Admin Home)                               │
@@ -29,9 +33,10 @@
 │         [MH13] Quản lý phòng ban                                    │
 │         [MH14] Quản lý tags                                         │
 │         [MH15] Quản lý users                                        │
-│         [MH16] Audit & Access Log                                   │
+│         [MH16] Audit & Access Log / Audit Actions                  │
 │         [MH17] Tài liệu lỗi xử lý (Processing Errors)             │
 │         [MH18] Search & Access Analytics                            │
+│         [MH19] Thùng rác tài liệu                                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -194,104 +199,77 @@
 | 6 | Result Item | Card | Title (highlight), code, metadata, snippet (highlight) |
 | 7 | Pagination | Pagination | Phân trang kết quả |
 
-> Kết quả chỉ gồm tài liệu user có quyền (F3.2) và mặc định status `INDEXED`.
-> Facet count phải tôn trọng permission filter (F3.6).
-> Admin có thêm facet `status` và `accessLevel`.
+> Kết quả chỉ gồm tài liệu user có `VIEW` trên category (F3.2) và mặc định status `INDEXED`.
+> Facet count phải tôn trọng category permission filter (F3.6).
+> Admin có thêm facet `status`.
 > Mỗi lần search ghi search log qua F6.3.
 
 ---
 
-## MH04: Chi tiết tài liệu
+## MH04: Chi tiết + Preview tài liệu
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | URL | `/documents/{id}` hoặc `/documents/{slug}` |
 | Actor | Admin, User |
-| Mô tả | Trang chi tiết metadata + actions theo quyền và role |
+| Mô tả | Trang xem tài liệu với preview bên trái và panel thông tin/quyền hiệu lực/lịch sử/trạng thái bên phải |
 | Features liên quan | F2.4, F2.7, F2.8, F2.10, F2.11, F2.12, F2.13, F2.14, F2.15 |
 
 ### Layout
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│  ← Quay lại                                    [Avatar] │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
-│  📋 Quy trình ISO 9001 - Quản lý chất lượng            │
-│  Mã: SOP-QA-001 · Phiên bản: 1.2 · 🔒 DEPARTMENT       │
-│                                                          │
-│  [📖 Preview]  [⬇️ Download]                            │
-│  (Admin) [✏️ Sửa] [🗂️ Archive] [♻️ Restore] [🗑️ Xóa]  │
-│  (Admin) [⤴️ Upload version] [🔁 Retry indexing*]      │
-│                                                          │
-│  ─────────────────────────────────────────               │
-│  Mô tả:                                                 │
-│  Tài liệu mô tả quy trình quản lý chất lượng theo      │
-│  tiêu chuẩn ISO 9001:2015                               │
-│                                                          │
-│  ─────────────────────────────────────────               │
-│  Thông tin chi tiết:                                     │
-│  │ Danh mục:    Quy trình ISO                           │
-│  │ Loại file:   PDF · 2 MB · 25 trang                   │
-│  │ Tags:        [ISO] [Chất lượng]                      │
-│  │ Ngày upload: 21/07/2026                              │
-│  │ Hiệu lực:   01/01/2026 · Hết hạn: —                 │
-│  │ Lượt xem:    150 · Lượt tải: 45                      │
-│  │ Upload bởi:  Admin · Trạng thái: INDEXED             │
-│                                                          │
-│  ─── ACL (chỉ Admin) ─────────────────────               │
-│  │ Access Level: DEPARTMENT                             │
-│  │ Phòng ban:   QA, IT                                  │
-│  │ Owner:       admin@company.com                        │
-│  │ Shared users: —                                       │
-│                                                          │
-│  ─────────────────────────────────────────               │
-│  📜 Lịch sử phiên bản:                                  │
-│  │ v1.2 (current) — Cập nhật quy trình (20/07) [⬇️]     │
-│  │ v1.1 — Bổ sung phụ lục B (10/05)   [⬇️] (Admin ♻️)  │
-│  │ v1.0 — Phiên bản đầu tiên (15/01)  [⬇️] (Admin ♻️)  │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ← Quay lại    ISO 9001 - QA Process                         [Avatar] [▼]  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────┐ ┌───────────────────────┐ │
+│  │ PREVIEW TÀI LIỆU                             │ │ THÔNG TIN TÀI LIỆU    │ │
+│  │                                              │ │ 📋 Quy trình ISO 9001 │ │
+│  │  [PDF VIEWER / HTML PREVIEW / IMAGE]         │ │ Mã: SOP-QA-001        │ │
+│  │                                              │ │ Phiên bản: 1.2        │ │
+│  │  Nội dung tài liệu hiển thị trực tiếp        │ │ Trạng thái: INDEXED   │ │
+│  │  trong trình duyệt                           │ │ Quyền: VIEW, DOWNLOAD │ │
+│  │                                              │ │                       │ │
+│  │  [← Trang trước] Trang 1 / 25 [Trang sau →] │ │ ─ Thông tin chi tiết ─│ │
+│  │  [🔍 Zoom -] [🔍 Zoom +]                     │ │ Danh mục: ISO         │ │
+│  │                                              │ │ Loại file: PDF · 2MB  │ │
+│  └──────────────────────────────────────────────┘ │ Tags: [ISO] [QA]      │ │
+│                                                   │ Ngày upload: 21/07    │ │
+│                                                   │ Hiệu lực: 01/01/2026  │ │
+│                                                   │ Lượt xem/tải: 150/45  │ │
+│                                                   │ Upload bởi: Admin     │ │
+│                                                   │                       │ │
+│                                                   │ ─ Quyền category ────│ │
+│                                                   │ Category: ISO         │ │
+│                                                   │ Hiệu lực: VIEW, DOWNLOAD│ │
+│                                                   │ Nguồn: QA + IT          │ │
+│                                                   │                       │ │
+│                                                   │ ─ Lịch sử phiên bản ─│ │
+│                                                   │ v1.2 current [⬇️]     │ │
+│                                                   │ v1.1 [⬇️] (Admin ♻️) │ │
+│                                                   │ v1.0 [⬇️] (Admin ♻️) │ │
+│                                                   │                       │ │
+│                                                   │ [⬇️ Download]         │ │
+│                                                   │ (Admin) [✏️ Sửa]      │ │
+│                                                   │ (Admin) [🗂️ Archive]  │ │
+│                                                   │ (Admin) [⤴️ Version]  │ │
+│                                                   └───────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Business rules UI
+### Thành phần
 
-- Chỉ render nếu user có quyền truy cập; không có quyền → 404/403, không hiển thị metadata/URL.
-- User chỉ thấy tài liệu `INDEXED`; tài liệu `DELETED` không hiển thị.
-- Actions Admin: Sửa metadata/ACL, Archive, Restore, Xóa, Upload version, Retry indexing (chỉ khi `EXTRACTION_FAILED`).
-- Hiển thị `accessLevel` (PUBLIC/DEPARTMENT/RESTRICTED); khối ACL summary chỉ hiển thị với Admin.
-- Restore version (♻️) và Upload version chỉ hiển thị với Admin.
-- Không tăng `view_count` khi chỉ xem metadata; chỉ tăng khi preview (F2.4).
-
----
-
-## MH05: Preview tài liệu
-
-| Thuộc tính | Chi tiết |
-|------------|----------|
-| URL | `/documents/{id}/preview` (hoặc modal/overlay) |
-| Actor | Admin, User |
-| Mô tả | Xem tài liệu trực tiếp theo loại file |
-| Features liên quan | F2.7 |
-
-### Layout
-
-```text
-┌──────────────────────────────────────────────────────────┐
-│  ← Quay lại    ISO 9001 - QA Process       [⬇️ Tải về] │
-├──────────────────────────────────────────────────────────┤
-│  ┌──────────────────────────────────────────────────┐   │
-│  │                                                    │   │
-│  │      [PDF VIEWER / HTML PREVIEW / IMAGE]           │   │
-│  │                                                    │   │
-│  │      Nội dung tài liệu hiển thị trực tiếp         │   │
-│  │      trong trình duyệt                             │   │
-│  │                                                    │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                          │
-│  [← Trang trước]    Trang 1 / 25    [Trang sau →]      │
-│                     [🔍 Zoom +/-]                        │
-└──────────────────────────────────────────────────────────┘
-```
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Header / Back bar | Component | Quay lại, tên tài liệu rút gọn, user menu |
+| 2 | Preview Panel | Viewer | Khu vực bên trái, hiển thị PDF/HTML/Image trực tiếp |
+| 3 | Preview Controls | Toolbar | Chuyển trang, zoom, trạng thái preview/loading/error |
+| 4 | Detail Sidebar | Right Sidebar | Khu vực bên phải chứa thông tin chi tiết, trạng thái, actions |
+| 5 | Metadata Section | Info block | Danh mục, loại file, tags, ngày upload, hiệu lực, lượt xem/tải, uploader |
+| 6 | Permission Section | Admin/User info block | Quyền hiệu lực trên category và nguồn phòng ban đóng góp quyền |
+| 7 | Version History Section | List | Danh sách phiên bản, download từng phiên bản, restore với Admin |
+| 8 | Status Section | Badge/Info | Trạng thái xử lý: INDEXED, PROCESSING, EXTRACTION_FAILED, ARCHIVED, DELETED |
+| 9 | Action Buttons | Buttons | Download; Admin có Sửa, Archive/Restore/Xóa, Upload version, Retry indexing |
 
 ### Preview theo loại file
 
@@ -304,11 +282,21 @@
 
 ### Business rules UI
 
-- Kiểm tra quyền bằng cùng logic với search/detail/download.
-- Chỉ preview tài liệu `INDEXED`, không `DELETED`.
+- Chỉ render metadata/preview sau khi user có `VIEW` trên category; thiếu `VIEW` → 404/403, không hiển thị metadata/URL.
+- User chỉ thấy tài liệu `INDEXED`; tài liệu `DELETED` không hiển thị.
+- Download và tải version chỉ hiển thị/kích hoạt khi user có `DOWNLOAD`.
 - HTML preview phải được sanitize để tránh XSS.
-- Nếu conversion/preview lỗi: hiển thị thông báo lỗi và nút Download nếu user có quyền.
-- Ghi access log action = Preview (F6.2).
+- Nếu conversion/preview lỗi: hiển thị thông báo lỗi trong Preview Panel và nút Download nếu user có `DOWNLOAD`.
+- Actions sửa metadata/move/restore version chỉ hiển thị khi có `UPDATE`; archive/restore/xóa chỉ hiển thị khi có `DELETE`; upload version chỉ hiển thị khi có `UPLOAD`.
+- Permission section hiển thị quyền hiệu lực theo category, không chỉnh quyền trực tiếp tại tài liệu.
+- Restore version (♻️) và Upload version chỉ hiển thị khi user có quyền tương ứng.
+- Ghi access log action = Preview khi user mở/xem preview (F6.2); tăng `view_count` theo F2.4.
+
+---
+
+## MH05: Preview tài liệu (đã gộp vào MH04)
+
+MH05 không còn là màn hình riêng. Chức năng preview tài liệu được đưa vào khu vực bên trái của MH04; các thông tin chi tiết, quyền hiệu lực theo category, lịch sử phiên bản và trạng thái nằm ở sidebar bên phải.
 
 ---
 
@@ -354,7 +342,7 @@
 | URL | `/admin/dashboard` |
 | Actor | Admin |
 | Mô tả | Trang chủ Admin — thống kê tổng quan, có thể chia tab |
-| Features liên quan | F5.1, F5.2, F5.3 (và link tới MH18 cho F5.4–F5.6) |
+| Features liên quan | F5.1, F5.2, F5.3, F5.7, F5.8 (và link tới MH18 cho F5.4–F5.6) |
 
 ### Layout
 
@@ -370,8 +358,12 @@
 │ 🏢 Phòng ban │  │ Tài liệu│ │ Users  │ │ Dmục  │ │P.ban││
 │ 🏷️ Tags     │  └────────┘ └────────┘ └────────┘ └────┘│
 │ 👥 Users    │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│ 📋 Audit    │  │👁 12,340 │ │⬇ 4,210  │ │🔍 8,900 │    │
-│ ⚠️ Lỗi xử lý│  │ Preview  │ │ Download │ │ Search   │    │
+│ 📋 Audit    │  │💾 800MB  │ │👁 12,340 │ │⬇ 4,210  │    │
+│ ⚠️ Lỗi xử lý│  │ Tổng MB  │ │ Preview  │ │ Download │    │
+│             │  └──────────┘ └──────────┘ └──────────┘   │
+│             │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│             │  │🔍 8,900  │ │👤 65    │ │🚫 34    │    │
+│             │  │ Search   │ │Active Usr│ │Denied   │    │
 │             │  └──────────┘ └──────────┘ └──────────┘   │
 │             │                                           │
 │             │  ┌──────────────────┐ ┌─────────────────┐ │
@@ -394,15 +386,49 @@
 |-----|----------|---------|
 | Overview | Tổng documents/users/categories/departments; tổng preview/download/search; theo status/file type | F5.1 |
 | Overview | Top tài liệu xem/tải nhiều, upload gần đây | F5.2, F5.3 |
+| Storage | Card **Tổng MB** hiển thị tổng dung lượng file toàn hệ thống; có breakdown active/trash/version | F5.7 |
+| System Access | Card/tabs dữ liệu truy cập: tổng login, active users, unique access users, preview/download/search/denied access | F5.8 |
 | Search Analytics | Top search keywords, searchTime/resultCount trung bình | F5.4 (→ MH18) |
 | Access | Preview/download theo thời gian, unique users | F5.5 (→ MH18) |
-| Errors | Tài liệu PROCESSING lâu / EXTRACTION_FAILED, link tới MH17 | F5.6 (→ MH17) |
+| Errors | Danh sách tài liệu PROCESSING lâu / EXTRACTION_FAILED; hiển thị rõ lý do lỗi từng file | F5.6 (→ MH17) |
 
-> Có thể triển khai Search Analytics / Access / Errors dưới dạng tab của MH07 hoặc màn riêng MH18/MH17.
+### Dashboard metrics bắt buộc
+
+| Nhóm | Chỉ số hiển thị | Nguồn dữ liệu/API |
+|------|-----------------|-------------------|
+| Dung lượng | `totalStorageMb` / Tổng MB toàn hệ thống | `GET /admin/dashboard/storage` |
+| Dung lượng | `activeStorageMb`, `trashStorageMb`, `versionStorageMb` | `GET /admin/dashboard/storage` |
+| Truy cập | Tổng login, active users, unique access users | `GET /admin/dashboard/system-access` |
+| Truy cập | Tổng view/preview/download/search/denied access và denied theo permission thiếu | `GET /admin/dashboard/system-access` |
+| Lỗi file | Tên file, loại file, trạng thái, retry count, thời điểm lỗi gần nhất | `GET /admin/dashboard/processing-errors` |
+| Lỗi file | **Lý do bị lỗi**: `errorCode`, `errorMessage`, extraction/indexing stage thất bại | `GET /admin/dashboard/processing-errors` |
+
+### Error widget yêu cầu
+
+| Cột | Mô tả |
+|-----|------|
+| Tài liệu | Tiêu đề hoặc tên file lỗi |
+| File type | PDF/DOCX/XLSX/JPG... |
+| Status | `PROCESSING` lâu hoặc `EXTRACTION_FAILED` |
+| Lý do lỗi | Message cụ thể như OCR timeout, MIME mismatch, file corrupted, PostgreSQL search indexing failed |
+| Retry count | Số lần retry extraction/indexing |
+| Updated at | Thời điểm lỗi/cập nhật gần nhất |
+| Action | Retry indexing, xem chi tiết, tải file gốc nếu cần kiểm tra |
+
+> Có thể triển khai Search Analytics / Access / Errors dưới dạng tab của MH07 hoặc màn riêng MH18/MH17, nhưng MH07 phải có card/tóm tắt để Admin thấy ngay tổng MB, dữ liệu truy cập và lý do lỗi file nổi bật.
 
 ---
 
 ## MH08: Quản lý tài liệu (Admin)
+
+Batch actions bổ sung:
+
+- Table hỗ trợ row selection cho Admin.
+- Toolbar khi chọn tài liệu: `Move selected`, `Delete selected`.
+- `Move selected` mở modal chọn category/folder đích bằng category tree.
+- `Delete selected` gọi batch delete và đưa tài liệu vào Thùng rác.
+- Bảng cần hiển thị rõ `fileSize`, `category`, `status` để Admin kiểm soát dung lượng và vị trí folder.
+- Tab `Deleted` chỉ là shortcut filter; quản lý Trash đầy đủ dùng MH19.
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
@@ -419,7 +445,7 @@
 │         │                                                │
 │         │  Tabs: [Tất cả][Đang xử lý][Lỗi][Archived][Đã xóa]│
 │         │  Bộ lọc: [Danh mục▼][Phòng ban▼][Loại▼]      │
-│         │          [Access▼][Uploader▼][📅 Ngày]        │
+│         │          [Status▼][Uploader▼][📅 Ngày]        │
 │         │  Tìm kiếm: [________________] [🔍]            │
 │         │                                                │
 │         │  ┌────┬──────────┬──────┬──────┬──────┬─────┐ │
@@ -434,10 +460,11 @@
 │         │  Hiển thị 1-20 / 150    [← 1 2 3 ... 8 →]    │
 └──────────┴───────────────────────────────────────────────┘
 
-[⋮] Menu: Xem chi tiết | Sửa metadata/ACL | Preview | Download
+[⋮] Menu: Xem chi tiết | Sửa metadata | Preview | Download
           | Upload version | Xem versions
-          | Archive | Restore | Retry indexing* | Xóa (soft)
-   (* Retry indexing chỉ hiển thị khi status = EXTRACTION_FAILED)
+          | Archive | Restore | Retry processing/search refresh* | Xóa (soft)
+          | Actions ẩn/disable theo quyền category tương ứng
+   (* Retry processing/search refresh chỉ hiển thị khi status = EXTRACTION_FAILED)
 ```
 
 ### Filters
@@ -445,9 +472,8 @@
 | Filter | Giá trị |
 |--------|---------|
 | status | PROCESSING, INDEXED, EXTRACTION_FAILED, ARCHIVED, DELETED |
-| accessLevel | PUBLIC, DEPARTMENT, RESTRICTED |
-| category / department / fileType / tags | Theo master data |
-| owner / uploader | Theo user |
+| category / department / fileType / tags | Theo master data và category permission |
+| uploader | Theo user |
 | date range | effectiveDate / createdAt |
 
 ### Quick tabs
@@ -460,11 +486,19 @@
 
 ## MH09: Upload tài liệu
 
+Cập nhật multi-upload:
+
+- Drag/drop zone cho phép chọn nhiều file, mỗi file tối đa 50MB.
+- Metadata panel áp dụng mặc định cho toàn bộ file trong batch; mã tài liệu không nhập tay, mỗi file được backend tự sinh mã riêng sau upload.
+- UI hiển thị validation/progress/result theo từng file.
+- Upload một file vẫn là trường hợp đặc biệt của cùng màn hình; backend gọi `POST /documents/upload-init` cho 1 file hoặc `POST /documents/batch-upload-init` cho nhiều file, sau đó complete theo item.
+- Sau upload hiển thị summary: tổng file, thành công, thất bại, danh sách file lỗi và action retry.
+
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | URL | `/admin/documents/upload` |
 | Actor | Admin |
-| Mô tả | Form upload tài liệu mới với access level và ACL động |
+| Mô tả | Form upload tài liệu mới, kiểm tra `UPLOAD` theo danh mục đã chọn |
 | Features liên quan | F2.1 |
 
 ### Layout
@@ -482,15 +516,14 @@
 │         │                                                │
 │         │  Tiêu đề *:     [________________________]    │
 │         │  Mô tả:         [________________________]    │
-│         │  Mã tài liệu:   [________________________]    │
+│         │  Mã tài liệu:   [Tự sinh sau upload]          │
 │         │  Danh mục *:     [Chọn danh mục          ▼]   │
 │         │  Tags:           [🏷️ ISO] [🏷️ +Thêm tag...]  │
 │         │  Ngày hiệu lực:  [📅 __ /__ /____]           │
 │         │  Ngày hết hạn:   [📅 __ /__ /____]           │
 │         │                                                │
-│         │  Access Level *: (○ PUBLIC ● DEPARTMENT ○ RESTRICTED)│
-│         │   ├ nếu DEPARTMENT: [Chọn phòng ban (nhiều) ▼]│
-│         │   └ nếu RESTRICTED: [Owner ▼] [Shared users ▼]│
+│         │  Quyền yêu cầu: UPLOAD trên danh mục đã chọn   │
+│         │  Ghi chú: quyền xem/tải/sửa/xóa ăn theo category│
 │         │                                                │
 │         │  [    HỦY    ]   [    UPLOAD    ]             │
 └──────────┴───────────────────────────────────────────────┘
@@ -500,8 +533,7 @@
 
 - 1 file/request, size ≤ 50MB, đúng loại file cho phép.
 - Chặn extension nguy hiểm (`.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`).
-- Nếu `DEPARTMENT`: bắt buộc chọn ít nhất một phòng ban.
-- Nếu `RESTRICTED`: bắt buộc chọn owner hoặc ít nhất một shared user.
+- Khi chọn danh mục, UI có thể cảnh báo nếu current user không có `UPLOAD` trên danh mục đó.
 - Sau upload: hiển thị trạng thái `PROCESSING`, thông báo tài liệu đang được xử lý/index.
 
 ---
@@ -512,16 +544,17 @@
 |------------|----------|
 | URL | `/admin/documents/{id}/edit` |
 | Actor | Admin |
-| Mô tả | Form sửa metadata và ACL tài liệu (không đổi file) |
+| Mô tả | Form sửa metadata tài liệu (không đổi file), quyền theo category |
 | Features liên quan | F2.5 |
 
 Tương tự MH09 nhưng:
 
 - Không có phần upload file (đổi file dùng MH11 upload version mới).
 - Các field đã điền sẵn data hiện tại.
-- Cho phép sửa: `title`, `description`, `categoryId`, `documentCode`, `tagIds`, `effectiveDate`, `expiryDate`, `accessLevel` và ACL tương ứng (`departmentIds` / `ownerId` / `sharedUserIds`).
+- Cho phép sửa: `title`, `description`, `categoryId`, `tagIds`, `effectiveDate`, `expiryDate`. `documentCode` chỉ hiển thị read-only vì backend tự sinh.
 - Nút "LƯU THAY ĐỔI" thay vì "UPLOAD".
-- Cảnh báo: thay đổi `accessLevel`/ACL ảnh hưởng đến visibility trong search/detail/preview/download và sẽ re-index Elasticsearch.
+- Yêu cầu `UPDATE` trên category hiện tại; nếu đổi category thì yêu cầu `UPDATE` trên category nguồn và `UPLOAD` hoặc `UPDATE` trên category đích.
+- Cảnh báo: đổi category sẽ làm quyền hiệu lực của tài liệu đổi theo category mới; metadata/category/tags thay đổi có thể refresh PostgreSQL search row.
 
 ---
 
@@ -551,13 +584,13 @@ Tương tự MH09 nhưng:
 └──────────┴───────────────────────────────────────────────┘
 
 [Modal Upload version]: file *, versionNumber *, changelog
-[♻️ Restore]: chọn version cũ làm current → re-extract + re-index
+[♻️ Restore]: chọn version cũ làm current → re-extract + refresh search vector
 ```
 
 ### Business rules UI
 
 - Hiển thị: version number, current flag, uploader, uploadedAt, changelog, file type/size.
-- Actions: Download version (F2.11), Upload version mới (F2.9), Restore version làm current (F2.12).
+- Actions: Download version cần `DOWNLOAD` (F2.11), Upload version mới cần `UPLOAD` (F2.9), Restore version làm current cần `UPDATE` (F2.12).
 - Sau upload/restore version: hiển thị trạng thái `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`.
 - Version cũ không bị ghi đè.
 
@@ -569,8 +602,8 @@ Tương tự MH09 nhưng:
 |------------|----------|
 | URL | `/admin/categories` |
 | Actor | Admin |
-| Mô tả | CRUD danh mục dạng cây phân cấp |
-| Features liên quan | F4.1–F4.3 |
+| Mô tả | CRUD danh mục dạng cây phân cấp và cấu hình ma trận quyền phòng ban theo danh mục |
+| Features liên quan | F4.1–F4.3, F4.10, F4.11 |
 
 ### Layout
 
@@ -588,10 +621,18 @@ Tương tự MH09 nhưng:
 │         │     └── Biểu mẫu kỹ thuật (15)           [⋮]  │
 │         │  ► 📖 SOP (30 tài liệu)                 [⋮]  │
 │         │  ► 📝 Hướng dẫn (20 tài liệu)           [⋮]  │
+│         │                                                │
+│         │  [Panel quyền category đang chọn]              │
+│         │  Department        VIEW DOWNLOAD UPLOAD UPDATE DELETE│
+│         │  QA                ☑    ☑        ☐      ☑      ☐    │
+│         │  HR                ☑    ☐        ☑      ☐      ☐    │
 └──────────┴───────────────────────────────────────────────┘
 ```
 
-> Hỗ trợ parent/child, sort_order, icon; soft delete. Thay đổi ảnh hưởng filter search sẽ re-index tài liệu liên quan.
+> Hỗ trợ parent/child, sort_order, icon; soft delete. Thay đổi metadata ảnh hưởng filter search sẽ refresh search row cho tài liệu liên quan.
+> Section "Phân quyền" cho phép cấu hình quyền `VIEW/DOWNLOAD/UPLOAD/UPDATE/DELETE` theo phòng ban trong category.
+> User thuộc nhiều phòng ban được gộp quyền; thay đổi quyền có hiệu lực ở request tiếp theo và không cần refresh search index.
+> Có thể thêm tab "User overrides" sau này để cấu hình quyền riêng user trong phạm vi category/phòng ban.
 
 ---
 
@@ -606,7 +647,7 @@ Tương tự MH09 nhưng:
 
 Hiển thị dạng bảng đơn giản: Tên, Mã (code unique), Mô tả, Trạng thái (is_active), Actions.
 
-> Phòng ban dùng cho access level `DEPARTMENT`; thay đổi ACL/filter sẽ re-index tài liệu liên quan.
+> Phòng ban dùng cho user membership và ma trận quyền category. Khi user đổi phòng ban hoặc category permission đổi, không cần refresh search row vì query dùng quyền hiện tại.
 
 ---
 
@@ -630,7 +671,7 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 | URL | `/admin/users` |
 | Actor | Admin |
 | Mô tả | CRUD users |
-| Features liên quan | F1.6 |
+| Features liên quan | F1.6, F1.7 |
 
 ### Layout
 
@@ -651,15 +692,15 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 │         │  Hiển thị 1-20 / 85     [← 1 2 3 4 5 →]      │
 └──────────┴───────────────────────────────────────────────┘
 
-[+ Thêm user]: name, email, password, phone, role, departmentId
-[⋮] Menu: Xem chi tiết | Sửa (role/department/status) | Deactivate/Xóa mềm
+[+ Thêm user]: name, email, password, phone, role, departmentIds[]
+[⋮] Menu: Xem chi tiết | Sửa (role/danh sách phòng ban/status) | Deactivate/Xóa mềm
 ```
 
-> Email unique, phải chọn department tồn tại; chỉ Admin tạo user và đổi role.
+> Email unique; mỗi department trong `departmentIds[]` phải tồn tại và active. User có thể thuộc nhiều phòng ban; chỉ Admin tạo user, đổi role và đổi danh sách phòng ban.
 
 ---
 
-## MH16: Audit & Access Log
+## MH16: Audit & Access Log / Audit Actions
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
@@ -675,7 +716,7 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 │ SIDEBAR │  AUDIT & ACCESS LOG                          │
 │         │                                                │
 │         │  Tabs: [Audit] [Access] [Search]              │
-│         │  Bộ lọc: [Actor▼][Action▼][Document][📅 Ngày] │
+│         │  Bộ lọc: [Actor▼][Action▼][Document][Category][Permission][📅] │
 │         │  Từ khóa: [________________] [🔍]             │
 │         │                                                │
 │         │  ┌───────────┬───────┬─────────┬─────────────┐│
@@ -695,9 +736,9 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 
 | # | Element | Mô tả |
 |---|---------|-------|
-| 1 | Log Tabs | Audit (quản trị) / Access (preview,download) / Search (keyword) |
-| 2 | Filter Bar | actor/user, action, documentId/title, keyword, date range |
-| 3 | Log Table | timestamp, actor, action, resource/document, changedFields/metadata |
+| 1 | Log Tabs | Audit (quản trị) / Access (detail, preview, download, upload/update/delete attempt) / Search (keyword) |
+| 2 | Filter Bar | actor/user, action, documentId/title, categoryId, requiredPermission, denialReason, keyword, date range |
+| 3 | Log Table | timestamp, actor, action, resource/document/category, accessGranted, denialReason, changedFields/metadata |
 | 4 | Row link | Link sang MH04 chi tiết tài liệu |
 | 5 | Pagination | Phân trang |
 
@@ -727,11 +768,11 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 │         │  │ 2  │ Scan HĐ  │ TIFF │No OCR │ 0     │[🔁]││
 │         │  └────┴──────────┴──────┴────────┴───────┴────┘│
 │         │                                                │
-│         │  [Modal xác nhận Retry indexing]               │
+│         │  [Modal xác nhận Retry processing/search refresh]               │
 └──────────┴───────────────────────────────────────────────┘
 ```
 
-> Hiển thị error message, retry count, last retry time; nút Retry indexing (F2.15) với modal xác nhận.
+> Hiển thị error message, retry count, last retry time; nút Retry processing/search refresh (F2.15) với modal xác nhận.
 > Có thể triển khai như quick tab "Lỗi xử lý" của MH08 thay vì màn riêng.
 
 ---
@@ -748,16 +789,149 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 ### Nội dung
 
 - Top search keywords: keyword, số lần tìm, resultCount trung bình, searchTime trung bình (F5.4).
-- Access stats theo thời gian: preview/download count, unique users (F5.5).
+- Access stats theo thời gian: preview/download count, denied access theo permission, unique users (F5.5, F5.8).
 - Search performance: searchTime trung bình / P95 (bám NFR search latency).
 
 > Có thể gom vào tab "Search Analytics" và "Access" của MH07 thay vì màn riêng.
+
+
+---
+
+## MH19: Thùng rác tài liệu
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| URL | `/admin/trash` |
+| Actor | Admin |
+| Mô tả | Quản lý tài liệu đã xóa mềm, restore hoặc xóa vĩnh viễn trước/sau thời hạn purge |
+| Features liên quan | F2.19, F2.20 |
+
+### Thành phần
+
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Filter Bar | Form controls | Lọc theo danh mục/folder, loại file, người xóa, khoảng thời gian xóa |
+| 2 | Trash Table | Data Table + row selection | Title, file type, file size, category, deletedBy, deletedAt, purgeAfter, daysUntilPurge |
+| 3 | Row actions | Action menu | Restore, Permanent delete |
+| 4 | Batch toolbar | Buttons | Restore selected, Permanent delete selected |
+| 5 | Confirmation dialog | Modal | Xác nhận permanent delete vì thao tác không thể restore |
+
+Business rules:
+
+- Tài liệu trong MH19 có `status = DELETED`, không xuất hiện trong search/list/preview/download mặc định.
+- Restore gọi `POST /documents/trash/restore` và clear `deleted_at`, `deleted_by`, `purge_after`.
+- Permanent delete gọi `DELETE /documents/trash/permanent-delete`, xóa storage/content/search artifacts nhưng giữ audit logs.
+- Hiển thị `daysUntilPurge` để Admin biết tài liệu còn bao lâu trước khi hệ thống tự xóa sau 30 ngày.
+
+---
+
+## MH20: Dashboard cá nhân
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| URL | `/me` |
+| Actor | Admin, User |
+| Mô tả | Tổng quan thông tin người dùng, phòng ban, thống kê tài liệu và hoạt động gần đây của chính user |
+| Features liên quan | F1.8, F1.9, F1.11 |
+
+### Thành phần
+
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Profile Summary | Card | Avatar, name, email, role, department chips |
+| 2 | Permission Summary | Card/List | Tóm tắt category user có quyền `VIEW/DOWNLOAD/UPLOAD/UPDATE/DELETE` |
+| 3 | My Stats | Stat cards | Số tài liệu đã upload, preview/download gần đây, action bị từ chối |
+| 4 | Recent Documents | List | Tài liệu liên quan gần đây, vẫn áp `VIEW` trên category |
+| 5 | Recent Activity | Timeline | Search, preview, download, upload, update/delete attempt gần đây |
+
+Business rules:
+
+- User chỉ xem dashboard của chính mình.
+- Admin có thể mở dashboard của user từ MH15 để hỗ trợ audit/vận hành.
+- Mọi danh sách tài liệu/version vẫn áp category permission hiện tại.
+
+---
+
+## MH21: Tài liệu của tôi
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| URL | `/me/documents` |
+| Actor | Admin, User |
+| Mô tả | Danh sách tài liệu user đã upload hoặc từng thao tác |
+| Features liên quan | F1.9, F2.3, F2.4 |
+
+### Thành phần
+
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Filter Bar | Form controls | `type=uploaded/updated/downloaded/previewed`, category, status, date range |
+| 2 | My Document Table | Data Table | Title, code, category, status, uploadedAt, lastAction |
+| 3 | Action Menu | Menu | Xem chi tiết, preview, download nếu có quyền tương ứng |
+| 4 | Pagination | Pagination | Phân trang |
+
+Business rules:
+
+- User chỉ thấy tài liệu liên quan đến chính mình và hiện còn `VIEW` trên category.
+- Nếu user mất quyền `VIEW`, tài liệu không hiển thị dù từng upload/thao tác trước đó.
+- Admin có thể xem danh sách tài liệu của user bất kỳ từ MH15/MH16.
+
+---
+
+## MH22: Version của tôi
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| URL | `/me/versions` |
+| Actor | Admin, User |
+| Mô tả | Danh sách version user đã upload hoặc version thuộc tài liệu user được phép xem |
+| Features liên quan | F1.10, F2.10, F2.11 |
+
+### Thành phần
+
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Filter Bar | Form controls | document, category, status, date range |
+| 2 | Version Table | Data Table | Document title, version, uploadedAt, status, current flag |
+| 3 | Action Menu | Menu | Xem document, download version nếu có `DOWNLOAD` |
+| 4 | Pagination | Pagination | Phân trang |
+
+Business rules:
+
+- User chỉ thấy version nếu có `VIEW` trên category của tài liệu.
+- Download version vẫn yêu cầu `DOWNLOAD` tại endpoint download.
+
+---
+
+## MH23: Lịch sử thao tác của tôi
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| URL | `/me/activity` |
+| Actor | Admin, User |
+| Mô tả | Timeline hoạt động cá nhân: search, preview, download, upload, update, delete attempt và denied action |
+| Features liên quan | F1.11, F6.2, F6.3, F6.8 |
+
+### Thành phần
+
+| # | Element | Type | Mô tả |
+|---|---------|------|-------|
+| 1 | Filter Bar | Form controls | action, category, requiredPermission, accessGranted, date range |
+| 2 | Activity Timeline | Timeline/List | timestamp, action, target, permission, granted/denied |
+| 3 | Denial Detail | Badge/Tooltip | `MISSING_VIEW`, `MISSING_DOWNLOAD`, `MISSING_UPLOAD`, `MISSING_UPDATE`, `MISSING_DELETE` |
+| 4 | Link to Document | Link | Chỉ link nếu user hiện còn `VIEW` trên category |
+
+Business rules:
+
+- User chỉ xem lịch sử của chính mình.
+- Denied action của chính user có thể hiển thị `denialReason`, nhưng không lộ metadata tài liệu nếu user không có `VIEW` hiện tại.
+- Admin xem lịch sử user bất kỳ qua MH16 Audit Actions hoặc drill-down từ MH15.
 
 ---
 
 ## Tổng hợp màn hình theo Role
 
-### User Screens (6 màn hình)
+### User Screens (10 màn hình)
 
 | # | Màn hình | URL | Mô tả |
 |---|----------|-----|-------|
@@ -765,25 +939,30 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 | MH02 | Trang tìm kiếm | `/` | Home — search + autocomplete + tài liệu mới |
 | MH03 | Kết quả tìm kiếm | `/search?q=...` | Kết quả + facets + sort |
 | MH04 | Chi tiết tài liệu | `/documents/{id}` | Metadata + preview/download + versions |
-| MH05 | Preview | `/documents/{id}/preview` | PDF/HTML/Image viewer |
+| MH05 | Preview | `/documents/{id}/preview` | PDF/HTML/Image viewer dùng presigned preview URL |
 | MH06 | Profile | `/profile` | Xem/sửa thông tin cá nhân |
+| MH20 | Dashboard cá nhân | `/me` | Tổng quan thông tin user và hoạt động gần đây |
+| MH21 | Tài liệu của tôi | `/me/documents` | Tài liệu user đã upload/thao tác |
+| MH22 | Version của tôi | `/me/versions` | Version user đã upload hoặc được phép xem |
+| MH23 | Lịch sử thao tác của tôi | `/me/activity` | Timeline search/preview/download/upload/update/delete attempt |
 
-### Admin Screens (12 màn hình)
+### Admin Screens (13 màn hình)
 
 | # | Màn hình | URL | Mô tả |
 |---|----------|-----|-------|
 | MH07 | Dashboard | `/admin/dashboard` | Thống kê tổng quan (tabs) |
 | MH08 | Quản lý tài liệu | `/admin/documents` | Bảng + filter + lifecycle actions |
-| MH09 | Upload tài liệu | `/admin/documents/upload` | Form upload + access level/ACL |
-| MH10 | Sửa tài liệu | `/admin/documents/{id}/edit` | Sửa metadata + ACL |
+| MH09 | Upload tài liệu | `/admin/documents/upload` | Form upload, yêu cầu `UPLOAD` theo category |
+| MH10 | Sửa tài liệu | `/admin/documents/{id}/edit` | Sửa metadata/category/tags, yêu cầu `UPDATE` |
 | MH11 | Phiên bản | `/admin/documents/{id}/versions` | Version list + upload + restore |
 | MH12 | Quản lý danh mục | `/admin/categories` | CRUD cây phân cấp |
 | MH13 | Quản lý phòng ban | `/admin/departments` | CRUD bảng |
 | MH14 | Quản lý tags | `/admin/tags` | CRUD bảng |
 | MH15 | Quản lý users | `/admin/users` | CRUD bảng |
-| MH16 | Audit & Access Log | `/admin/audit-logs` | Tra cứu log |
-| MH17 | Tài liệu lỗi xử lý | `/admin/documents/processing-errors` | Retry indexing (hoặc tab MH08) |
+| MH16 | Audit & Access Log / Audit Actions | `/admin/audit-logs` | Tra cứu log và audit action timeline |
+| MH17 | Tài liệu lỗi xử lý | `/admin/documents/processing-errors` | Retry processing/search refresh (hoặc tab MH08) |
 | MH18 | Search & Access Analytics | `/admin/analytics` | Thống kê chuyên sâu (hoặc tab MH07) |
+| MH19 | Thùng rác tài liệu | `/admin/trash` | Restore/permanent delete tài liệu đã xóa mềm |
 
 > **Ghi chú**: Admin cũng truy cập được tất cả User Screens (MH01–MH06).
 > MH17 và MH18 có thể triển khai dưới dạng tab/section trong MH08/MH07 để giảm số màn.
@@ -800,18 +979,23 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 | MH04 | F2.4, F2.7, F2.8, F2.10, F2.11, F2.12, F2.13, F2.14, F2.15 |
 | MH05 | F2.7, F6.2 |
 | MH06 | F1.4, F1.5 |
-| MH07 | F5.1, F5.2, F5.3 |
-| MH08 | F2.3, F2.5, F2.6, F2.7, F2.8, F2.9, F2.10, F2.13, F2.14, F2.15 |
-| MH09 | F2.1 |
+| MH07 | F5.1, F5.2, F5.3, F5.7, F5.8 |
+| MH08 | F2.3, F2.5, F2.6, F2.7, F2.8, F2.9, F2.10, F2.13, F2.14, F2.15, F2.17, F2.18 |
+| MH09 | F2.1, F2.16 |
 | MH10 | F2.5 |
 | MH11 | F2.9, F2.10, F2.11, F2.12 |
-| MH12 | F4.1–F4.3 |
+| MH12 | F4.1–F4.3, F4.10, F4.11 |
 | MH13 | F4.4–F4.6 |
 | MH14 | F4.7–F4.9 |
-| MH15 | F1.6 |
-| MH16 | F6.1, F6.2, F6.3, F6.4 |
+| MH15 | F1.6, F1.7 |
+| MH16 | F6.1, F6.2, F6.3, F6.4, F6.6, F6.7 |
 | MH17 | F2.15, F5.6 |
-| MH18 | F5.4, F5.5 |
+| MH18 | F5.4, F5.5, F5.8 |
+| MH19 | F2.19, F2.20 |
+| MH20 | F1.8, F1.9, F1.11 |
+| MH21 | F1.9, F2.3, F2.4 |
+| MH22 | F1.10, F2.10, F2.11 |
+| MH23 | F1.11, F6.2, F6.3, F6.8 |
 
 ---
 
@@ -825,19 +1009,23 @@ Hiển thị dạng bảng hoặc tag cloud: Tên, Slug (tự sinh), Số tài l
 | Data Table | Bảng dữ liệu có sort/filter | MH08, MH13, MH14, MH15, MH16, MH17 |
 | Modal / Dialog | Confirm delete/archive/restore/retry, form nhỏ | CRUD & lifecycle |
 | Toast / Notification | Thông báo thành công/lỗi | Tất cả |
-| File Upload Zone | Drag & drop file (1 file, max 50MB) | MH09, MH11 |
+| File Upload Zone | Drag & drop một hoặc nhiều file, mỗi file max 50MB | MH09, MH11 |
 | Tag Input | Chọn/thêm tags | MH09, MH10 |
 | Tree View | Hiển thị cây phân cấp | MH12 |
 | Breadcrumb | Đường dẫn điều hướng | MH04, MH09, MH10 |
 | SearchAutocomplete | Gợi ý title/document code/tags | MH02, MH03 |
 | FacetFilterSidebar | Filter + facet counts | MH03 |
 | DateRangePicker | Chọn khoảng thời gian | MH02, MH03, MH08, MH16, MH18 |
-| AccessLevelSelector | Chọn PUBLIC/DEPARTMENT/RESTRICTED + ACL động | MH09, MH10 |
-| DepartmentMultiSelect | Chọn nhiều phòng ban | MH09, MH10 |
-| UserMultiSelect | Chọn owner/shared users | MH09, MH10 |
+| CategoryPermissionMatrix | Cấu hình `VIEW/DOWNLOAD/UPLOAD/UPDATE/DELETE` theo phòng ban | MH12 |
+| DepartmentMultiSelect | Chọn nhiều phòng ban cho user hoặc permission matrix | MH12, MH15 |
+| EffectivePermissionBadge | Hiển thị quyền hiệu lực của user trên category | MH04, MH08, MH20 |
+| ActivityTimeline | Timeline hoạt động user/audit action | MH16, MH20, MH23 |
+| MyDocumentTable | Bảng tài liệu cá nhân có filter theo action/category/status | MH21 |
+| MyVersionTable | Bảng version cá nhân có filter theo document/category/status | MH22 |
 | StatusBadge | Badge trạng thái tài liệu/user | MH04, MH08, MH15, MH17 |
 | ActionMenu | Menu [⋮] hành động theo quyền | MH08, MH11, MH15, MH16 |
-| ConfirmDialog | Xác nhận thao tác nhạy cảm | MH08, MH10, MH11, MH15, MH17 |
+| ConfirmDialog | Xác nhận thao tác nhạy cảm | MH08, MH10, MH11, MH15, MH17, MH19 |
+| MoveDocumentModal | Chọn category/folder đích cho một hoặc nhiều tài liệu | MH08 |
 | VersionTimeline | Timeline/bảng phiên bản | MH04, MH11 |
 | AuditLogTable | Bảng log audit/access/search | MH16 |
 | DashboardMetricCard | Stat card chỉ số | MH07, MH18 |

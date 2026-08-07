@@ -63,64 +63,60 @@ Access Token hết hạn (401 Unauthorized)
 Admin chọn "Upload tài liệu"
       ↓
 [Màn hình Upload] — Điền form:
-  • Chọn file (max 50MB)
+  • Chọn một hoặc nhiều file (mỗi file max 50MB)
   • Nhập tiêu đề, mô tả
   • Chọn danh mục
   • Gắn tags
-  • Nhập mã tài liệu (optional)
   • Chọn ngày hiệu lực (optional)
-  • Chọn access level: PUBLIC / DEPARTMENT / RESTRICTED
-  • Nếu DEPARTMENT: chọn một hoặc nhiều phòng ban được phép xem
-  • Nếu RESTRICTED: chọn owner hoặc danh sách user được chia sẻ trực tiếp
       ↓
 [Frontend] — Validate client-side
   • Kiểm tra file type (pdf, doc, docx, xls, xlsx, jpg, png, tiff)
   • Kiểm tra file size (≤ 50MB)
   • Kiểm tra required fields
-  • Kiểm tra dữ liệu phân quyền tương ứng access level
       ↓
-[DocumentController] — POST /documents (multipart/form-data)
+[DocumentController] — POST /documents/upload-init hoặc /documents/batch-upload-init
       ↓
-[FileUploadHandler] — Server-side validation
+[FileUploadHandler] — Server-side validation + category permission
+  ├── ❌ Không có `UPLOAD` trên danh mục → 403 Forbidden
   ├── ❌ File type không hợp lệ → 415 Unsupported Media Type
   ├── ❌ File quá lớn → 413 Payload Too Large
-  ├── ❌ Thiếu rule phân quyền → 400 Bad Request
   └── ✅ Hợp lệ
         ↓
-[S3StorageService] — Lưu file gốc vào object storage
-  • Dev/local: MinIO bucket
-  • Production: Cloudflare R2 bucket qua S3-compatible API
-  • Tạo UUID object key → tránh trùng lặp
-  • Lưu vào bucket `dms-documents` theo key `documents/YYYY/MM/{documentUuid}/versions/{versionUuid}/original.ext`
+[DocumentService] — Tạo metadata PostgreSQL
+  • Sinh UUID object key, client không được chọn storage path
+  • Tạo documents + document_versions + document_tags rows
+  • Quyền truy cập tài liệu ăn theo category, không tạo ACL riêng cho tài liệu
+  • Status = "AWAITING_UPLOAD"
+  • upload_expires_at = now + 5 phút
         ↓
-[DocumentService] — Lưu metadata vào MySQL
+[DocumentService] — Lưu metadata vào PostgreSQL
+  • Sinh `document_code` tự động, ví dụ DMS-202607-000001
   • Tạo record trong bảng `documents`
   • Tạo record trong `document_tags` (N:N)
   • Tạo record trong `document_versions` (v1.0)
-  • Lưu access_level, department ACL hoặc direct-share ACL
-  • Status = "PROCESSING"
+  • Status = "AWAITING_UPLOAD"
+[S3StorageService] — Ký presigned PUT URL cho đúng object key/content-type/content-length
         ↓
-[ContentExtractorService] — Trích xuất nội dung (Async / Background)
-  ├── PDF (Text)       → Apache PDFBox
-  ├── DOCX             → Apache POI (XWPF)
-  ├── DOC (cũ)         → Apache POI (HWPF)
-  ├── XLS/XLSX         → Apache POI
-  └── Image/PDF scan   → Tesseract OCR
+Response → { documentId, status: "AWAITING_UPLOAD", uploadUrl, requiredHeaders, expiresIn: 300 }
         ↓
-  Lưu extracted_content vào bảng `document_contents`
+[Frontend] — PUT file trực tiếp lên MinIO/R2 bằng uploadUrl
         ↓
-[SearchIndexService] — Đánh index nội dung + metadata vào Elasticsearch
-  • title, description, extracted_content, document_code, tags
-  • category, department, file_type, owner/uploader, status, access_level
+[DocumentController] — POST /documents/{id}/upload-complete
         ↓
-Cập nhật status = "INDEXED" (hoặc "EXTRACTION_FAILED" nếu lỗi xử lý/index)
+[UploadCompleteUseCase]
+  • HEAD object: tồn tại + đúng size
+  • Đọc object để Apache Tika detect MIME thực tế
+  • Validate extension/MIME/dangerous type
+  ├── ❌ Fail → xóa object nếu cần, trả UPLOAD_* / MIME_TYPE_MISMATCH
+  └── ✅ Pass
         ↓
-Response ApiResponse<DocumentUploadResult> → {
+Response ApiResponse<DocumentUploadResult> hoặc BatchUploadResult → {
   success: true,
   message: "Document upload accepted",
   data: {
     id: 42,
     status: "PROCESSING",
+    documentCode: "DMS-202607-000001",
     versionId: 101,
     versionNumber: "1.0",
     createdAt: "2026-07-21T10:30:00"
@@ -129,16 +125,31 @@ Response ApiResponse<DocumentUploadResult> → {
 }
 
 Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau upload. Các field phụ thuộc xử lý async như preview artifact, extracted content và searchable chỉ sẵn sàng sau khi tài liệu chuyển `INDEXED`.
+[DocumentService] — Chuyển status = "PROCESSING", commit PostgreSQL
+        ↓
+[After Commit] — Publish RabbitMQ message {type: EXTRACT} vào dms.extract
+        ↓
+[Worker] — Consume dms.extract / dms.ocr / dms.preview / dms.index
+  • Extract text bằng PDFBox/POI hoặc OCR bằng Tesseract
+  • Generate preview artifact PDF/HTML cho Office nếu cần
+  • Refresh document_search_index trong PostgreSQL
+        ↓
+Cập nhật status = "INDEXED" hoặc "EXTRACTION_FAILED"
 ```
+
 
 ### Sơ đồ trạng thái tài liệu
 
 ```text
+  [AWAITING_UPLOAD] ──── upload-complete hợp lệ ────→ [PROCESSING]
+       │                                                    │
+       └──── quá TTL / cleanup ────→ [cleanup/delete]       │
+                                                            │
   [PROCESSING] ──── Trích xuất/index thành công ────→ [INDEXED]
        │
-       └──── Trích xuất/index thất bại ────→ [EXTRACTION_FAILED]
+       └──── Trích xuất/refresh search thất bại ────→ [EXTRACTION_FAILED]
                                                   │
-                                      Auto retry mỗi 30 phút
+                                      RabbitMQ retry 30s → 5m → 30m
                                                   │
                           ┌──────── Thành công ───┴───→ [INDEXED]
                           │
@@ -146,16 +157,18 @@ Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau
 
   [INDEXED] ──── Admin archive ────→ [ARCHIVED]
       │                                │
-      └──── Admin soft delete ────→ [DELETED]
+      └──── Admin soft delete ────→ [DELETED / TRASH]
                                        │
-                             Admin restore → [PROCESSING] hoặc [INDEXED]
+                    Admin restore trước purge_after → [PROCESSING] hoặc [INDEXED]
+                                       │
+                    Sau 30 ngày / permanent delete → [PURGED]
 ```
 
 Business rules:
 
 - Với tài liệu ảnh hoặc PDF scan, hệ thống dùng OCR để trích xuất text phục vụ full-text search.
-- Nếu OCR thất bại nhưng metadata đã lưu thành công, tài liệu chuyển `EXTRACTION_FAILED`; Admin có thể xem trong màn hình tài liệu lỗi và retry xử lý. Tài liệu chưa xuất hiện trong search/preview/download cho User cho đến khi extraction/indexing thành công.
-- Hệ thống tự retry với các lỗi tạm thời như OCR timeout, lỗi kết nối Elasticsearch hoặc Elasticsearch quá tải.
+- Nếu OCR thất bại nhưng metadata đã lưu thành công, tài liệu chuyển `EXTRACTION_FAILED`; Admin có thể xem trong màn hình tài liệu lỗi và retry xử lý. Tài liệu chưa xuất hiện trong search/preview/download cho User cho đến khi extraction/search refresh thành công.
+- Hệ thống tự retry qua RabbitMQ delay queues với các lỗi tạm thời như OCR timeout, lỗi kết nối PostgreSQL FTS hoặc PostgreSQL FTS quá tải; vượt 3 lần thì vào DLQ và chuyển `EXTRACTION_FAILED`.
 - Admin có thể retry thủ công từ màn hình quản trị tài liệu lỗi, đặc biệt khi cần xử lý ngay hoặc khi auto retry đã vượt số lần tối đa.
 
 ---
@@ -176,17 +189,17 @@ User mở trang tìm kiếm
       ↓
 [SearchService] — Xây dựng search query
       ↓
-[Elasticsearch] — Execute query
+[PostgreSQL FTS] — Execute PostgreSQL FTS query
   • Multi-match query trên title, description, extracted_content, tags
   • Exact match / boosted match cho document_code
   • Fuzzy matching (tolerance for typos)
   • Faceted aggregations
   • Highlighted snippets
   • Status filter mặc định: INDEXED
-  • Permission filters theo quyền truy cập tài liệu trước khi trả kết quả
+  • Category permission filter: chỉ trả tài liệu user có `VIEW` trên danh mục
       ↓
 [SearchService] — Post-processing
-  • Chuẩn hóa Elasticsearch highlight (<em>) cho title/description/extracted_content
+  • Chuẩn hóa PostgreSQL ts_headline highlight (<em>) cho title/description/extracted_content
   • Tính toán relevance score
   • Đếm search time (ms)
   • Ghi search log: userId, keyword, filters, resultCount, searchTime, timestamp
@@ -213,9 +226,9 @@ Response ApiResponse<SearchResultPage> → {
 
 Business rules:
 
-- User không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL của tài liệu.
+- User không có `VIEW` trên danh mục không được nhìn thấy title, snippet, metadata hoặc preview URL của tài liệu.
 - Search không trả về tài liệu `DELETED`; `ARCHIVED` không hiển thị mặc định.
-- Search, preview, download và metadata detail dùng cùng một logic phân quyền.
+- Search, preview và metadata detail dùng category permission `VIEW`; download dùng `DOWNLOAD`.
 
 ---
 
@@ -227,14 +240,11 @@ User click vào tài liệu từ kết quả tìm kiếm
 [DocumentController] — GET /documents/{id}
       ↓
 [DocumentService]
-  ├── Lấy metadata từ MySQL
+  ├── Lấy metadata từ PostgreSQL
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
-  │     ├── PUBLIC     → mọi user đã đăng nhập
-  │     ├── DEPARTMENT → user thuộc phòng ban được gán hoặc Admin
-  │     └── RESTRICTED → owner, Admin hoặc user được chia sẻ trực tiếp
-  ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403, không trả metadata/file URL
-  └── ✅ Có quyền
+  ├── Kiểm tra category permission `VIEW` trên danh mục của tài liệu
+  ├── ❌ Không có `VIEW` / tài liệu không hiển thị → 404/403, không trả metadata/file URL
+  └── ✅ Có `VIEW`
         ↓
   Tăng view_count (+1)
         ↓
@@ -253,9 +263,9 @@ User click "Preview"
       ↓
 [PreviewService]
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
-  ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403
-  └── ✅ Có quyền
+  ├── Kiểm tra category permission `VIEW` trên danh mục của tài liệu
+  ├── ❌ Không có `VIEW` / tài liệu không hiển thị → 404/403
+  └── ✅ Có `VIEW`
         ↓
   ├── PDF      → Trả stream PDF trực tiếp (browser render)
   ├── DOCX/DOC → Convert sang PDF → trả stream
@@ -273,9 +283,9 @@ User click "Download"
       ↓
 [DocumentService]
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
-  ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403
-  └── ✅ Có quyền
+  ├── Kiểm tra category permission `DOWNLOAD` trên danh mục của tài liệu
+  ├── ❌ Không có `DOWNLOAD` / tài liệu không hiển thị → 404/403
+  └── ✅ Có `DOWNLOAD`
         ↓
   Tăng download_count (+1)
         ↓
@@ -288,7 +298,7 @@ Browser tải file về máy
 
 ---
 
-## Flow 5: Quản lý dữ liệu danh mục (Admin)
+## Flow 5: Quản lý dữ liệu danh mục & phân quyền (Admin)
 
 ```text
 Admin → Quản lý Master Data
@@ -312,8 +322,46 @@ Admin → Quản lý Master Data
 Cache Invalidation (@CacheEvict)
   → Xóa cache categories:tree / departments:all / tags:popular
       ↓
-Re-index các tài liệu bị ảnh hưởng nếu metadata search/filter thay đổi
+Refresh search row/vector cho các tài liệu bị ảnh hưởng nếu metadata search/filter thay đổi
 ```
+
+### Cấu hình quyền danh mục
+
+```text
+Admin mở Quản lý danh mục
+      ↓
+Chọn một category
+      ↓
+Mở tab/section "Phân quyền phòng ban"
+      ↓
+Thêm hoặc chọn department được cấp quyền trong category
+      ↓
+Tick quyền:
+  • VIEW     — thấy tài liệu trong list/search/detail và preview
+  • DOWNLOAD — tải file hoặc version tài liệu
+  • UPLOAD   — upload tài liệu hoặc version vào category
+  • UPDATE   — sửa metadata, move, cập nhật thông tin version
+  • DELETE   — archive, soft delete, restore, permanent delete theo nghiệp vụ
+      ↓
+[CategoryController] — PUT /categories/{id}/permissions
+      ↓
+[CategoryPermissionService]
+  ├── Validate category active và department active
+  ├── Replace permission matrix của category
+  ├── Ghi audit_log action = Update category permissions
+  └── Invalidate permission cache nếu có
+      ↓
+Search/list/detail/download/upload/update/delete dùng quyền mới ngay ở request tiếp theo
+```
+
+Business rules:
+
+- Một category có thể cấp quyền cho nhiều phòng ban.
+- Một phòng ban có thể có nhiều quyền trong cùng category.
+- User thuộc nhiều phòng ban được gộp quyền theo union.
+- Không cấu hình quyền ở từng tài liệu; tài liệu ăn quyền từ category hiện tại.
+- Khi category permission thay đổi, không cần refresh search vector vì query luôn JOIN quyền hiện tại.
+- Future extension: có thể thêm quyền riêng user trong phạm vi category/phòng ban mà không thay đổi luồng chính.
 
 ---
 
@@ -323,6 +371,8 @@ Re-index các tài liệu bị ảnh hưởng nếu metadata search/filter thay 
 Admin mở chi tiết tài liệu → Tab "Lịch sử phiên bản"
       ↓
 [DocumentController] — GET /documents/{id}/versions
+      ↓
+[DocumentService] — Kiểm tra category permission `VIEW`
       ↓
 Hiển thị danh sách phiên bản:
   • v1.0 — Phiên bản đầu tiên (2026-01-15)
@@ -340,11 +390,12 @@ Admin click "Upload phiên bản mới"
 [DocumentController] — POST /documents/{id}/versions
       ↓
 [DocumentService]
+  ├── Kiểm tra category permission `UPLOAD` trên danh mục hiện tại
   ├── Lưu file mới vào object storage qua S3-compatible API
   ├── Tạo record mới trong document_versions với status = PROCESSING
   ├── Giữ current_version hiện tại để User vẫn search/preview/download version cũ
   ├── Trích xuất nội dung mới và tạo preview artifact cần thiết
-  ├── Index Elasticsearch theo version mới sau khi xử lý thành công
+  ├── Refresh PostgreSQL search vector theo version mới sau khi xử lý thành công
   ├── Nếu thành công: cập nhật current_version trong documents sang version mới và status = INDEXED
   ├── Nếu thất bại: version mới = EXTRACTION_FAILED, current_version không đổi
   └── File cũ được giữ lại trong lịch sử
@@ -355,10 +406,11 @@ Admin chọn version cũ làm version hiện hành
 [DocumentController] — POST /documents/{id}/versions/{versionId}/restore
       ↓
 [DocumentService]
+  ├── Kiểm tra category permission `UPDATE` trên danh mục hiện tại
   ├── Validate version cũ còn file/content hợp lệ và chưa bị xóa mềm
-  ├── Re-index Elasticsearch theo version được restore
-  ├── Nếu re-index thành công: cập nhật current_version trong documents
-  └── Nếu re-index thất bại: current_version không đổi và ghi retry task
+  ├── Refresh PostgreSQL search vector theo version được restore
+  ├── Nếu refresh search vector thành công: cập nhật current_version trong documents
+  └── Nếu refresh search vector thất bại: current_version không đổi và ghi retry task
 ```
 
 ---
@@ -375,15 +427,16 @@ Admin mở chi tiết tài liệu
   • Restore
 
 ─── Cập nhật metadata ─────────────────────────
-Admin sửa title / description / category / departments / tags / access level
+Admin sửa title / description / category / tags
       ↓
 [DocumentController] — PUT /documents/{id}
       ↓
 [DocumentService]
-  ├── Validate dữ liệu phân quyền theo access level
-  ├── Cập nhật metadata trong MySQL
+  ├── Kiểm tra category permission `UPDATE` trên danh mục hiện tại
+  ├── Nếu đổi category: kiểm tra `UPDATE` trên category nguồn và `UPLOAD` hoặc `UPDATE` trên category đích
+  ├── Cập nhật metadata trong PostgreSQL
   ├── Ghi audit_log action = Update metadata, changedFields
-  └── Re-index Elasticsearch nếu field search/filter/permission thay đổi
+  └── Refresh PostgreSQL search vector nếu field search/filter thay đổi
 
 ─── Archive ───────────────────────────────────
 Admin click "Archive"
@@ -391,9 +444,10 @@ Admin click "Archive"
 [DocumentController] — POST /documents/{id}/archive
       ↓
 [DocumentService]
+  ├── Kiểm tra category permission `DELETE` trên danh mục hiện tại
   ├── Set status = ARCHIVED
   ├── Ghi audit_log action = Archive document
-  └── Re-index hoặc remove khỏi default search index view
+  └── Cập nhật status/search row để loại khỏi default search view
 
 ─── Soft delete ───────────────────────────────
 Admin click "Xóa"
@@ -401,10 +455,11 @@ Admin click "Xóa"
 [DocumentController] — DELETE /documents/{id}
       ↓
 [DocumentService]
+  ├── Kiểm tra category permission `DELETE` trên danh mục hiện tại
   ├── Set status = DELETED
   ├── Không xóa file vật lý ngay lập tức
   ├── Ghi audit_log action = Delete document
-  └── Remove/deactivate document khỏi Elasticsearch search mặc định
+  └── Remove/deactivate document khỏi PostgreSQL FTS search mặc định
 
 ─── Restore ───────────────────────────────────
 Admin click "Restore"
@@ -412,9 +467,10 @@ Admin click "Restore"
 [DocumentController] — POST /documents/{id}/restore
       ↓
 [DocumentService]
+  ├── Kiểm tra category permission `DELETE` trên danh mục hiện tại
   ├── Set status = PROCESSING hoặc INDEXED tùy trạng thái nội dung/index
   ├── Ghi audit_log action = Restore document
-  └── Re-index Elasticsearch nếu tài liệu được khôi phục về trạng thái hiển thị
+  └── Refresh PostgreSQL search vector nếu tài liệu được khôi phục về trạng thái hiển thị
 ```
 
 ---
@@ -433,18 +489,48 @@ Admin mở màn hình Quản lý User
 [UserService]
   ├── Tạo/sửa/khóa user
   ├── Gán role ADMIN / USER
-  ├── Gán department cho user
+  ├── Gán một hoặc nhiều phòng ban cho user
   ├── Hash mật khẩu bằng BCrypt khi tạo hoặc reset mật khẩu
   └── Ghi audit_log cho thao tác quản trị user
       ↓
-Nếu role/department thay đổi
+Nếu role hoặc danh sách phòng ban thay đổi
       ↓
-Quyền search/metadata detail/preview/download thay đổi theo access_level của tài liệu
+Quyền search/detail/preview/download/upload/update/delete thay đổi ngay theo category permission hiện tại
 ```
 
 ---
 
-## Flow 9: Dashboard thống kê & Audit Log (Admin)
+## Flow 9: User profile, tài liệu của tôi và lịch sử cá nhân (User)
+
+```text
+User mở menu cá nhân
+      ↓
+[Profile / My Documents / My Activity]
+      ↓
+[UserController] — GET /users/me
+[DocumentController] — GET /users/me/documents?type=uploaded|updated|downloaded
+[DocumentController] — GET /users/me/versions
+[AuditLogController] — GET /users/me/activity
+      ↓
+[UserService / DocumentService / AuditLogService]
+  ├── Trả thông tin user và danh sách phòng ban hiện tại
+  ├── Trả tài liệu user đã upload hoặc đã thao tác, vẫn áp category permission hiện tại
+  ├── Trả version do user upload hoặc version thuộc tài liệu user có quyền xem
+  ├── Trả lịch sử thao tác của chính user: search, preview, download, upload, update, delete attempt
+  └── Không trả log/token/dữ liệu nhạy cảm của user khác
+      ↓
+Frontend hiển thị dashboard cá nhân, bảng tài liệu, bảng version và timeline hoạt động
+```
+
+Business rules:
+
+- User chỉ xem được activity của chính mình.
+- Danh sách tài liệu/version cá nhân vẫn phải áp quyền category hiện tại; nếu user mất quyền `VIEW`, tài liệu không còn hiển thị trong màn cá nhân.
+- Lịch sử cá nhân có thể hiển thị action bị từ chối của chính user với `denialReason`, nhưng không lộ metadata tài liệu mà user không có `VIEW`.
+
+---
+
+## Flow 10: Dashboard thống kê & Audit Log (Admin)
 
 ```text
 Admin mở Dashboard
@@ -466,20 +552,22 @@ Response ApiResponse<DashboardSummary>
   • Bảng từ khóa tìm kiếm phổ biến
   • Bộ lọc thời gian
 
-Admin mở Audit Log
+Admin mở Audit Log / Audit Actions
       ↓
 [AuditLogController] — GET /audit-logs?filters
+[AuditLogController] — GET /audit-actions?actorId&targetType&action&dateRange
       ↓
 [AuditLogService]
   ├── Upload document
-  ├── Update metadata
-  ├── Delete/Restore/Archive document
-  ├── Preview document
-  ├── Download document
+  ├── Update metadata / move / version restore
+  ├── Delete/Restore/Archive/Permanent delete document
+  ├── Preview / Download / denied access
   ├── Search keyword
-  └── User management actions
+  ├── User management và user-department membership changes
+  ├── Category permission changes
+  └── System processing/retry/purge actions
       ↓
-Response ApiResponse<AuditLogPage>
+Response ApiResponse<AuditLogPage> hoặc ApiResponse<AuditActionPage>
 ```
 
 ---
@@ -510,3 +598,126 @@ Response ApiResponse<AuditLogPage>
 | 4   | Preview tài liệu        | Thường xuyên     |
 | 5   | Download tài liệu       | Thường xuyên     |
 | 6   | Xem/sửa profile cá nhân | Ít khi           |
+
+---
+
+## Flow 11: Xóa vào Thùng rác và tự purge sau 30 ngày (Admin/System)
+
+```text
+Admin chọn một hoặc nhiều tài liệu trong MH08
+      ↓
+[Frontend] — Confirm delete
+      ↓
+[DocumentController] — DELETE /documents/{id} hoặc POST /documents/batch-delete
+      ↓
+[DocumentLifecycleService]
+  • Kiểm tra category permission `DELETE` trên từng tài liệu
+  • Lưu previous_status
+  • Set status = DELETED
+  • Set deleted_at = now()
+  • Set deleted_by = current_user
+  • Set purge_after = now() + 30 ngày
+      ↓
+[SearchIndexService] — Loại khỏi search mặc định
+      ↓
+[Màn hình Thùng rác MH19] — Hiển thị deletedAt, purgeAfter, daysUntilPurge
+      ↓
+Admin có thể restore trước hạn
+  ├── POST /documents/trash/restore → clear deleted fields, restore status/re-index nếu cần
+  └── DELETE /documents/trash/permanent-delete → xóa vĩnh viễn ngay
+      ↓
+[Scheduler purgeDeletedDocuments] — Chạy hằng ngày
+  • Tìm status = DELETED AND purge_after <= now()
+  • Xóa object storage current file + version files theo retention policy
+  • Xóa document_contents và PostgreSQL search row
+  • Hard delete row hoặc giữ tombstone permanently_deleted_at theo policy
+  • Ghi audit/maintenance log
+```
+
+Business rules:
+
+- Soft delete không xóa file vật lý ngay để còn restore.
+- Tài liệu trong Thùng rác không được search/preview/download theo luồng User.
+- Purge job phải idempotent; lỗi xóa storage được log và retry ở lần chạy sau.
+
+---
+
+## Flow 12: Chuyển tài liệu giữa folder/danh mục (Admin)
+
+```text
+Admin chọn một hoặc nhiều tài liệu trong MH08
+      ↓
+[MoveDocumentModal] — Chọn target category/folder từ category tree
+      ↓
+[DocumentController] — POST /documents/{id}/move hoặc POST /documents/batch-move
+      ↓
+[DocumentService]
+  • Validate target category tồn tại, active, chưa soft delete
+  • Kiểm tra `UPDATE` trên category nguồn
+  • Kiểm tra `UPLOAD` hoặc `UPDATE` trên target category
+  • Lưu category cũ để audit
+  • Cập nhật documents.category_id
+      ↓
+[SearchIndexService] — Re-index metadata category/folder
+      ↓
+[AuditLogService] — Ghi old/new category
+      ↓
+[Frontend] — Refresh list và hiển thị kết quả partial success nếu batch
+```
+
+Business rules:
+
+- Category hiện có được dùng như folder; không tạo bảng `folders` riêng.
+- Batch move cho phép partial success để tài liệu lỗi không chặn các tài liệu hợp lệ.
+
+---
+
+## Flow 13: Thống kê tổng dung lượng tài liệu (Admin)
+
+```text
+Admin mở Dashboard MH07
+      ↓
+[DashboardController] — GET /admin/dashboard/storage
+      ↓
+[DocumentStorageStatsService]
+  • activeStorageBytes = SUM(documents.file_size) WHERE status != DELETED
+  • trashStorageBytes = SUM(documents.file_size) WHERE status = DELETED
+  • versionStorageBytes = SUM(document_versions.file_size)
+  • totalStorageBytes = active + trash + version
+      ↓
+[Frontend] — Hiển thị MB đã làm tròn 2 chữ số
+```
+
+Business rules:
+
+- Dashboard hiển thị tách active/trash/version để tránh hiểu nhầm tổng dung lượng.
+- Số liệu dung lượng lấy từ PostgreSQL, không lấy từ PostgreSQL FTS.
+
+
+---
+
+## Flow 14: Dashboard dữ liệu truy cập hệ thống (Admin)
+
+```text
+Admin mở Dashboard MH07 hoặc Analytics MH18
+      ↓
+[DashboardController] — GET /admin/dashboard/system-access?dateFrom&dateTo&granularity
+      ↓
+[DashboardService]
+  • Đếm login/logout từ audit_logs
+  • Đếm view/preview/download/version download/denied access từ access_logs
+  • Đếm search/suggestion từ search_logs
+  • Tính activeUsers, uniqueAccessUsers, topUsersByAccess
+  • Group trend theo day/week/month
+      ↓
+[Frontend]
+  • Hiển thị stat cards: totalLogins, activeUsers, uniqueAccessUsers
+  • Hiển thị chart preview/download/search theo thời gian
+  • Hiển thị bảng top users by access
+```
+
+Business rules:
+
+- Dashboard chỉ hiển thị aggregate cho Admin.
+- Dữ liệu nhạy cảm như token/cookie không bao giờ được log hoặc trả về dashboard.
+- IP/User-Agent nếu cần điều tra chi tiết thì xem ở MH16 Audit & Access Log, không đưa vào card tổng quan.
