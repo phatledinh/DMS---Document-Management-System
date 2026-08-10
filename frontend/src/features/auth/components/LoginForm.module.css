@@ -1,62 +1,69 @@
 .form {
   width: 100%;
-  padding: 24px;
 }
 
 .field + .field {
-  margin-top: 16px;
+  margin-top: 24px;
 }
 
 .errorAlert {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0.05em;
-  color: #5f6368;
-  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .inputShell {
   position: relative;
   display: flex;
   align-items: center;
-  border: 1px solid #dadce0;
-  border-radius: 4px;
-  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .inputShell:focus-within {
-  border-color: #005bbf;
-  box-shadow: 0 0 0 2px rgba(0, 91, 191, 0.1);
+  border-color: #00a499;
+  box-shadow: 0 0 0 3px rgba(0, 164, 153, 0.12);
 }
 
 .leftIcon {
   position: absolute;
-  left: 12px;
+  left: 16px;
+  z-index: 1;
+  color: #9ca3af;
   font-size: 20px;
-  color: #5f6368;
   pointer-events: none;
 }
 
 .input {
   width: 100%;
+  height: 48px;
   border: 0 !important;
-  padding-left: 40px !important;
-  padding-right: 40px !important;
-  height: 40px;
+  padding-left: 44px !important;
+  padding-right: 44px !important;
+  color: #1f2937;
   font-size: 14px;
   line-height: 20px;
+  background: transparent !important;
 }
 
 .input input {
+  color: #1f2937;
   font-size: 14px;
+  background: transparent !important;
+}
+
+.input input::placeholder {
+  color: #9ca3af;
 }
 
 .input:focus,
@@ -66,7 +73,8 @@
 
 .visibilityButton {
   position: absolute;
-  right: 0;
+  right: 4px;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -74,46 +82,49 @@
   height: 40px;
   border: 0;
   background: transparent;
-  color: #5f6368;
+  color: #9ca3af;
   cursor: pointer;
+  transition: color 0.2s ease;
 }
 
 .visibilityButton:hover {
-  color: #005bbf;
+  color: #00a499;
 }
 
 .visibilityIcon {
-  font-size: 20px;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-top: 8px;
-}
-
-.checkbox {
-  color: #5f6368;
-}
-
-.checkbox :global(.ant-checkbox-inner) {
-  border-radius: 4px;
-}
-
-.forgotLink {
-  color: #005bbf;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 18px;
 }
 
 .submitButton {
-  margin-top: 16px;
-  background: #005bbf;
-  box-shadow: none;
+  height: 50px;
+  margin-top: 28px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #004a70 0%, #00a499 100%) !important;
+  box-shadow: 0 12px 24px rgba(0, 74, 112, 0.18);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.submitButton:hover {
-  background: #004493 !important;
+.submitButton:hover,
+.submitButton:focus {
+  opacity: 0.9;
+  background: linear-gradient(90deg, #004a70 0%, #00a499 100%) !important;
+}
+
+.forgotRow {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.forgotLink {
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 20px;
+  transition: color 0.2s ease;
+}
+
+.forgotLink:hover {
+  color: #00a499;
 }

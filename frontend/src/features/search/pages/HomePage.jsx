@@ -38,7 +38,7 @@ import styles from './HomePage.module.css';
 
 const { Title, Text, Paragraph } = Typography;
 
-const SUGGESTED_SEARCHES = ['ISO 9001', 'Quy trình', 'SOP'];
+const SUGGESTED_SEARCHES = ['Quy trình ISO 9001', 'SOP-QA-001', 'Báo cáo tài chính', 'Hợp đồng', 'Biểu mẫu nhân sự'];
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -124,40 +124,46 @@ export default function HomePage() {
       {/* Hero Search Section */}
       <div className={styles.heroSection}>
         <div className={styles.heroBackground} />
+        <div className={styles.heroBadge}>
+          <SearchOutlined />
+          <span>Tìm kiếm toàn văn</span>
+        </div>
         <Title level={1} className={styles.heroTitle}>
-          Central Document Repository
+          Tìm kiếm tài liệu
         </Title>
         <Paragraph className={styles.heroSubtitle}>
-          Kho quản lý và tra cứu tài liệu tập trung cho toàn bộ doanh nghiệp
+          Nhập từ khóa, mã tài liệu hoặc tag — hệ thống chỉ hiển thị tài liệu bạn có quyền xem.
         </Paragraph>
 
-        {/* Hero Search Box */}
-        <div className={styles.searchBoxWrapper}>
-          <Input
-            size="large"
-            className={styles.searchInput}
-            placeholder="Nhập từ khóa tìm kiếm (tên tài liệu, mã, tags...)"
-            prefix={<SearchOutlined style={{ color: '#86909c', fontSize: 20, marginRight: 8 }} />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onPressEnter={() => handleSearchSubmit()}
-            allowClear
-          />
-        </div>
+        <div className={styles.searchCard}>
+          <div className={styles.searchRow}>
+            <Input
+              size="large"
+              className={styles.searchInput}
+              placeholder="Nhập từ khóa tìm kiếm..."
+              prefix={<SearchOutlined style={{ color: '#647383', fontSize: 22, marginRight: 8 }} />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onPressEnter={() => handleSearchSubmit()}
+              allowClear
+            />
+            <Button type="primary" size="large" className={styles.searchButton} onClick={() => handleSearchSubmit()}>
+              Tìm kiếm
+            </Button>
+          </div>
 
-        {/* Search Suggestions */}
-        <div className={styles.suggestions}>
-          <span className={styles.suggestionLabel}>Gợi ý tìm kiếm:</span>
-          {SUGGESTED_SEARCHES.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={styles.suggestionBtn}
-              onClick={() => handleSearchSubmit(tag)}
-            >
-              {tag}
-            </button>
-          ))}
+          <div className={styles.suggestions}>
+            {SUGGESTED_SEARCHES.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={styles.suggestionBtn}
+                onClick={() => handleSearchSubmit(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

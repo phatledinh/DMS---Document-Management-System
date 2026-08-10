@@ -167,7 +167,7 @@ export default function DocumentHistoryPage() {
         <div className={styles.canvas}>
           <div className={styles.container}>
             <nav className={styles.breadcrumbs}>
-              <Link to="/">Home</Link><span>›</span><Link to="/admin/dashboard">Admin</Link><span>›</span><Link to="/admin/documents">Documents</Link><span>›</span><strong>Lịch sử phiên bản</strong>
+              <Link to="/">Home</Link><span>›</span><Link to="/documents">Tài liệu</Link><span>›</span><Link to={`/documents/${id}`}>{document?.title || document?.fileName || 'Chi tiết'}</Link><span>›</span><strong>Lịch sử phiên bản</strong>
             </nav>
 
             <section className={styles.documentHeader}>

@@ -108,7 +108,7 @@ export default function DocumentDetailPage() {
             </Space>
           </Space>
           <Space>
-            <Button icon={<HistoryOutlined />} onClick={() => navigate(`/admin/documents/${document.id}/history`)}>
+            <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${document.id}/history`)}>
               Versions
             </Button>
             <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>

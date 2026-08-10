@@ -1,6 +1,10 @@
-import { BankOutlined, LockOutlined, MailOutlined, PhoneOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
+import { BankOutlined, KeyOutlined, LockOutlined, MailOutlined, PhoneOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
+import { useState } from 'react';
 import { Avatar, Breadcrumb, Button, Card, Col, Form, Input, Row, Space, Tag, Typography } from 'antd';
+import { toast } from 'react-toastify';
+import { updateUser } from '../../../api/userApi.js';
 import { useAuthStore } from '../../../store/authStore.js';
+import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './ProfilePage.module.css';
 
 const fallbackProfile = {
@@ -19,8 +23,28 @@ const fallbackProfile = {
 
 export default function ProfilePage() {
   const currentUser = useAuthStore((state) => state.user);
+  const [passwordForm] = Form.useForm();
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const profile = { ...fallbackProfile, ...currentUser };
   const displayName = profile.name || profile.email || fallbackProfile.name;
+
+  async function handlePasswordChange(values) {
+    if (!currentUser?.id) {
+      toast.error('Không thể xác định người dùng hiện tại');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await updateUser(currentUser.id, { password: values.newPassword });
+      passwordForm.resetFields();
+      toast.success('Đã đổi mật khẩu thành công');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }
   const initials = displayName
     .split(' ')
     .filter(Boolean)
@@ -128,6 +152,56 @@ export default function ProfilePage() {
                   </Form.Item>
                 </Col>
               </Row>
+            </section>
+
+            <section className={styles.section}>
+              <Typography.Title level={4} className={styles.sectionTitle}>
+                Đổi mật khẩu
+              </Typography.Title>
+              <Typography.Paragraph className={styles.helperText}>
+                Mật khẩu mới sẽ được áp dụng cho lần đăng nhập tiếp theo.
+              </Typography.Paragraph>
+              <Form form={passwordForm} layout="vertical" onFinish={handlePasswordChange} className={styles.passwordForm}>
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Mật khẩu mới"
+                      name="newPassword"
+                      rules={[
+                        { required: true, message: 'Vui lòng nhập mật khẩu mới.' },
+                        { min: 8, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' },
+                      ]}
+                    >
+                      <Input.Password prefix={<KeyOutlined />} placeholder="Nhập mật khẩu mới" autoComplete="new-password" />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item
+                      label="Xác nhận mật khẩu mới"
+                      name="confirmPassword"
+                      dependencies={['newPassword']}
+                      rules={[
+                        { required: true, message: 'Vui lòng xác nhận mật khẩu mới.' },
+                        ({ getFieldValue }) => ({
+                          validator(_, value) {
+                            if (!value || getFieldValue('newPassword') === value) {
+                              return Promise.resolve();
+                            }
+                            return Promise.reject(new Error('Mật khẩu xác nhận không khớp.'));
+                          },
+                        }),
+                      ]}
+                    >
+                      <Input.Password prefix={<LockOutlined />} placeholder="Nhập lại mật khẩu mới" autoComplete="new-password" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <div className={styles.passwordActions}>
+                  <Button type="primary" htmlType="submit" loading={isChangingPassword} icon={<KeyOutlined />}>
+                    Đổi mật khẩu
+                  </Button>
+                </div>
+              </Form>
             </section>
 
             <div className={styles.actions}>

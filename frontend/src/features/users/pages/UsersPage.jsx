@@ -9,6 +9,7 @@ import {
   UnlockOutlined,
 } from "@ant-design/icons";
 import { Button, Form, Input, Modal, Select } from "antd";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import { getDepartments } from "../../../api/departmentApi.js";
 import { createUser, deleteUser, getUsers, updateUser } from "../../../api/userApi.js";
@@ -48,6 +49,8 @@ function formatDateTime(value) {
 }
 
 export default function UsersPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [users, setUsers] = useState([]);
@@ -57,6 +60,7 @@ export default function UsersPage() {
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [handledEditUserId, setHandledEditUserId] = useState(null);
 
   const departmentById = useMemo(
     () => new Map(departments.map((department) => [department.id, department])),
@@ -112,6 +116,9 @@ export default function UsersPage() {
     setEditModalOpen(false);
     setEditingUser(null);
     editForm.resetFields();
+    if (searchParams.get("editUserId")) {
+      navigate("/users", { replace: true });
+    }
   }
 
   async function handleCreateUser(values) {
@@ -170,6 +177,22 @@ export default function UsersPage() {
     });
     setEditModalOpen(true);
   }
+
+  useEffect(() => {
+    const editUserId = searchParams.get("editUserId");
+    if (!editUserId || handledEditUserId === editUserId || isLoadingUsers || users.length === 0) return;
+
+    const targetUser = users.find((user) => String(user.id) === String(editUserId));
+    if (!targetUser) {
+      toast.error("Không tìm thấy người dùng cần chỉnh sửa");
+      setHandledEditUserId(editUserId);
+      navigate("/users", { replace: true });
+      return;
+    }
+
+    openEditModal(targetUser);
+    setHandledEditUserId(editUserId);
+  }, [searchParams, handledEditUserId, isLoadingUsers, users, navigate]);
 
   function handleToggleLock(user) {
     const nextStatus = user.status === "BANNED" ? "ACTIVE" : "BANNED";

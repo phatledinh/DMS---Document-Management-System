@@ -1,5 +1,5 @@
-import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, LoginOutlined, MailOutlined } from '@ant-design/icons';
-import { Alert, Button, Checkbox, Input } from 'antd';
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
+import { Alert, Button, Input } from 'antd';
 import { useState } from 'react';
 import { useLoginAction } from '../hooks/useAuthActions.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
@@ -34,7 +34,7 @@ export default function LoginForm() {
           <Input
             id="email"
             name="email"
-            placeholder="email@company.com"
+            placeholder="ten@company.com"
             type="email"
             className={styles.input}
             value={formValues.email}
@@ -73,24 +73,15 @@ export default function LoginForm() {
         </div>
       </div>
 
-      <div className={styles.row}>
-        <Checkbox className={styles.checkbox}>Ghi nhớ đăng nhập</Checkbox>
+      <Button type="primary" htmlType="submit" block size="large" className={styles.submitButton} loading={loginMutation.isPending}>
+        Đăng nhập
+      </Button>
+
+      <div className={styles.forgotRow}>
         <a href="#" className={styles.forgotLink}>
           Quên mật khẩu?
         </a>
       </div>
-
-      <Button
-        type="primary"
-        htmlType="submit"
-        block
-        size="large"
-        className={styles.submitButton}
-        icon={<LoginOutlined />}
-        loading={loginMutation.isPending}
-      >
-        ĐĂNG NHẬP
-      </Button>
     </form>
   );
 }

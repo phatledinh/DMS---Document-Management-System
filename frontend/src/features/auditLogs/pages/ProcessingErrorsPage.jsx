@@ -111,7 +111,7 @@ export default function ProcessingErrorsPage() {
       render: (_, record) => (
         <div className={styles.rowActions}>
           <button disabled={retryMutation.isPending} title="Retry extraction/search refresh" type="button" onClick={() => retryDocument(record.documentId)}><SyncOutlined /></button>
-          <Link to={`/admin/documents/${record.documentId}`}><EyeOutlined /></Link>
+          <Link to={`/documents/${record.documentId}`}><EyeOutlined /></Link>
         </div>
       ),
     },

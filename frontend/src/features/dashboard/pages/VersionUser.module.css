@@ -1,0 +1,212 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px clamp(16px, 3vw, 32px) 32px;
+}
+
+.heroHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+}
+
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 4px;
+  color: #005c8d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.heroHeader h1 {
+  margin: 0;
+  color: #0d2034;
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.18;
+  font-weight: 800;
+}
+
+.heroHeader p {
+  margin: 8px 0 0;
+  color: #647383;
+  font-size: 14px;
+}
+
+.summaryBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid #d8e1e9;
+  border-radius: 999px;
+  background: #fff;
+  color: #506274;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(13, 32, 52, 0.05);
+}
+
+.filterCard,
+.tableCard {
+  border: 1px solid #d8e1e9;
+  border-radius: 16px;
+  background: linear-gradient(179deg, #fff 0%, #ecf5fb 100%);
+  box-shadow: 0 8px 24px -12px rgba(13, 32, 52, 0.22), 0 1px 2px rgba(13, 32, 52, 0.06);
+}
+
+.filterCard {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px;
+}
+
+.searchInput {
+  flex: 1 1 320px;
+  min-width: 220px;
+}
+
+.searchInput :global(.ant-input-affix-wrapper),
+.filterSelect :global(.ant-select-selector) {
+  border-radius: 12px !important;
+}
+
+.filterSelect {
+  min-width: 148px;
+}
+
+.tableCard {
+  overflow: hidden;
+}
+
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.versionTable {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.versionTable th {
+  background: rgba(233, 241, 248, 0.6);
+  color: #647383;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.versionTable th,
+.versionTable td {
+  padding: 13px 16px;
+  border-bottom: 1px solid #d8e1e9;
+  vertical-align: middle;
+}
+
+.versionTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.versionTable td {
+  color: #647383;
+  font-size: 14px;
+}
+
+.versionTable td:first-child strong {
+  display: block;
+  color: #0d2034;
+  font-weight: 700;
+}
+
+.versionTable td:first-child span {
+  display: block;
+  margin-top: 3px;
+  color: #647383;
+  font-size: 12px;
+}
+
+.versionCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #0d2034;
+}
+
+.currentTag {
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 92, 141, 0.1);
+  color: #005c8d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.downloadButton {
+  padding: 0;
+  color: #005c8d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.paginationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #647383;
+  font-size: 12px;
+}
+
+.paginationButtons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.paginationButtons button {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #d8e1e9;
+  border-radius: 12px;
+  background: #fff;
+  color: #647383;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.paginationButtons .activePage {
+  border-color: #005c8d;
+  background: #005c8d;
+  color: #f9fcff;
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding: 16px 12px 24px;
+  }
+
+  .filterCard {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .searchInput,
+  .filterSelect {
+    width: 100%;
+    min-width: 0;
+  }
+}

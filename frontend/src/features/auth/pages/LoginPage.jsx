@@ -1,36 +1,57 @@
-import { LockOutlined } from '@ant-design/icons';
-import { Typography } from 'antd';
+import { SafetyCertificateOutlined, SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import LoginForm from '../components/LoginForm.jsx';
 import styles from './LoginPage.module.css';
 
 export default function LoginPage() {
   return (
     <div className={styles.page}>
-      <div className={styles.backdrop} />
-      <div className={styles.cardShell}>
-        <div className={styles.card}>
-          <div className={styles.header}>
-            <div className={styles.brandRow}>
-              <LockOutlined className={styles.brandIcon} />
-              <Typography.Title level={1} className={styles.brandTitle}>
-                Deep Trust
-              </Typography.Title>
-            </div>
-            <Typography.Text className={styles.subtitle}>Hệ thống Quản lý Tài liệu</Typography.Text>
+      <section className={styles.brandingPanel} aria-label="Giới thiệu DMS">
+        <div className={styles.brandingContent}>
+          <div className={styles.logoRow}>
+            <div className={styles.logoMark}>D</div>
+            <span className={styles.logoText}>DMS</span>
+          </div>
+
+          <h1 className={styles.title}>
+            Hệ thống quản lý tài liệu
+            <br />
+            doanh nghiệp
+          </h1>
+          <p className={styles.description}>
+            Tìm kiếm toàn văn, phân quyền theo danh mục và phòng ban, quản lý phiên bản cùng nhật ký truy cập đầy đủ.
+          </p>
+
+          <ul className={styles.featureList}>
+            <li className={styles.featureItem}>
+              <span className={styles.featureIcon}>
+                <ThunderboltOutlined />
+              </span>
+              <span>Tìm kiếm thông minh với gợi ý tức thời</span>
+            </li>
+            <li className={styles.featureItem}>
+              <span className={styles.featureIcon}>
+                <SafetyCertificateOutlined />
+              </span>
+              <span>An toàn lưu trữ & tìm kiếm</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className={styles.copyright}>© 2026 DMS Platform</div>
+        <SearchOutlined className={styles.decorIcon} />
+        <div className={styles.decorTop} />
+        <div className={styles.decorBottom} />
+      </section>
+
+      <main className={styles.loginPanel}>
+        <div className={styles.formShell}>
+          <div className={styles.loginHeader}>
+            <h2 className={styles.loginTitle}>Đăng nhập</h2>
+            <p className={styles.loginSubtitle}>Sử dụng tài khoản nội bộ được cấp bởi quản trị viên.</p>
           </div>
           <LoginForm />
         </div>
-        <footer className={styles.footer}>
-          <Typography.Text className={styles.footerText}>
-            © 2026 Deep Trust DMS. Tất cả các quyền được bảo lưu.
-          </Typography.Text>
-          <div className={styles.footerLinks}>
-            <a href="#">Hỗ trợ kỹ thuật</a>
-            <span>|</span>
-            <a href="#">Chính sách bảo mật</a>
-          </div>
-        </footer>
-      </div>
+      </main>
     </div>
   );
 }

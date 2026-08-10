@@ -286,13 +286,13 @@ export default function UploadDocumentPage() {
 
 
                 <Space>
-                  <Button onClick={() => navigate('/admin/documents')} disabled={uploadMutation.isPending}>
+                  <Button onClick={() => navigate('/admin/documents-admin')} disabled={uploadMutation.isPending}>
                     Hủy
                   </Button>
                   <Button type="primary" htmlType="submit" icon={<UploadOutlined />} loading={uploadMutation.isPending}>
                     Upload
                   </Button>
-                  <Button onClick={() => navigate('/admin/documents')} disabled={uploadMutation.isPending}>
+                  <Button onClick={() => navigate('/admin/documents-admin')} disabled={uploadMutation.isPending}>
                     Về danh sách
                   </Button>
                 </Space>

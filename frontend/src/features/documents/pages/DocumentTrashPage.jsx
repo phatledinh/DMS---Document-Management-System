@@ -15,6 +15,7 @@ import {
   getPageContent,
   normalizeDocument,
 } from '../utils/documentFormatters.js';
+import styles from './DocumentTrashPage.module.css';
 
 const { Title, Text } = Typography;
 
@@ -164,8 +165,9 @@ export default function DocumentTrashPage() {
   ];
 
   return (
-    <Card>
-      <Flex justify="space-between" align="flex-start" gap={16} wrap="wrap">
+    <main className={styles.page}>
+      <Card className={styles.card}>
+        <Flex justify="space-between" align="flex-start" gap={16} wrap="wrap">
         <div>
           <Title level={3}>Thùng rác tài liệu</Title>
           <Text type="secondary">Tài liệu đã xóa tạm thời sẽ được purge tự động sau thời hạn lưu giữ.</Text>
@@ -239,7 +241,8 @@ export default function DocumentTrashPage() {
           onChange={setPage}
           showSizeChanger={false}
         />
-      </Flex>
-    </Card>
+        </Flex>
+      </Card>
+    </main>
   );
 }

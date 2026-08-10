@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  ApartmentOutlined,
   DeleteOutlined,
   EditOutlined,
+  MailOutlined,
   PlusOutlined,
+  SearchOutlined,
+  SlidersOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Switch } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   getDepartments,
@@ -12,17 +18,33 @@ import {
   updateDepartment,
   deleteDepartment
 } from '../../../api/departmentApi.js';
+import { getUsers } from '../../../api/userApi.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './DepartmentsPage.module.css';
 
+function normalizeList(data) {
+  return Array.isArray(data) ? data : (data?.content || data?.items || []);
+}
+
+function getInitials(name = '') {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'U';
+  return parts.slice(-2).map((part) => part.charAt(0).toUpperCase()).join('');
+}
+
 export default function DepartmentsPage() {
+  const navigate = useNavigate();
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
-  
+
   const [departments, setDepartments] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState(null);
@@ -31,19 +53,37 @@ export default function DepartmentsPage() {
     setIsLoading(true);
     try {
       const data = await getDepartments();
-      // Ensure we extract array properly if backend wraps it
-      const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
+      const list = normalizeList(data);
       setDepartments(list);
+      setSelectedDepartmentId((currentId) => {
+        if (currentId && list.some((department) => department.id === currentId)) return currentId;
+        return list[0]?.id || null;
+      });
     } catch (error) {
       toast.error(getApiErrorMessage(error) || 'Lỗi khi tải danh sách phòng ban');
       setDepartments([]);
+      setSelectedDepartmentId(null);
     } finally {
       setIsLoading(false);
     }
   }
 
+  async function loadUsers() {
+    setIsLoadingUsers(true);
+    try {
+      const data = await getUsers();
+      setUsers(normalizeList(data));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error) || 'Lỗi khi tải danh sách người dùng');
+      setUsers([]);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }
+
   useEffect(() => {
     loadDepartments();
+    loadUsers();
   }, []);
 
   function closeCreateModal() {
@@ -126,6 +166,32 @@ export default function DepartmentsPage() {
     setEditModalOpen(true);
   }
 
+  const usersByDepartmentId = useMemo(() => {
+    return users.reduce((map, user) => {
+      if (!user.departmentId) return map;
+      const key = String(user.departmentId);
+      const current = map.get(key) || [];
+      current.push(user);
+      map.set(key, current);
+      return map;
+    }, new Map());
+  }, [users]);
+
+  const filteredDepartments = useMemo(() => {
+    const keyword = searchTerm.trim().toLowerCase();
+    if (!keyword) return departments;
+    return departments.filter((department) => [department.name, department.code, department.description]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(keyword)));
+  }, [departments, searchTerm]);
+
+  const selectedDepartment = useMemo(() => {
+    return departments.find((department) => department.id === selectedDepartmentId) || filteredDepartments[0] || null;
+  }, [departments, filteredDepartments, selectedDepartmentId]);
+
+  const selectedMembers = selectedDepartment ? usersByDepartmentId.get(String(selectedDepartment.id)) || [] : [];
+  const isBusy = isLoading || isLoadingUsers;
+
   return (
     <div className={styles.page}>
       <main className={styles.pageBody}>
@@ -133,76 +199,129 @@ export default function DepartmentsPage() {
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
+                <span className={styles.eyebrow}>MH13</span>
                 <h1>Quản lý phòng ban</h1>
-                <p>Quản lý danh sách các phòng ban và bộ phận trong tổ chức.</p>
+                <p>Quyền truy cập tài liệu được cấp theo phòng ban trên từng danh mục.</p>
               </div>
               <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}>
                 <PlusOutlined /> Thêm phòng ban
               </button>
             </section>
 
-            <section className={styles.tablePanel}>
-              <div className={styles.tableScroller}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Tên phòng ban</th>
-                      <th>Mã phòng</th>
-                      <th>Mô tả</th>
-                      <th>Trạng thái</th>
-                      <th>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isLoading && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
-                          Đang tải dữ liệu...
-                        </td>
-                      </tr>
-                    )}
-                    {!isLoading && departments.length === 0 && (
-                      <tr>
-                        <td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>
-                          Chưa có phòng ban nào
-                        </td>
-                      </tr>
-                    )}
-                    {!isLoading && departments.map((department, index) => (
-                      <tr key={department.id || department.code}>
-                        <td>{index + 1}</td>
-                        <td><strong>{department.name}</strong></td>
-                        <td className={styles.codeCell}>{department.code}</td>
-                        <td className={styles.descriptionCell}>{department.description || '—'}</td>
-                        <td>
-                          <span className={department.isActive ? styles.statusBadge : `${styles.statusBadge} ${styles.inactive}`}>
-                            <span />{department.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </td>
-                        <td>
-                          <div className={styles.rowActions}>
-                            <button title="Sửa" type="button" onClick={() => handleEditClick(department)}>
-                              <EditOutlined />
-                            </button>
-                            <button title="Xóa" type="button" onClick={() => handleDeleteClick(department)}>
-                              <DeleteOutlined />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <section className={styles.searchPanel}>
+              <SearchOutlined className={styles.searchIcon} />
+              <input
+                className={styles.searchInput}
+                type="search"
+                placeholder="Tìm phòng ban..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+            </section>
+
+            <section className={styles.managementGrid}>
+              <div className={styles.departmentList}>
+                {isLoading && <div className={styles.emptyState}>Đang tải phòng ban...</div>}
+                {!isLoading && filteredDepartments.length === 0 && (
+                  <div className={styles.emptyState}>Không tìm thấy phòng ban phù hợp</div>
+                )}
+                {!isLoading && filteredDepartments.map((department) => {
+                  const members = usersByDepartmentId.get(String(department.id)) || [];
+                  const isSelected = selectedDepartment?.id === department.id;
+                  return (
+                    <button
+                      key={department.id || department.code}
+                      type="button"
+                      className={isSelected ? `${styles.departmentCard} ${styles.departmentCardActive}` : styles.departmentCard}
+                      onClick={() => setSelectedDepartmentId(department.id)}
+                    >
+                      <span className={styles.departmentIcon}><ApartmentOutlined /></span>
+                      <span className={styles.departmentContent}>
+                        <span className={styles.departmentName}>{department.name}</span>
+                        <span className={styles.departmentMeta}>{members.length} người dùng · {department.code}</span>
+                      </span>
+                      <span className={styles.cardActions}>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="Sửa"
+                          className={styles.iconAction}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleEditClick(department);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.stopPropagation();
+                              handleEditClick(department);
+                            }
+                          }}
+                        >
+                          <SlidersOutlined />
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title="Xóa"
+                          className={styles.iconAction}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleDeleteClick(department);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.stopPropagation();
+                              handleDeleteClick(department);
+                            }
+                          }}
+                        >
+                          <DeleteOutlined />
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <footer className={styles.pagination}>
-                <span>Hiển thị <strong>{departments.length ? 1 : 0}</strong> đến <strong>{departments.length}</strong> trong <strong>{departments.length}</strong> phòng ban</span>
-                <div>
-                  <button type="button" disabled>‹</button>
-                  <button className={styles.currentPage} type="button">1</button>
-                  <button type="button" disabled>›</button>
-                </div>
-              </footer>
+
+              <aside className={styles.membersPanel}>
+                {selectedDepartment ? (
+                  <>
+                    <div className={styles.membersHeader}>
+                      <span className={styles.membersIcon}><TeamOutlined /></span>
+                      <div>
+                        <h2>{selectedDepartment.name}</h2>
+                        <p>{selectedMembers.length} thành viên hiển thị</p>
+                      </div>
+                    </div>
+                    <div className={styles.memberList}>
+                      {isBusy && <div className={styles.emptyState}>Đang tải thành viên...</div>}
+                      {!isBusy && selectedMembers.length === 0 && (
+                        <div className={styles.emptyState}>Phòng ban này chưa có thành viên</div>
+                      )}
+                      {!isBusy && selectedMembers.map((member) => (
+                        <button
+                          key={member.id}
+                          type="button"
+                          className={styles.memberCard}
+                          onClick={() => navigate(`/users?editUserId=${encodeURIComponent(member.id)}`)}
+                        >
+                          <span className={styles.memberAvatar}>{getInitials(member.name)}</span>
+                          <span className={styles.memberInfo}>
+                            <strong>{member.name || member.email}</strong>
+                            <span>{member.role === 'ADMIN' ? 'Quản trị viên' : 'Nhân viên'}</span>
+                          </span>
+                          <span className={styles.memberEmail}>
+                            <MailOutlined />
+                            {member.email}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.emptyState}>Chọn một phòng ban để xem thành viên</div>
+                )}
+              </aside>
             </section>
           </div>
         </div>

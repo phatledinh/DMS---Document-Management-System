@@ -1,20 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  AppstoreOutlined,
   DeleteOutlined,
   EditOutlined,
-  FilterOutlined,
+  FileTextOutlined,
   PlusOutlined,
+  SearchOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
 import { Button, Form, Input, Modal } from 'antd';
 import { toast } from 'react-toastify';
+import { searchDocuments } from '../../../api/searchApi.js';
 import {
   createTag,
   deleteTag,
   getTags,
   updateTag,
 } from '../../../api/tagApi.js';
+import { formatDateTime, formatFileSize, getPageContent, normalizeDocument } from '../../documents/utils/documentFormatters.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './TagsPage.module.css';
 
@@ -35,26 +37,40 @@ export default function TagsPage() {
   const [editForm] = Form.useForm();
   const [tags, setTags] = useState([]);
   const [filterText, setFilterText] = useState('');
+  const [selectedTagId, setSelectedTagId] = useState(null);
+  const [relatedDocuments, setRelatedDocuments] = useState([]);
+  const [relatedTotal, setRelatedTotal] = useState(0);
   const [isLoading, setLoading] = useState(false);
+  const [isLoadingDocuments, setLoadingDocuments] = useState(false);
   const [isSubmitting, setSubmitting] = useState(false);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [editingTag, setEditingTag] = useState(null);
 
-  const filteredTags = tags.filter((tag) => {
+  const filteredTags = useMemo(() => {
     const keyword = filterText.trim().toLowerCase();
-    if (!keyword) return true;
-    return tag.name?.toLowerCase().includes(keyword) || tag.slug?.toLowerCase().includes(keyword);
-  });
+    if (!keyword) return tags;
+    return tags.filter((tag) => tag.name?.toLowerCase().includes(keyword) || tag.slug?.toLowerCase().includes(keyword));
+  }, [filterText, tags]);
+
+  const selectedTag = useMemo(() => {
+    return tags.find((tag) => tag.id === selectedTagId) || filteredTags[0] || null;
+  }, [filteredTags, selectedTagId, tags]);
 
   async function loadTags() {
     setLoading(true);
     try {
       const data = await getTags();
-      setTags(normalizeList(data));
+      const list = normalizeList(data);
+      setTags(list);
+      setSelectedTagId((currentId) => {
+        if (currentId && list.some((tag) => tag.id === currentId)) return currentId;
+        return list[0]?.id || null;
+      });
     } catch (error) {
       toast.error(getApiErrorMessage(error));
       setTags([]);
+      setSelectedTagId(null);
     } finally {
       setLoading(false);
     }
@@ -63,6 +79,30 @@ export default function TagsPage() {
   useEffect(() => {
     loadTags();
   }, []);
+
+  useEffect(() => {
+    if (!selectedTag?.id) {
+      setRelatedDocuments([]);
+      setRelatedTotal(0);
+      return;
+    }
+
+    async function loadRelatedDocuments() {
+      setLoadingDocuments(true);
+      try {
+        const data = await searchDocuments({ tagIds: selectedTag.id, page: 0, size: 5, sort: 'created_at_desc' });
+        setRelatedDocuments(getPageContent(data).map((item) => normalizeDocument(item.document || item)).filter(Boolean));
+        setRelatedTotal(data?.totalElements ?? data?.total ?? getPageContent(data).length);
+      } catch {
+        setRelatedDocuments([]);
+        setRelatedTotal(0);
+      } finally {
+        setLoadingDocuments(false);
+      }
+    }
+
+    loadRelatedDocuments();
+  }, [selectedTag?.id]);
 
   function closeCreateModal() {
     setCreateModalOpen(false);
@@ -160,67 +200,75 @@ export default function TagsPage() {
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
-                <h2>QUẢN LÝ TAGS</h2>
-                <p>Quản lý danh sách các thẻ phân loại tài liệu trong hệ thống.</p>
+                <span className={styles.eyebrow}>MH15</span>
+                <h1>Quản lý tags</h1>
+                <p>Phân loại tài liệu bằng các thẻ chủ đề, trạng thái và nghiệp vụ.</p>
               </div>
-              <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}><PlusOutlined />Thêm tag mới</button>
+              <button className={styles.primaryButton} type="button" onClick={() => setCreateModalOpen(true)}>
+                <PlusOutlined /> Thêm tag mới
+              </button>
             </section>
 
-            <section className={styles.tablePanel}>
-              <div className={styles.toolbar}>
-                <label className={styles.filterBox}>
-                  <FilterOutlined />
-                  <input placeholder="Lọc theo tên hoặc slug..." type="text" value={filterText} onChange={(event) => setFilterText(event.target.value)} />
-                </label>
-                <div className={styles.pageSize}>Hiển thị:<select defaultValue="10"><option>10</option><option>20</option><option>50</option></select><span>/ trang</span></div>
+            <section className={styles.searchPanel}>
+              <SearchOutlined className={styles.searchIcon} />
+              <input placeholder="Tìm tag theo tên hoặc slug..." type="search" value={filterText} onChange={(event) => setFilterText(event.target.value)} />
+            </section>
+
+            <section className={styles.managementGrid}>
+              <div className={styles.itemList}>
+                {isLoading && <div className={styles.emptyState}>Đang tải tags...</div>}
+                {!isLoading && filteredTags.length === 0 && <div className={styles.emptyState}>Không tìm thấy tag phù hợp</div>}
+                {!isLoading && filteredTags.map((tag) => {
+                  const isSelected = selectedTag?.id === tag.id;
+                  return (
+                    <button key={tag.id || tag.slug} type="button" className={isSelected ? `${styles.itemCard} ${styles.itemCardActive}` : styles.itemCard} onClick={() => setSelectedTagId(tag.id)}>
+                      <span className={styles.itemIcon}><TagsOutlined /></span>
+                      <span className={styles.itemContent}>
+                        <span className={styles.itemName}>{tag.name}</span>
+                        <span className={styles.itemMeta}>#{tag.slug || 'chua-co-slug'} · {tag.documentCount ?? 0} tài liệu</span>
+                      </span>
+                      <span className={styles.cardActions}>
+                        <span role="button" tabIndex={0} title="Sửa" className={styles.iconAction} onClick={(event) => { event.stopPropagation(); openEditModal(tag); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); openEditModal(tag); } }}><EditOutlined /></span>
+                        <span role="button" tabIndex={0} title="Xóa" className={styles.iconAction} onClick={(event) => { event.stopPropagation(); handleDeleteTag(tag); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); handleDeleteTag(tag); } }}><DeleteOutlined /></span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className={styles.tableScroller}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Tên Tag</th>
-                      <th>Slug</th>
-                      <th>Số Tài Liệu</th>
-                      <th>Ngày Tạo</th>
-                      <th>Thao Tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {isLoading && (
-                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>Đang tải tags...</td></tr>
-                    )}
-                    {!isLoading && filteredTags.length === 0 && (
-                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>Chưa có tag nào</td></tr>
-                    )}
-                    {!isLoading && filteredTags.map((tag, index) => (
-                      <tr key={tag.id || tag.slug}>
-                        <td>{index + 1}</td>
-                        <td><span className={`${styles.tagPill} ${styles.primary}`}><TagsOutlined />{tag.name}</span></td>
-                        <td className={styles.slugCell}>{tag.slug}</td>
-                        <td className={styles.countCell}><span>{tag.documentCount ?? 0}</span></td>
-                        <td className={styles.dateCell}>{formatDate(tag.createdAt)}</td>
-                        <td>
-                          <div className={styles.rowActions}>
-                            <button title="Chỉnh sửa" type="button" onClick={() => openEditModal(tag)}><EditOutlined /></button>
-                            <button title="Xóa" type="button" onClick={() => handleDeleteTag(tag)}><DeleteOutlined /></button>
+              <aside className={styles.detailPanel}>
+                {selectedTag ? (
+                  <>
+                    <div className={styles.detailHeader}>
+                      <span className={styles.detailIcon}><TagsOutlined /></span>
+                      <div>
+                        <h2>{selectedTag.name}</h2>
+                        <p>#{selectedTag.slug || 'chua-co-slug'}</p>
+                      </div>
+                    </div>
+                    <div className={styles.detailStats}>
+                      <div><strong>{relatedTotal || selectedTag.documentCount || 0}</strong><span>Tài liệu</span></div>
+                      <div><strong>{formatDate(selectedTag.createdAt)}</strong><span>Ngày tạo</span></div>
+                    </div>
+                    <div className={styles.relatedHeader}>Tài liệu gắn tag này</div>
+                    <div className={styles.documentList}>
+                      {isLoadingDocuments && <div className={styles.emptyState}>Đang tải tài liệu...</div>}
+                      {!isLoadingDocuments && relatedDocuments.length === 0 && <div className={styles.emptyState}>Chưa có tài liệu liên quan</div>}
+                      {!isLoadingDocuments && relatedDocuments.map((doc) => (
+                        <div className={styles.documentCard} key={doc.id}>
+                          <FileTextOutlined />
+                          <div>
+                            <strong>{doc.title || doc.fileName}</strong>
+                            <span>{doc.documentCode || '—'} · {formatFileSize(doc.fileSize)} · {formatDateTime(doc.updatedAt || doc.createdAt)}</span>
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <footer className={styles.pagination}>
-                <span>Hiển thị <strong>{filteredTags.length ? 1 : 0}</strong> đến <strong>{filteredTags.length}</strong> trong <strong>{filteredTags.length}</strong> tags</span>
-                <div>
-                  <button type="button" disabled>‹</button>
-                  <button className={styles.currentPage} type="button">1</button>
-                  <button type="button" disabled>›</button>
-                </div>
-              </footer>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.emptyState}>Chọn một tag để xem chi tiết</div>
+                )}
+              </aside>
             </section>
           </div>
         </div>

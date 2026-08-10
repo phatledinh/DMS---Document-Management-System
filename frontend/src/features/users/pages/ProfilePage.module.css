@@ -73,6 +73,20 @@
   color: #202124 !important;
 }
 
+.helperText {
+  margin: -12px 0 20px !important;
+  color: #5f6368 !important;
+}
+
+.passwordForm {
+  margin-top: 4px;
+}
+
+.passwordActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
