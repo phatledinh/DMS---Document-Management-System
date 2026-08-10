@@ -6,6 +6,7 @@ import AppLayout from "../components/Layout/AppLayout.jsx";
 import PageLoading from "../components/PageLoading/PageLoading.jsx";
 import ProtectedRoute from "../components/ProtectedRoute/ProtectedRoute.jsx";
 import SearchAccessAnalyticsPage from "../features/analytics/pages/SearchAccessAnalyticsPage.jsx";
+import AdminApprovals from "../features/approvals/pages/AdminApprovals.jsx";
 import AuditLogsPage from "../features/auditLogs/pages/AuditLogsPage.jsx";
 import ProcessingErrorsPage from "../features/auditLogs/pages/ProcessingErrorsPage.jsx";
 import { LoginPage } from "../features/auth/index.js";
@@ -131,6 +132,7 @@ export default function AppRouter() {
               element={<AdminDocumentRedirect suffix="history" />}
             />
             <Route path="/admin/trash" element={<DocumentTrashPage />} />
+            <Route path="/admin/approvals" element={<AdminApprovals />} />
             <Route path="/analytics" element={<SearchAccessAnalyticsPage />} />
             <Route path="/audit-logs" element={<AuditLogsPage />} />
             <Route

@@ -161,11 +161,16 @@
   cursor: pointer;
 }
 
-.documentTitle svg {
+.documentIconWrap {
   grid-area: icon;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
 }
 
-.documentTitle span {
+.documentName {
   grid-area: title;
   overflow: hidden;
   color: var(--doc-admin-text);
@@ -185,7 +190,7 @@
   white-space: nowrap;
 }
 
-.documentTitle:hover span {
+.documentTitle:hover .documentName {
   color: var(--doc-admin-primary);
 }
 

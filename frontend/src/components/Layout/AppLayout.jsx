@@ -5,6 +5,7 @@ import {
   DeleteOutlined,
   DownOutlined,
   FileDoneOutlined,
+  FileProtectOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
@@ -30,6 +31,7 @@ const { Header, Sider, Content } = Layout;
 
 function getSelectedMenuKey(pathname) {
   if (pathname.startsWith('/admin/upload-admin')) return '/admin/upload-admin';
+  if (pathname.startsWith('/admin/approvals')) return '/admin/approvals';
   if (pathname.startsWith('/admin/documents-admin')) return '/admin/documents-admin';
   if (pathname.startsWith('/admin/documents/upload')) return '/admin/upload-admin';
   if (pathname.startsWith('/admin/documents')) return '/admin/documents-admin';
@@ -57,6 +59,7 @@ export default function AppLayout({ children }) {
     { key: '/admin/dashboard-admin', icon: <DashboardOutlined />, label: 'Dashboard' },
     { key: '/admin/documents-admin', icon: <FileTextOutlined />, label: 'Quản lý tài liệu' },
     { key: '/admin/upload-admin', icon: <UploadOutlined />, label: 'Upload tài liệu' },
+    { key: '/admin/approvals', icon: <FileProtectOutlined />, label: 'Duyệt tin' },
     { key: '/processing-errors', icon: <WarningOutlined />, label: 'Tài liệu lỗi xử lý' },
     { key: '/categories', icon: <FolderOpenOutlined />, label: 'Danh mục' },
     { key: '/departments', icon: <ShopOutlined />, label: 'Phòng ban' },
@@ -107,7 +110,7 @@ export default function AppLayout({ children }) {
   }
 
   return (
-    <Layout className={styles.shell}>
+    <Layout className={`${styles.shell} ${isAdmin ? styles.adminShell : ''}`}>
       {isAdmin && (
         <Sider width={240} className={styles.sidebar}>
           <div className={styles.brand} onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>

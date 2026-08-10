@@ -73,6 +73,7 @@ export default function UploadAdmin() {
   const navigate = useNavigate();
   const uploadMutation = useBatchUploadDocuments();
   const [items, setItems] = useState([]);
+  const [selectedClientItemId, setSelectedClientItemId] = useState(null);
   const [categoryList, setCategoryList] = useState([]);
   const [tagList, setTagList] = useState([]);
   const [isCategoryLoading, setCategoryLoading] = useState(false);
@@ -81,6 +82,7 @@ export default function UploadAdmin() {
   const categoryTreeData = useMemo(() => buildTreeSelectData(buildCategoryTree(categoryList)), [categoryList]);
   const tagOptions = useMemo(() => tagList.map((tag) => ({ label: tag.name, value: tag.id })), [tagList]);
   const filesByClientItemId = useMemo(() => Object.fromEntries(items.map((item) => [item.clientItemId, item.file])), [items]);
+  const selectedItem = useMemo(() => items.find((item) => item.clientItemId === selectedClientItemId) || items[0] || null, [items, selectedClientItemId]);
 
   useEffect(() => {
     async function fetchCategories() {
@@ -127,11 +129,23 @@ export default function UploadAdmin() {
           return current;
         }
         const clientItemId = `${Date.now()}-${nextFile.uid || nextFile.name}`;
+        if (!selectedClientItemId && current.length === 0) {
+          setSelectedClientItemId(clientItemId);
+        }
         return [...current, { clientItemId, file: nextFile, title: defaultTitle(nextFile.name), status: 'queued', progress: 0 }];
       });
       return false;
     },
-    onRemove: (file) => setItems((current) => current.filter((item) => item.file.uid !== file.uid)),
+    onRemove: (file) => {
+      setItems((current) => {
+        const next = current.filter((item) => item.file.uid !== file.uid);
+        const removedItem = current.find((item) => item.file.uid === file.uid);
+        if (removedItem?.clientItemId === selectedClientItemId) {
+          setSelectedClientItemId(next[0]?.clientItemId || null);
+        }
+        return next;
+      });
+    },
   };
 
   function updateItem(clientItemId, patch) {
@@ -205,7 +219,6 @@ export default function UploadAdmin() {
     <main className={styles.page}>
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH09</span>
           <h1>Upload tài liệu</h1>
           <p>Hỗ trợ PDF, DOC/DOCX, XLS/XLSX và ảnh. Tối đa 50 MB / tệp.</p>
         </div>
@@ -228,14 +241,20 @@ export default function UploadAdmin() {
             {!!items.length && (
               <div className={styles.fileQueue}>
                 {items.map((item) => (
-                  <div className={styles.queueItem} key={item.clientItemId}>
+                  <button
+                    className={`${styles.queueItem} ${selectedItem?.clientItemId === item.clientItemId ? styles.queueItemActive : ''}`}
+                    key={item.clientItemId}
+                    type="button"
+                    onClick={() => setSelectedClientItemId(item.clientItemId)}
+                    disabled={uploadMutation.isPending}
+                  >
                     <div>
                       <strong>{item.file.name}</strong>
                       <span>{formatFileSize(item.file.size)} · {statusTag(item.status)}</span>
                       {(item.status === 'uploading' || item.status === 'completing' || item.status === 'processing') && <Progress percent={item.progress || 0} size="small" />}
                       {item.error && <Text type="danger">{item.error}</Text>}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -256,23 +275,35 @@ export default function UploadAdmin() {
           <h2>Thông tin tài liệu</h2>
           {!!items.length && (
             <div className={styles.tableWrap}>
-              <Table rowKey="clientItemId" columns={columns} dataSource={items} pagination={false} size="small" scroll={{ x: 760 }} />
+              <Table
+                rowKey="clientItemId"
+                columns={columns}
+                dataSource={items}
+                pagination={false}
+                size="small"
+                scroll={{ x: 760 }}
+                rowClassName={(record) => (selectedItem?.clientItemId === record.clientItemId ? styles.selectedQueueRow : '')}
+                onRow={(record) => ({ onClick: () => !uploadMutation.isPending && setSelectedClientItemId(record.clientItemId) })}
+              />
             </div>
           )}
+          {selectedItem && (
+            <div className={styles.selectedFileHint}>Đang nhập thông tin cho: <strong>{selectedItem.file.name}</strong></div>
+          )}
           <div className={styles.formGrid}>
-            <Form.Item label="Tiêu đề *">
-              <Input placeholder="VD: Quy trình kiểm soát chất lượng" disabled={uploadMutation.isPending} value={items[0]?.title || ''} onChange={(event) => items[0] && updateItem(items[0].clientItemId, { title: event.target.value })} />
+            <Form.Item label="Tiêu đề file đang chọn *">
+              <Input placeholder="VD: Quy trình kiểm soát chất lượng" disabled={uploadMutation.isPending || !selectedItem} value={selectedItem?.title || ''} onChange={(event) => selectedItem && updateItem(selectedItem.clientItemId, { title: event.target.value })} />
             </Form.Item>
             <Form.Item label="Mã tài liệu">
               <Input placeholder="VD: SOP-QA-002" disabled />
             </Form.Item>
-            <Form.Item name="categoryId" label="Danh mục" rules={[{ required: true, message: 'Vui lòng chọn danh mục.' }]}>
+            <Form.Item name="categoryId" label="Danh mục áp dụng cho batch" rules={[{ required: true, message: 'Vui lòng chọn danh mục.' }]}>
               <TreeSelect allowClear showSearch treeDefaultExpandAll placeholder="Chọn danh mục" treeData={categoryTreeData} loading={isCategoryLoading} treeLine filterTreeNode={(input, node) => node.title.toLowerCase().includes(input.toLowerCase())} />
             </Form.Item>
-            <Form.Item label="Phòng ban">
-              <Input placeholder="Chọn phòng ban" disabled />
-            </Form.Item>
             <Form.Item name="effectiveDate" label="Ngày hiệu lực">
+              <DatePicker format="DD/MM/YYYY" placeholder="dd/mm/yyyy" />
+            </Form.Item>
+            <Form.Item name="expiryDate" label="Ngày hết hạn">
               <DatePicker format="DD/MM/YYYY" placeholder="dd/mm/yyyy" />
             </Form.Item>
             <Form.Item name="tagIds" label="Tags">

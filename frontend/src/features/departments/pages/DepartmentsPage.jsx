@@ -199,7 +199,6 @@ export default function DepartmentsPage() {
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
-                <span className={styles.eyebrow}>MH13</span>
                 <h1>Quản lý phòng ban</h1>
                 <p>Quyền truy cập tài liệu được cấp theo phòng ban trên từng danh mục.</p>
               </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircleOutlined,
   DeleteOutlined,
@@ -75,6 +75,22 @@ export default function UsersPage() {
     [departments],
   );
 
+  function getUserDepartmentIds(user) {
+    if (Array.isArray(user?.departmentIds) && user.departmentIds.length > 0) {
+      return user.departmentIds;
+    }
+    if (Array.isArray(user?.departments) && user.departments.length > 0) {
+      return user.departments.map((department) => department.id).filter(Boolean);
+    }
+    return user?.departmentId ? [user.departmentId] : [];
+  }
+
+  function getUserDepartmentNames(user) {
+    const ids = getUserDepartmentIds(user);
+    if (!ids.length) return ["—"];
+    return ids.map((departmentId) => departmentById.get(departmentId)?.name || departmentId).filter(Boolean);
+  }
+
   async function loadUsers() {
     setLoadingUsers(true);
     try {
@@ -128,10 +144,9 @@ export default function UsersPage() {
         name: values.name.trim(),
         email: values.email.trim(),
         password: values.password,
-        phone: values.phone?.trim() || null,
-        avatar: values.avatar?.trim() || null,
+        phone: values.phone.trim(),
         role: values.role,
-        departmentId: values.departmentId || null,
+        departmentIds: values.departmentIds || [],
         status: values.status,
       });
       toast.success("Đã thêm người dùng mới");
@@ -151,8 +166,8 @@ export default function UsersPage() {
       await updateUser(editingUser.id, {
         name: values.name.trim(),
         password: values.password || null,
-        phone: values.phone?.trim() || null,
-        departmentId: values.departmentId || null,
+        phone: values.phone.trim(),
+        departmentIds: values.departmentIds || [],
         role: values.role,
         status: values.status,
       });
@@ -166,17 +181,17 @@ export default function UsersPage() {
     }
   }
 
-  function openEditModal(user) {
+  const openEditModal = useCallback((user) => {
     setEditingUser(user);
     editForm.setFieldsValue({
       name: user.name,
       phone: user.phone,
-      departmentId: user.departmentId,
+      departmentIds: getUserDepartmentIds(user),
       role: user.role || "USER",
       status: user.status || "ACTIVE",
     });
     setEditModalOpen(true);
-  }
+  }, [editForm]);
 
   useEffect(() => {
     const editUserId = searchParams.get("editUserId");
@@ -192,7 +207,7 @@ export default function UsersPage() {
 
     openEditModal(targetUser);
     setHandledEditUserId(editUserId);
-  }, [searchParams, handledEditUserId, isLoadingUsers, users, navigate]);
+  }, [searchParams, handledEditUserId, isLoadingUsers, users, navigate, openEditModal]);
 
   function handleToggleLock(user) {
     const nextStatus = user.status === "BANNED" ? "ACTIVE" : "BANNED";
@@ -232,8 +247,8 @@ export default function UsersPage() {
     });
   }
 
-  function getDepartmentName(departmentId) {
-    return departmentById.get(departmentId)?.name || "—";
+  function getDepartmentDisplay(user) {
+    return getUserDepartmentNames(user).join(', ');
   }
 
   return (
@@ -337,7 +352,7 @@ export default function UsersPage() {
                           </td>
                           <td>{user.email || "—"}</td>
                           <td className={styles.monoCell}>{user.phone || "—"}</td>
-                          <td>{getDepartmentName(user.departmentId)}</td>
+                          <td>{getDepartmentDisplay(user)}</td>
                           <td>
                             <span
                               className={
@@ -429,14 +444,11 @@ export default function UsersPage() {
           <Form.Item name="password" label="Mật khẩu" rules={[{ required: true, message: "Vui lòng nhập mật khẩu." }]}>
             <Input.Password placeholder="Nhập mật khẩu" />
           </Form.Item>
-          <Form.Item name="phone" label="Số điện thoại">
+          <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: "Vui lòng nhập số điện thoại." }]}>
             <Input placeholder="Ví dụ: 0901234567" />
           </Form.Item>
-          <Form.Item name="avatar" label="Avatar URL">
-            <Input placeholder="https://example.com/avatar.png" />
-          </Form.Item>
-          <Form.Item name="departmentId" label="Phòng ban">
-            <Select allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
+          <Form.Item name="departmentIds" label="Phòng ban" rules={[{ required: true, message: "Vui lòng chọn ít nhất một phòng ban." }]}>
+            <Select mode="multiple" allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
           </Form.Item>
           <Form.Item name="role" label="Vai trò" rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}>
             <Select options={roleOptions} />
@@ -461,11 +473,11 @@ export default function UsersPage() {
           <Form.Item name="password" label="Mật khẩu mới">
             <Input.Password placeholder="Bỏ trống nếu không đổi mật khẩu" />
           </Form.Item>
-          <Form.Item name="phone" label="Số điện thoại">
+          <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true, message: "Vui lòng nhập số điện thoại." }]}>
             <Input placeholder="Ví dụ: 0901234567" />
           </Form.Item>
-          <Form.Item name="departmentId" label="Phòng ban">
-            <Select allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
+          <Form.Item name="departmentIds" label="Phòng ban" rules={[{ required: true, message: "Vui lòng chọn ít nhất một phòng ban." }]}>
+            <Select mode="multiple" allowClear placeholder="Chọn phòng ban" options={departmentOptions} />
           </Form.Item>
           <Form.Item name="role" label="Vai trò" rules={[{ required: true, message: "Vui lòng chọn vai trò." }]}>
             <Select options={roleOptions} />

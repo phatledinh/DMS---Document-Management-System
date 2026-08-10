@@ -9,25 +9,28 @@ import {
   MoreOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SyncOutlined,
   UndoOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Dropdown, Empty, Input, Modal, Pagination, Select, Space, Spin, Table, Tag, Typography } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { getCategories } from '../../../api/categoryApi.js';
 import { batchArchiveDocuments, batchDeleteDocuments, batchMoveDocuments } from '../../../api/documentApi.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import {
   useArchiveDocument,
   useDeleteDocument,
   useRestoreDocument,
+  useRetryDocumentIndexing,
 } from '../hooks/useDocumentLifecycle.js';
 import { useDocuments } from '../hooks/useDocuments.js';
 import {
   formatDateTime,
   formatFileSize,
-  getAccessLevelLabel,
   getDocumentStatusMeta,
   getPageContent,
   normalizeDocument,
@@ -43,6 +46,21 @@ function FileIcon({ fileType }) {
     return <FileImageOutlined className={styles.fileIconImage} />;
   }
   return <FileTextOutlined className={styles.fileIconDoc} />;
+}
+
+function normalizeList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
+
+function getDocumentCategoryName(record, categoryById) {
+  return record.categoryName
+    || record.category?.name
+    || categoryById.get(String(record.categoryId))
+    || categoryById.get(String(record.category?.id))
+    || '—';
 }
 
 function StatusBadge({ status }) {
@@ -76,6 +94,7 @@ export default function DocumentsAdmin() {
   const archiveMutation = useArchiveDocument();
   const deleteMutation = useDeleteDocument();
   const restoreMutation = useRestoreDocument();
+  const retryMutation = useRetryDocumentIndexing();
 
   const params = useMemo(
     () => ({
@@ -90,6 +109,13 @@ export default function DocumentsAdmin() {
   );
 
   const documentsQuery = useDocuments(params);
+  const categoriesQuery = useQuery({
+    queryKey: ['document-admin-categories'],
+    queryFn: () => getCategories({ activeOnly: false }),
+  });
+  const categoryById = useMemo(() => {
+    return new Map(normalizeList(categoriesQuery.data).map((category) => [String(category.id), category.name]));
+  }, [categoriesQuery.data]);
   const documents = getPageContent(documentsQuery.data).map(normalizeDocument).filter(Boolean);
   const totalElements = documentsQuery.data?.totalElements ?? documentsQuery.data?.total ?? documents.length;
 
@@ -144,6 +170,16 @@ export default function DocumentsAdmin() {
       mutation: restoreMutation,
       documentId: record.id,
       successMessage: 'Đã khôi phục tài liệu',
+    });
+  }
+
+  function retryRecord(record) {
+    runLifecycleAction({
+      title: 'Retry xử lý tài liệu?',
+      content: `Gửi lại yêu cầu xử lý cho tài liệu "${record.title || record.fileName}".`,
+      mutation: retryMutation,
+      documentId: record.id,
+      successMessage: 'Đã gửi retry xử lý tài liệu',
     });
   }
 
@@ -232,6 +268,9 @@ export default function DocumentsAdmin() {
     if (record.status === 'ARCHIVED') {
       items.push({ key: 'restore', icon: <UndoOutlined />, label: 'Khôi phục', onClick: () => restoreRecord(record) });
     }
+    if (record.status === 'EXTRACTION_FAILED') {
+      items.push({ key: 'retry', icon: <SyncOutlined />, label: 'Retry xử lý', onClick: () => retryRecord(record) });
+    }
     if (['INDEXED', 'ARCHIVED', 'EXTRACTION_FAILED'].includes(record.status)) {
       items.push({ key: 'delete', danger: true, icon: <DeleteOutlined />, label: 'Xóa', onClick: () => deleteRecord(record) });
     }
@@ -246,8 +285,10 @@ export default function DocumentsAdmin() {
       width: 320,
       render: (_, record) => (
         <button className={styles.documentTitle} type="button" onClick={() => navigate(`/documents/${record.id}`)}>
-          <FileIcon fileType={record.fileType || record.mimeType || record.fileName} />
-          <span>{record.title || record.fileName || 'Không có tiêu đề'}</span>
+          <span className={styles.documentIconWrap}>
+            <FileIcon fileType={record.fileType || record.mimeType || record.fileName} />
+          </span>
+          <span className={styles.documentName}>{record.title || record.fileName || 'Không có tiêu đề'}</span>
           <small>{record.documentCode || record.fileName || '—'}</small>
         </button>
       ),
@@ -255,7 +296,7 @@ export default function DocumentsAdmin() {
     {
       title: 'Danh mục',
       dataIndex: 'categoryName',
-      render: (value) => value || '—',
+      render: (_, record) => getDocumentCategoryName(record, categoryById),
     },
     {
       title: 'Loại file',
@@ -266,11 +307,6 @@ export default function DocumentsAdmin() {
       title: 'Kích thước',
       dataIndex: 'fileSize',
       render: formatFileSize,
-    },
-    {
-      title: 'Quyền truy cập',
-      dataIndex: 'accessLevel',
-      render: getAccessLevelLabel,
     },
     {
       title: 'Trạng thái',
@@ -313,7 +349,6 @@ export default function DocumentsAdmin() {
 
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH03</span>
           <h1>Documents Admin</h1>
           <p>Tìm, lọc và thao tác trên toàn bộ tài liệu trong hệ thống.</p>
         </div>

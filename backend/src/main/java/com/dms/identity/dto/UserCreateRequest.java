@@ -4,8 +4,11 @@ import com.dms.identity.entity.Role;
 import com.dms.identity.entity.UserStatus;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+
+import java.util.List;
 
 public record UserCreateRequest(
         @NotBlank(message = "Tên không được để trống")
@@ -20,9 +23,13 @@ public record UserCreateRequest(
         @Size(min = 6, message = "Mật khẩu phải có ít nhất 6 ký tự")
         String password,
 
+        @NotBlank(message = "Số điện thoại không được để trống")
         String phone,
-        
+
         Long departmentId,
+
+        @NotEmpty(message = "Vui lòng chọn ít nhất một phòng ban")
+        List<Long> departmentIds,
 
         @NotNull(message = "Role không được để trống")
         Role role,

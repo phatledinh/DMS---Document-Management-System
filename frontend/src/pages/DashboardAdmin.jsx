@@ -318,7 +318,6 @@ export default function DashboardAdmin() {
 
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH07</span>
           <h1>Dashboard Admin</h1>
           <p>Bức tranh tổng thể về kho tài liệu và hoạt động người dùng.</p>
         </div>

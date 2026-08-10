@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftOutlined, DownloadOutlined, EyeOutlined, HistoryOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Descriptions, Empty, Flex, Modal, Space, Spin, Tag, Typography } from 'antd';
+import { ArrowLeftOutlined, DownloadOutlined, EyeOutlined, FileTextOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Modal, Space, Spin, Tag, Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -17,7 +17,7 @@ import {
 } from '../utils/documentFormatters.js';
 import styles from './DocumentDetailPage.module.css';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 const PREVIEWABLE_TYPES = ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'image', 'doc', 'docx', 'xls', 'xlsx'];
 
 function canPreviewFile(document) {
@@ -27,6 +27,23 @@ function canPreviewFile(document) {
 
 function getPresignedUrl(payload) {
   return payload?.url || payload?.previewUrl || payload?.downloadUrl;
+}
+
+function getTags(document) {
+  if (Array.isArray(document?.tags)) {
+    return document.tags.map((tag) => tag.name || tag.label || tag).filter(Boolean);
+  }
+  if (Array.isArray(document?.tagNames)) return document.tagNames;
+  return [];
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className={styles.infoRow}>
+      <span>{label}</span>
+      <strong>{value || '—'}</strong>
+    </div>
+  );
 }
 
 export default function DocumentDetailPage() {
@@ -39,6 +56,7 @@ export default function DocumentDetailPage() {
   const document = normalizeDocument(documentQuery.data);
   const statusMeta = getDocumentStatusMeta(document?.status);
   const isReady = document?.status === 'INDEXED';
+  const tags = getTags(document);
 
   async function handlePreview() {
     if (!document) return;
@@ -94,63 +112,126 @@ export default function DocumentDetailPage() {
   }
 
   return (
-    <div className={styles.pageWrapper}>
-      <Card>
-        <Flex justify="space-between" align="flex-start" gap={16} wrap="wrap">
-          <Space direction="vertical" size={4}>
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
-              Quay lại
-            </Button>
-            <Title level={3}>{document.title || document.fileName}</Title>
-            <Space wrap>
-              <Text type="secondary">{document.documentCode || document.fileName}</Text>
-              <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
-            </Space>
+    <main className={styles.pageWrapper}>
+      <header className={styles.detailHeader}>
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
+          Quay lại
+        </Button>
+        <div className={styles.headerTitleGroup}>
+          <h1>{document.title || document.fileName}</h1>
+          <Space wrap>
+            <Text type="secondary">{document.documentCode || document.fileName}</Text>
+            <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
           </Space>
-          <Space>
-            <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${document.id}/history`)}>
-              Versions
-            </Button>
+        </div>
+        <Space wrap className={styles.headerActions}>
+          <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${document.id}/history`)}>
+            Version
+          </Button>
+          <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
+            Preview
+          </Button>
+          <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload} disabled={!isReady}>
+            Tải xuống
+          </Button>
+        </Space>
+      </header>
+
+      <section className={styles.detailGrid}>
+        <section className={styles.previewCard}>
+          <div className={styles.previewToolbar}>
+            <strong>Xem trước tài liệu</strong>
             <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
-              Preview
+              Mở preview
             </Button>
-            <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload} disabled={!isReady}>
-              Download
-            </Button>
-          </Space>
-        </Flex>
+          </div>
+          {!isReady && (
+            <Alert
+              className={styles.readyAlert}
+              type={document.status === 'EXTRACTION_FAILED' ? 'error' : 'info'}
+              showIcon
+              message="Tài liệu chưa sẵn sàng để preview/download"
+              description="Backend chỉ cấp presigned URL sau khi trích xuất/OCR và INDEXED."
+            />
+          )}
+          <div className={styles.previewCanvas}>
+            <div className={styles.paperPreview}>
+              <div className={styles.paperHeader}>
+                <div>
+                  <span>DMS</span>
+                  <small>{document.documentCode || 'DOCUMENT'}</small>
+                </div>
+                <FileTextOutlined />
+              </div>
+              <div className={styles.paperBody}>
+                <h2>{document.title || document.fileName}</h2>
+                <div className={styles.lineLong} />
+                <div className={styles.lineMedium} />
+                <div className={styles.lineFull} />
+                <div className={styles.lineFull} />
+                <div className={styles.lineShort} />
+                <div className={styles.lineFull} />
+                <div className={styles.lineMedium} />
+              </div>
+            </div>
+          </div>
+        </section>
 
-        {!isReady && (
-          <Alert
-            style={{ marginTop: 16 }}
-            type={document.status === 'EXTRACTION_FAILED' ? 'error' : 'info'}
-            showIcon
-            message="Tài liệu chưa sẵn sàng để preview/download"
-            description="Backend chỉ cấp presigned URL sau khi trích xuất/OCR và INDEXED."
-          />
-        )}
+        <aside className={styles.sidebarColumn}>
+          <section className={styles.infoCard}>
+            <div className={styles.sidebarHeader}>
+              <div>
+                <span>{document.documentCode || document.fileName}</span>
+                <h2>{document.title || document.fileName}</h2>
+              </div>
+              <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
+            </div>
+            <div className={styles.infoList}>
+              <InfoRow label="Danh mục" value={document.categoryName} />
+              <InfoRow label="Phòng ban" value={document.departmentName} />
+              <InfoRow label="Loại file" value={`${document.fileType || document.mimeType || '—'} · ${formatFileSize(document.fileSize)}`} />
+              <InfoRow label="Ngày upload" value={formatDateTime(document.createdAt)} />
+              <InfoRow label="Hiệu lực" value={formatDateTime(document.effectiveDate)} />
+              <InfoRow label="Hết hiệu lực" value={formatDateTime(document.expiryDate)} />
+              <InfoRow label="Lượt xem/tải" value={`${document.viewCount ?? '—'} / ${document.downloadCount ?? '—'}`} />
+              <InfoRow label="Upload bởi" value={document.uploadedByName} />
+            </div>
+            {!!tags.length && (
+              <div className={styles.tagList}>
+                {tags.map((tag) => <Tag key={tag}>#{tag}</Tag>)}
+              </div>
+            )}
+          </section>
 
-        <Descriptions bordered column={2} style={{ marginTop: 24 }}>
-          <Descriptions.Item label="Tên file">{document.fileName || '—'}</Descriptions.Item>
-          <Descriptions.Item label="Dung lượng">{formatFileSize(document.fileSize)}</Descriptions.Item>
-          <Descriptions.Item label="Loại file">{document.fileType || document.mimeType || '—'}</Descriptions.Item>
-          <Descriptions.Item label="Danh mục">{document.categoryName || '—'}</Descriptions.Item>
-          <Descriptions.Item label="Phòng ban">{document.departmentName || '—'}</Descriptions.Item>
-          <Descriptions.Item label="Quyền truy cập">{getAccessLevelLabel(document.accessLevel)}</Descriptions.Item>
-          <Descriptions.Item label="Người upload">{document.uploadedByName || '—'}</Descriptions.Item>
-          <Descriptions.Item label="Ngày tạo">{formatDateTime(document.createdAt)}</Descriptions.Item>
-          <Descriptions.Item label="Ngày hiệu lực">{formatDateTime(document.effectiveDate)}</Descriptions.Item>
-          <Descriptions.Item label="Ngày hết hạn">{formatDateTime(document.expiryDate)}</Descriptions.Item>
-          <Descriptions.Item label="Lượt xem">{document.viewCount ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="Lượt tải">{document.downloadCount ?? '—'}</Descriptions.Item>
-        </Descriptions>
+          <section className={styles.infoCard}>
+            <h3>Quyền hiệu lực</h3>
+            <div className={styles.permissionPills}>
+              <span>VIEW</span>
+              <span>DOWNLOAD</span>
+              <span className={styles.mutedPill}>{getAccessLevelLabel(document.accessLevel)}</span>
+            </div>
+            <p>Nguồn quyền được xác định theo danh mục và cấu hình truy cập của tài liệu.</p>
+          </section>
 
-        {document.description && (
-          <Card title="Mô tả" style={{ marginTop: 24 }}>
-            <Paragraph>{document.description}</Paragraph>
-          </Card>
-        )}
-      </Card>
+          <section className={styles.infoCard}>
+            <div className={styles.versionHeader}>
+              <h3>Lịch sử phiên bản</h3>
+              <button type="button" onClick={() => navigate(`/documents/${document.id}/history`)}>Xem tất cả</button>
+            </div>
+            <div className={styles.versionItem}>
+              <strong>{document.version || document.currentVersion || 'Hiện tại'}</strong>
+              <span>{formatDateTime(document.updatedAt || document.createdAt)}</span>
+            </div>
+          </section>
+
+          {document.description && (
+            <section className={styles.infoCard}>
+              <h3>Mô tả</h3>
+              <Paragraph className={styles.description}>{document.description}</Paragraph>
+            </section>
+          )}
+        </aside>
+      </section>
 
       <Modal
         title={preview?.fileName || document.fileName || document.title}
@@ -165,6 +246,6 @@ export default function DocumentDetailPage() {
           <iframe title="Document preview" src={preview?.url} className={styles.previewFrame} />
         )}
       </Modal>
-    </div>
+    </main>
   );
 }

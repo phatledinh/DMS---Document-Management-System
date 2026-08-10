@@ -200,7 +200,6 @@ export default function TagsPage() {
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
-                <span className={styles.eyebrow}>MH15</span>
                 <h1>Quản lý tags</h1>
                 <p>Phân loại tài liệu bằng các thẻ chủ đề, trạng thái và nghiệp vụ.</p>
               </div>

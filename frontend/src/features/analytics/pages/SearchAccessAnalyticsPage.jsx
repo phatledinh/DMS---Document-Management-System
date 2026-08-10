@@ -247,16 +247,6 @@ export default function SearchAccessAnalyticsPage() {
         </Space>
       </section>
 
-      <Tabs
-        className={styles.sectionTabs}
-        defaultActiveKey="overview"
-        items={[
-          { key: 'overview', label: 'Tổng quan' },
-          { key: 'search', label: 'Phân tích Tìm kiếm' },
-          { key: 'access', label: 'Truy cập tài liệu' },
-        ]}
-      />
-
       <Row gutter={[16, 16]} className={styles.metricsGrid}>
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.title}>

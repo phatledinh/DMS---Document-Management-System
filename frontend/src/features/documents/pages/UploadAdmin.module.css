@@ -149,10 +149,29 @@
 }
 
 .queueItem {
+  width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--upload-admin-border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.45);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.queueItem:hover,
+.queueItem:focus-visible,
+.queueItemActive {
+  border-color: rgba(0, 92, 141, 0.48);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 92, 141, 0.08);
+  outline: none;
+}
+
+.queueItem:disabled {
+  cursor: default;
 }
 
 .queueItem strong,
@@ -218,6 +237,24 @@
 
 .tableWrap {
   margin-bottom: 20px;
+}
+
+.selectedQueueRow td {
+  background: rgba(0, 92, 141, 0.08) !important;
+}
+
+.selectedFileHint {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(0, 92, 141, 0.18);
+  border-radius: 14px;
+  background: rgba(0, 92, 141, 0.06);
+  color: var(--upload-admin-muted);
+  font-size: 13px;
+}
+
+.selectedFileHint strong {
+  color: var(--upload-admin-text);
 }
 
 .formGrid {

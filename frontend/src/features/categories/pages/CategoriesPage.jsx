@@ -380,7 +380,6 @@ export default function CategoriesPage() {
           <div className={styles.container}>
             <section className={styles.pageHeader}>
               <div>
-                <span className={styles.eyebrow}>MH14</span>
                 <h1>Quản lý danh mục</h1>
                 <p>Tổ chức tài liệu theo cây danh mục và nhóm nghiệp vụ.</p>
               </div>
