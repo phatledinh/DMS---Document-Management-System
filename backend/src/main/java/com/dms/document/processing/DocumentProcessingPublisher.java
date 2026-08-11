@@ -30,8 +30,20 @@ public class DocumentProcessingPublisher {
     }
 
     public void publish(String routingKey, DocumentProcessingMessage message) {
+        publish(DocumentProcessingRabbitConfig.TASKS_EXCHANGE, routingKey, message);
+    }
+
+    public void publishRetry(String routingKey, DocumentProcessingMessage message) {
+        publish(DocumentProcessingRabbitConfig.RETRY_EXCHANGE, routingKey, message);
+    }
+
+    public void publishDeadLetter(DocumentProcessingMessage message) {
+        publish(DocumentProcessingRabbitConfig.DEAD_LETTER_EXCHANGE, DocumentProcessingRabbitConfig.DLQ_ROUTING_KEY, message);
+    }
+
+    private void publish(String exchange, String routingKey, DocumentProcessingMessage message) {
         rabbitTemplate.convertAndSend(
-                DocumentProcessingRabbitConfig.TASKS_EXCHANGE,
+                exchange,
                 routingKey,
                 message,
                 rabbitMessage -> {

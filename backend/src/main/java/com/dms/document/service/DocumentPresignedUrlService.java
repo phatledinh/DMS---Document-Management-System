@@ -206,6 +206,7 @@ public class DocumentPresignedUrlService {
         return BatchUploadResponse.from(items);
     }
 
+    @Transactional
     public BatchUploadResponse completeBatchUpload(BatchUploadCompleteRequest request) {
         User admin = currentUserProvider.getRequiredUser();
         requireAdmin(admin);

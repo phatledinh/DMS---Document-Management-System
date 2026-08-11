@@ -166,17 +166,19 @@ public class DocumentSearchRepository {
         String queryCte = hasQuery ? "query AS (SELECT websearch_to_tsquery('simple', unaccent(:query)) AS value)," : "";
         String queryJoin = hasQuery ? "CROSS JOIN query q" : "";
         String textPredicate = hasQuery ? "AND si.search_vector @@ q.value" : "";
+        String queryValueSelect = hasQuery ? ", q.value AS query_value" : "";
         String rankExpression = hasQuery
-                ? "ts_rank_cd(si.search_vector, q.value) + CASE WHEN lower(coalesce(d.document_code, '')) = lower(:query) THEN 2.0 ELSE 0 END"
+                ? "ts_rank_cd(d.search_vector, d.query_value) + CASE WHEN lower(coalesce(d.document_code, '')) = lower(:query) THEN 2.0 ELSE 0 END"
                 : "0.0";
-        String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(si.title_text, ''), q.value, 'StartSel=<em>, StopSel=</em>, MaxWords=20, MinWords=5')" : "NULL";
-        String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(si.description_text, ''), q.value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=8')" : "NULL";
-        String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(si.content_text, ''), q.value, 'StartSel=<em>, StopSel=</em>, MaxWords=35, MinWords=10')" : "NULL";
+        String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(d.title_text, ''), d.query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=20, MinWords=5')" : "NULL";
+        String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(d.description_text, ''), d.query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=8')" : "NULL";
+        String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=35, MinWords=10')" : "NULL";
         return """
                 WITH %s visible AS (
-                    SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text
+                    SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text%s
                     FROM documents d
                     JOIN document_search_index si ON si.document_id = d.id
+                    %s
                     WHERE %s
                       %s
                       %s
@@ -189,9 +191,8 @@ public class DocumentSearchRepository {
                            %s AS description_highlight,
                            %s AS content_highlight
                     FROM visible d
-                    %s
                 )
-                """.formatted(queryCte, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, titleHighlight, descriptionHighlight, contentHighlight, queryJoin);
+                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, titleHighlight, descriptionHighlight, contentHighlight);
     }
 
     private String filterPredicate(DocumentSearchRequest request) {

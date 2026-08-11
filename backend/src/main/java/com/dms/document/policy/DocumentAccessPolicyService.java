@@ -37,7 +37,9 @@ public class DocumentAccessPolicyService {
         if (!userDecision.granted()) {
             return userDecision;
         }
-        if (!canUseDocumentStatus(user, document, false)) {
+        if (document == null || document.getStatus() == null
+                || document.getStatus() == DocumentStatus.DELETED
+                || document.getStatus() == DocumentStatus.ARCHIVED) {
             return AccessDecision.denied(DOCUMENT_NOT_READY);
         }
         return evaluateAudience(user, document);

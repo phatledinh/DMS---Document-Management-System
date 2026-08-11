@@ -20,14 +20,14 @@ public class DocumentProcessingRetryService {
     @Transactional
     public void handleFailure(DocumentProcessingMessage message) {
         if (message.attempt() < properties.maxRetryCount()) {
-            publisher.publish(retryRoutingKey(message), message.nextAttempt());
+            publisher.publishRetry(retryRoutingKey(message), message.nextAttempt());
             return;
         }
         documentRepository.findById(message.documentId()).ifPresent(document -> {
             document.setStatus(DocumentStatus.EXTRACTION_FAILED);
             documentRepository.save(document);
         });
-        publisher.publish(DocumentProcessingRabbitConfig.DLQ_ROUTING_KEY, message);
+        publisher.publishDeadLetter(message);
     }
 
     private String retryRoutingKey(DocumentProcessingMessage message) {
