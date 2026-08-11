@@ -1,28 +1,50 @@
 package com.dms.masterdata.service;
 
 import com.dms.common.exception.AppException;
+import com.dms.category.entity.CategoryDepartmentPermission;
+import com.dms.category.entity.CategoryPermission;
+import com.dms.audit.service.AuditLogService;
+import com.dms.category.repository.CategoryDepartmentPermissionRepository;
+import com.dms.common.security.CurrentUserProvider;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.masterdata.dto.CategoryRequest;
 import com.dms.masterdata.dto.CategoryResponse;
 import com.dms.masterdata.entity.Category;
 import com.dms.masterdata.mapper.CategoryMapper;
 import com.dms.masterdata.repository.CategoryRepository;
+import com.dms.masterdata.repository.DepartmentRepository;
+import com.dms.identity.entity.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final CategoryMapper categoryMapper;
+    private final DepartmentRepository departmentRepository;
+    private final CategoryDepartmentPermissionRepository permissionRepository;
+    private final CurrentUserProvider currentUserProvider;
+    private final AuditLogService auditLogService;
 
-    public CategoryService(CategoryRepository categoryRepository, CategoryMapper categoryMapper) {
+    public CategoryService(CategoryRepository categoryRepository, CategoryMapper categoryMapper, DepartmentRepository departmentRepository, CategoryDepartmentPermissionRepository permissionRepository, CurrentUserProvider currentUserProvider, AuditLogService auditLogService) {
         this.categoryRepository = categoryRepository;
         this.categoryMapper = categoryMapper;
+        this.departmentRepository = departmentRepository;
+        this.permissionRepository = permissionRepository;
+        this.currentUserProvider = currentUserProvider;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -30,12 +52,14 @@ public class CategoryService {
         List<Category> categories = activeOnly
                 ? categoryRepository.findByIsActiveTrueAndDeletedAtIsNullOrderBySortOrderAscNameAsc()
                 : categoryRepository.findByDeletedAtIsNullOrderBySortOrderAscNameAsc();
-        return categories.stream().map(categoryMapper::toResponse).toList();
+        Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> permissions = permissionsByCategory(categories.stream().map(Category::getId).toList());
+        return categories.stream().map(category -> categoryMapper.toResponse(category, permissions.getOrDefault(category.getId(), List.of()))).toList();
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
-        return categoryMapper.toResponse(getCategoryEntityById(id));
+        Category category = getCategoryEntityById(id);
+        return categoryMapper.toResponse(category, permissionsForCategory(id));
     }
 
     @Transactional
@@ -44,37 +68,52 @@ public class CategoryService {
         applyRequest(category, request);
         String slug = resolveSlug(request.slug(), request.name());
         if (categoryRepository.existsBySlugAndDeletedAtIsNull(slug)) {
-            throw new AppException(ErrorCodes.CONFLICT, "Slug danh mục đã được sử dụng", HttpStatus.CONFLICT);
+            throw new AppException(ErrorCodes.CONFLICT, "Slug danh muc da duoc su dung", HttpStatus.CONFLICT);
         }
         category.setSlug(slug);
-        return categoryMapper.toResponse(categoryRepository.save(category));
+        User actor = currentUserProvider.getRequiredUser();
+        Category saved = categoryRepository.save(category);
+        replacePermissions(saved.getId(), request.departmentPermissions(), actor);
+        CategoryResponse response = categoryMapper.toResponse(saved, permissionsForCategory(saved.getId()));
+        auditLogService.log(actor, "CATEGORY_CREATE", "CATEGORY", saved.getId(), null, response);
+        return response;
     }
 
     @Transactional
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = getCategoryEntityById(id);
+        User actor = currentUserProvider.getRequiredUser();
+        CategoryResponse oldValue = categoryMapper.toResponse(category, permissionsForCategory(id));
         applyRequest(category, request);
         String slug = resolveSlug(request.slug(), request.name());
         if (categoryRepository.existsBySlugAndIdNotAndDeletedAtIsNull(slug, id)) {
-            throw new AppException(ErrorCodes.CONFLICT, "Slug danh mục đã được sử dụng", HttpStatus.CONFLICT);
+            throw new AppException(ErrorCodes.CONFLICT, "Slug danh muc da duoc su dung", HttpStatus.CONFLICT);
         }
         category.setSlug(slug);
         category.setUpdatedAt(OffsetDateTime.now());
-        return categoryMapper.toResponse(categoryRepository.save(category));
+        Category saved = categoryRepository.save(category);
+        replacePermissions(saved.getId(), request.departmentPermissions(), actor);
+        CategoryResponse response = categoryMapper.toResponse(saved, permissionsForCategory(saved.getId()));
+        auditLogService.log(actor, "CATEGORY_UPDATE", "CATEGORY", saved.getId(), oldValue, response);
+        return response;
     }
 
     @Transactional
     public void deleteCategory(Long id) {
+        User actor = currentUserProvider.getRequiredUser();
         Category category = getCategoryEntityById(id);
+        CategoryResponse oldValue = categoryMapper.toResponse(category, permissionsForCategory(id));
+        permissionRepository.deleteByCategoryId(id);
         category.setDeletedAt(OffsetDateTime.now());
         category.setActive(false);
         categoryRepository.save(category);
+        auditLogService.log(actor, "CATEGORY_DELETE", "CATEGORY", id, oldValue, null);
     }
 
     private void applyRequest(Category category, CategoryRequest request) {
         Category parent = request.parentId() == null ? null : getCategoryEntityById(request.parentId());
         if (parent != null && category.getId() != null && parent.getId().equals(category.getId())) {
-            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Danh mục cha không hợp lệ", HttpStatus.BAD_REQUEST);
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Danh muc cha khong hop le", HttpStatus.BAD_REQUEST);
         }
         category.setParent(parent);
         category.setName(request.name());
@@ -88,9 +127,78 @@ public class CategoryService {
         }
     }
 
+
+    private void replacePermissions(Long categoryId, List<CategoryRequest.DepartmentPermissionRequest> requestedPermissions, User actor) {
+        permissionRepository.deleteByCategoryId(categoryId);
+        if (requestedPermissions == null || requestedPermissions.isEmpty()) {
+            return;
+        }
+        Map<Long, Set<CategoryPermission>> normalized = new LinkedHashMap<>();
+        for (CategoryRequest.DepartmentPermissionRequest entry : requestedPermissions) {
+            if (entry == null || entry.departmentId() == null || entry.permissions() == null || entry.permissions().isEmpty()) {
+                continue;
+            }
+            if (departmentRepository.findByIdAndDeletedAtIsNull(entry.departmentId()).isEmpty()) {
+                throw new AppException(ErrorCodes.NOT_FOUND, "Phong ban khong ton tai", HttpStatus.NOT_FOUND);
+            }
+            Set<CategoryPermission> permissions = normalized.computeIfAbsent(entry.departmentId(), ignored -> EnumSet.noneOf(CategoryPermission.class));
+            for (String permission : entry.permissions()) {
+                permissions.add(parsePermission(permission));
+            }
+        }
+        List<CategoryDepartmentPermission> rows = new ArrayList<>();
+        for (Map.Entry<Long, Set<CategoryPermission>> entry : normalized.entrySet()) {
+            for (CategoryPermission permission : entry.getValue()) {
+                CategoryDepartmentPermission row = new CategoryDepartmentPermission();
+                row.setCategoryId(categoryId);
+                row.setDepartmentId(entry.getKey());
+                row.setPermission(permission);
+                row.setGrantedBy(actor.getId());
+                rows.add(row);
+            }
+        }
+        permissionRepository.saveAll(rows);
+    }
+
+    private CategoryPermission parsePermission(String value) {
+        try {
+            return CategoryPermission.valueOf(value);
+        } catch (RuntimeException exception) {
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Quyen danh muc khong hop le", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private List<CategoryResponse.DepartmentPermissionResponse> permissionsForCategory(Long categoryId) {
+        return permissionRowsToResponse(permissionRepository.findByCategoryId(categoryId));
+    }
+
+    private Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> permissionsByCategory(List<Long> categoryIds) {
+        if (categoryIds.isEmpty()) {
+            return Map.of();
+        }
+        return permissionRepository.findByCategoryIdIn(categoryIds).stream()
+                .collect(Collectors.groupingBy(
+                        CategoryDepartmentPermission::getCategoryId,
+                        Collectors.collectingAndThen(Collectors.toList(), this::permissionRowsToResponse)
+                ));
+    }
+
+    private List<CategoryResponse.DepartmentPermissionResponse> permissionRowsToResponse(List<CategoryDepartmentPermission> rows) {
+        Map<Long, List<String>> byDepartment = rows.stream()
+                .collect(Collectors.groupingBy(
+                        CategoryDepartmentPermission::getDepartmentId,
+                        LinkedHashMap::new,
+                        Collectors.mapping(row -> row.getPermission().name(), Collectors.toList())
+                ));
+        return byDepartment.entrySet().stream()
+                .map(entry -> new CategoryResponse.DepartmentPermissionResponse(entry.getKey(), entry.getValue().stream().sorted().toList()))
+                .sorted(Comparator.comparing(CategoryResponse.DepartmentPermissionResponse::departmentId))
+                .toList();
+    }
+
     private Category getCategoryEntityById(Long id) {
         return categoryRepository.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new AppException(ErrorCodes.NOT_FOUND, "Danh mục không tồn tại", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new AppException(ErrorCodes.NOT_FOUND, "Danh muc khong ton tai", HttpStatus.NOT_FOUND));
     }
 
     private String resolveSlug(String slug, String name) {

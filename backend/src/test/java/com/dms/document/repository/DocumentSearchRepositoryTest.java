@@ -44,15 +44,15 @@ class DocumentSearchRepositoryTest {
 
         verify(jdbcTemplate).query(sqlCaptor.capture(), any(MapSqlParameterSource.class), any(RowMapper.class));
         String sql = sqlCaptor.getValue();
-        assertThat(sql).contains("websearch_to_tsquery('simple', unaccent(:query))");
-        assertThat(sql).contains("si.search_vector @@ q.value");
+        assertThat(sql).contains("websearch_to_tsquery('simple', unaccent(:query)) AS search_value");
+        assertThat(sql).contains("websearch_to_tsquery('simple', :query) AS highlight_value");
+        assertThat(sql).contains("si.search_vector @@ q.search_value");
+        assertThat(sql).contains("d.highlight_query_value");
         assertThat(sql).contains("d.status = 'INDEXED'");
-        assertThat(sql).contains("d.access_level = 'PUBLIC'");
-        assertThat(sql).contains("d.owner_id = :currentUserId");
-        assertThat(sql).contains("document_department_accesses");
-        assertThat(sql).contains("dda.department_id = :userDepartmentId");
-        assertThat(sql).contains("document_user_accesses");
-        assertThat(sql).contains("dua.user_id = :currentUserId");
+        assertThat(sql).contains("category_department_permissions");
+        assertThat(sql).contains("user_departments");
+        assertThat(sql).contains("cdp.category_id = d.category_id");
+        assertThat(sql).contains("cdp.permission = 'VIEW'");
         assertThat(sql).contains("ts_headline");
     }
 

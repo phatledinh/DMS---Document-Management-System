@@ -1,6 +1,7 @@
 package com.dms.masterdata.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 public record CategoryResponse(
         Long id,
@@ -11,6 +12,12 @@ public record CategoryResponse(
         String icon,
         int sortOrder,
         boolean isActive,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        List<DepartmentPermissionResponse> departmentPermissions
 ) {
+    public record DepartmentPermissionResponse(
+            Long departmentId,
+            List<String> permissions
+    ) {
+    }
 }

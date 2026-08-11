@@ -118,6 +118,9 @@ public class DocumentLifecycleService {
     public DocumentLifecycleResponse restore(Long documentId) {
         User admin = requireAdmin();
         Document document = findDocument(documentId);
+        if (document.getPermanentlyDeletedAt() != null) {
+            throw invalidStatus("Document has been permanently deleted and cannot be restored");
+        }
         if (document.getStatus() == DocumentStatus.ARCHIVED) {
             OffsetDateTime now = OffsetDateTime.now();
             document.setStatus(DocumentStatus.INDEXED);
@@ -304,6 +307,7 @@ public class DocumentLifecycleService {
         return (root, query, builder) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(builder.equal(root.get("status"), DocumentStatus.DELETED));
+            predicates.add(builder.isNull(root.get("permanentlyDeletedAt")));
             if (request.categoryId() != null) {
                 predicates.add(builder.equal(root.get("categoryId"), request.categoryId()));
             }

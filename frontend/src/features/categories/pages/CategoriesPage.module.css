@@ -290,3 +290,55 @@
   .categoryCard { grid-template-columns: 30px 48px minmax(0, 1fr); }
   .cardActions { grid-column: 1 / -1; }
 }
+
+.permissionBox {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 16px;
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.permissionHeader h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    color: #0f172a;
+}
+
+.permissionHeader p {
+    margin: 0 0 12px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.permissionRows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.permissionRow {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) 1fr auto;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.permissionRow :global(.ant-form-item) {
+    margin-bottom: 0;
+}
+
+.permissionSummary {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    color: #475569;
+    font-size: 13px;
+}
+
+@media (max-width: 768px) {
+    .permissionRow {
+        grid-template-columns: 1fr;
+    }
+}

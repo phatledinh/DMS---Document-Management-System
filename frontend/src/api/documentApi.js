@@ -120,6 +120,6 @@ export async function restoreTrashDocuments(documentIds) {
 }
 
 export async function permanentDeleteTrashDocuments(documentIds) {
-  const response = await axiosClient.delete('/documents/trash/permanent-delete', { data: { documentIds } });
+  const response = await axiosClient.post('/documents/trash/permanent-delete', { documentIds });
   return unwrapApiResponse(response);
 }

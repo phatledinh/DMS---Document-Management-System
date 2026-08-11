@@ -39,7 +39,7 @@ class DocumentProcessingRetryServiceTest {
         service.handleFailure(message);
 
         ArgumentCaptor<DocumentProcessingMessage> messageCaptor = ArgumentCaptor.forClass(DocumentProcessingMessage.class);
-        verify(publisher).publish(org.mockito.ArgumentMatchers.eq(DocumentProcessingRabbitConfig.EXTRACT_RETRY_30S_ROUTING_KEY), messageCaptor.capture());
+        verify(publisher).publishRetry(org.mockito.ArgumentMatchers.eq(DocumentProcessingRabbitConfig.EXTRACT_RETRY_30S_ROUTING_KEY), messageCaptor.capture());
         assertThat(messageCaptor.getValue().attempt()).isEqualTo(2);
         verify(documentRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
@@ -51,7 +51,7 @@ class DocumentProcessingRetryServiceTest {
         service.handleFailure(message);
 
         ArgumentCaptor<DocumentProcessingMessage> messageCaptor = ArgumentCaptor.forClass(DocumentProcessingMessage.class);
-        verify(publisher).publish(org.mockito.ArgumentMatchers.eq(DocumentProcessingRabbitConfig.PREVIEW_RETRY_30S_ROUTING_KEY), messageCaptor.capture());
+        verify(publisher).publishRetry(org.mockito.ArgumentMatchers.eq(DocumentProcessingRabbitConfig.PREVIEW_RETRY_30S_ROUTING_KEY), messageCaptor.capture());
         assertThat(messageCaptor.getValue().attempt()).isEqualTo(2);
         verify(documentRepository, never()).save(org.mockito.ArgumentMatchers.any());
     }
@@ -68,7 +68,7 @@ class DocumentProcessingRetryServiceTest {
 
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.EXTRACTION_FAILED);
         verify(documentRepository).save(document);
-        verify(publisher).publish(DocumentProcessingRabbitConfig.DLQ_ROUTING_KEY, message);
+        verify(publisher).publishDeadLetter(message);
     }
 
     private DocumentProcessingMessage message(int attempt) {

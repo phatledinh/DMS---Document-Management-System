@@ -292,11 +292,13 @@ export default function HomePage() {
                 <Col xs={24} sm={12} lg={8} key={doc.id}>
                   <Card
                     className={styles.docCard}
-                    bodyStyle={{
-                      padding: 18,
-                      height: "100%",
-                      display: "flex",
-                      flexDirection: "column",
+                    styles={{
+                      body: {
+                        padding: 18,
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                      },
                     }}
                     onClick={() => setPreviewDoc(doc)}
                   >
