@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { InboxOutlined, UploadOutlined } from "@ant-design/icons";
+import { CloudUploadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
   Alert,
   Button,
-  Card,
   DatePicker,
   Form,
   Input,
@@ -25,7 +24,7 @@ import { formatFileSize } from "../utils/documentFormatters.js";
 import { useBatchUploadDocuments } from "../hooks/useBatchUploadDocuments.js";
 import styles from "./UploadDocumentPage.module.css";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { Dragger } = Upload;
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const MAX_BATCH_FILES = 20;
@@ -113,6 +112,7 @@ export default function UploadDocumentPage() {
   const navigate = useNavigate();
   const uploadMutation = useBatchUploadDocuments();
   const [items, setItems] = useState([]);
+  const [selectedClientItemId, setSelectedClientItemId] = useState(null);
   const [categoryList, setCategoryList] = useState([]);
   const [tagList, setTagList] = useState([]);
   const [isCategoryLoading, setCategoryLoading] = useState(false);
@@ -168,6 +168,13 @@ export default function UploadDocumentPage() {
       Object.fromEntries(items.map((item) => [item.clientItemId, item.file])),
     [items],
   );
+  const selectedItem = useMemo(
+    () =>
+      items.find((item) => item.clientItemId === selectedClientItemId) ||
+      items[0] ||
+      null,
+    [items, selectedClientItemId],
+  );
 
   const uploadProps = {
     name: "file",
@@ -187,12 +194,19 @@ export default function UploadDocumentPage() {
           return current;
         }
         const clientItemId = `${Date.now()}-${nextFile.uid || nextFile.name}`;
+        if (!selectedClientItemId && current.length === 0) {
+          setSelectedClientItemId(clientItemId);
+        }
         return [
           ...current,
           {
             clientItemId,
             file: nextFile,
             title: defaultTitle(nextFile.name),
+            categoryId: undefined,
+            tagIds: [],
+            effectiveDate: null,
+            expiryDate: null,
             status: "queued",
             progress: 0,
           },
@@ -201,9 +215,14 @@ export default function UploadDocumentPage() {
       return false;
     },
     onRemove: (file) => {
-      setItems((current) =>
-        current.filter((item) => item.file.uid !== file.uid),
-      );
+      setItems((current) => {
+        const next = current.filter((item) => item.file.uid !== file.uid);
+        const removedItem = current.find((item) => item.file.uid === file.uid);
+        if (removedItem?.clientItemId === selectedClientItemId) {
+          setSelectedClientItemId(next[0]?.clientItemId || null);
+        }
+        return next;
+      });
     },
   };
 
@@ -215,24 +234,44 @@ export default function UploadDocumentPage() {
     );
   }
 
-  async function handleSubmit(values) {
+  async function handleSubmit() {
     if (!items.length) {
       toast.error("Vui lòng chọn ít nhất một file cần upload.");
       return;
     }
 
+    if (items.some((item) => !item.title?.trim())) {
+      toast.error("Tiêu đề tài liệu không được bỏ trống.");
+      return;
+    }
+
+    if (items.some((item) => !item.categoryId)) {
+      toast.error("Mỗi tài liệu phải chọn danh mục riêng.");
+      return;
+    }
+
+    if (items.some((item) => item.effectiveDate && item.expiryDate && !item.expiryDate.isAfter(item.effectiveDate, "day"))) {
+      toast.error("Ngày hết hạn phải sau ngày bắt đầu có hiệu lực.");
+      return;
+    }
+
+    const firstItem = items[0];
     const payload = {
+      categoryId: Number(firstItem.categoryId),
+      tagIds: firstItem.tagIds?.map(Number),
+      effectiveDate: firstItem.effectiveDate?.format("YYYY-MM-DD"),
+      expiryDate: firstItem.expiryDate?.format("YYYY-MM-DD"),
       files: items.map((item) => ({
         clientItemId: item.clientItemId,
         fileName: item.file.name,
         fileSize: item.file.size,
         contentType: item.file.type || "application/octet-stream",
-        title: item.title,
+        title: item.title.trim(),
+        categoryId: Number(item.categoryId),
+        tagIds: item.tagIds?.map(Number),
+        effectiveDate: item.effectiveDate?.format("YYYY-MM-DD"),
+        expiryDate: item.expiryDate?.format("YYYY-MM-DD"),
       })),
-      categoryId: values.categoryId ? Number(values.categoryId) : undefined,
-      tagIds: values.tagIds?.map(Number),
-      effectiveDate: values.effectiveDate?.format("YYYY-MM-DD"),
-      expiryDate: values.expiryDate?.format("YYYY-MM-DD"),
     };
 
     try {
@@ -267,24 +306,29 @@ export default function UploadDocumentPage() {
       title: "File",
       dataIndex: "file",
       render: (file) => (
-        <div>
-          <div>{file.name}</div>
-          <Text type="secondary">{formatFileSize(file.size)}</Text>
+        <div className={styles.fileCell}>
+          <strong>{file.name}</strong>
+          <span>{formatFileSize(file.size)}</span>
         </div>
       ),
     },
     {
       title: "Tiêu đề",
       dataIndex: "title",
-      render: (value, record) => (
-        <Input
-          value={value}
-          disabled={uploadMutation.isPending}
-          onChange={(event) =>
-            updateItem(record.clientItemId, { title: event.target.value })
-          }
-        />
-      ),
+      render: (value) => value || "—",
+    },
+    {
+      title: "Danh mục",
+      dataIndex: "categoryId",
+      render: (value) => {
+        const category = categoryList.find((item) => item.id === value);
+        return category?.name || "Chưa chọn";
+      },
+    },
+    {
+      title: "Mã tài liệu",
+      dataIndex: "documentCode",
+      render: (value) => value || "Sẽ tự sinh sau upload",
     },
     {
       title: "Trạng thái",
@@ -304,124 +348,223 @@ export default function UploadDocumentPage() {
   ];
 
   return (
-    <div className={styles.shell}>
-      <main className={styles.mainArea}>
-        <div className={styles.canvas}>
-          <Card className={styles.container}>
-            <Space direction="vertical" size={24} style={{ width: "100%" }}>
-              <div>
-                <Title level={3}>Upload tài liệu mới</Title>
-                <Text type="secondary">
-                  Tải một hoặc nhiều file qua presigned URL và gửi metadata
-                  chung để worker xử lý sau upload.
-                </Text>
+    <main className={styles.page}>
+      <header className={styles.heroHeader}>
+        <span className={styles.eyebrow}>Upload cá nhân</span>
+        <h1>Upload tài liệu mới</h1>
+        <p>
+          Tải một hoặc nhiều file lên hệ thống. Mỗi file có tiêu đề, danh mục,
+          tags và thời gian hiệu lực riêng.
+        </p>
+      </header>
+
+      {uploadMutation.isError && (
+        <Alert
+          className={styles.alert}
+          type="error"
+          showIcon
+          message={getApiErrorMessage(uploadMutation.error)}
+        />
+      )}
+
+      <Form form={form} layout="vertical" onFinish={handleSubmit} className={styles.form}>
+        <div className={styles.uploadGrid}>
+          <section className={styles.uploadCard}>
+            <Form.Item label={null} required>
+              <Dragger
+                {...uploadProps}
+                disabled={uploadMutation.isPending}
+                className={styles.dropZone}
+              >
+                <p className={styles.uploadIcon}>
+                  <CloudUploadOutlined />
+                </p>
+                <p className="ant-upload-text">Kéo thả tệp vào đây</p>
+                <p className="ant-upload-hint">hoặc bấm để chọn tệp từ máy tính của bạn</p>
+                <Button className={styles.chooseButton}>Chọn tệp</Button>
+              </Dragger>
+            </Form.Item>
+
+            {!!items.length && (
+              <div className={styles.fileQueue}>
+                {items.map((item) => (
+                  <button
+                    className={`${styles.queueItem} ${selectedItem?.clientItemId === item.clientItemId ? styles.queueItemActive : ""}`}
+                    key={item.clientItemId}
+                    type="button"
+                    onClick={() => setSelectedClientItemId(item.clientItemId)}
+                    disabled={uploadMutation.isPending}
+                  >
+                    <div>
+                      <strong>{item.file.name}</strong>
+                      <span>
+                        {formatFileSize(item.file.size)} · {statusTag(item.status)}
+                      </span>
+                      {(item.status === "uploading" ||
+                        item.status === "completing" ||
+                        item.status === "processing") && (
+                        <Progress percent={item.progress || 0} size="small" />
+                      )}
+                      {item.error && <Text type="danger">{item.error}</Text>}
+                    </div>
+                  </button>
+                ))}
               </div>
+            )}
+          </section>
 
-              {uploadMutation.isError && (
-                <Alert
-                  type="error"
-                  showIcon
-                  message={getApiErrorMessage(uploadMutation.error)}
-                />
-              )}
-
-              <Form form={form} layout="vertical" onFinish={handleSubmit}>
-                <Form.Item label="File tài liệu" required>
-                  <Dragger {...uploadProps} disabled={uploadMutation.isPending}>
-                    <p className="ant-upload-drag-icon">
-                      <InboxOutlined />
-                    </p>
-                    <p className="ant-upload-text">
-                      Kéo thả file vào đây hoặc bấm để chọn file
-                    </p>
-                    <p className="ant-upload-hint">
-                      PDF, DOC/DOCX, XLS/XLSX, JPG/PNG/TIFF. Tối đa 50MB/file,{" "}
-                      {MAX_BATCH_FILES} file/batch.
-                    </p>
-                  </Dragger>
-                </Form.Item>
-
-                {!!items.length && (
-                  <Form.Item label="Danh sách file">
-                    <Table
-                      rowKey="clientItemId"
-                      columns={columns}
-                      dataSource={items}
-                      pagination={false}
-                      size="small"
-                    />
-                  </Form.Item>
-                )}
-
-                <Form.Item
-                  name="categoryId"
-                  label="Danh mục"
-                  rules={[
-                    { required: true, message: "Vui lòng chọn danh mục." },
-                  ]}
-                >
-                  <TreeSelect
-                    allowClear
-                    showSearch
-                    treeDefaultExpandAll
-                    placeholder="Chọn danh mục"
-                    treeData={categoryTreeData}
-                    loading={isCategoryLoading}
-                    treeLine
-                    filterTreeNode={(input, node) =>
-                      node.title.toLowerCase().includes(input.toLowerCase())
-                    }
-                  />
-                </Form.Item>
-
-                <Form.Item name="tagIds" label="Tags">
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    showSearch
-                    placeholder="Chọn tags"
-                    options={tagOptions}
-                    loading={isTagLoading}
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-
-                <Space size="middle" style={{ width: "100%" }} align="start">
-                  <Form.Item name="effectiveDate" label="Ngày hiệu lực">
-                    <DatePicker format="DD/MM/YYYY" />
-                  </Form.Item>
-                  <Form.Item name="expiryDate" label="Ngày hết hạn">
-                    <DatePicker format="DD/MM/YYYY" />
-                  </Form.Item>
-                </Space>
-
-                <Space>
-                  <Button
-                    onClick={() => navigate("/admin/documents-admin")}
-                    disabled={uploadMutation.isPending}
-                  >
-                    Hủy
-                  </Button>
-                  <Button
-                    type="primary"
-                    htmlType="submit"
-                    icon={<UploadOutlined />}
-                    loading={uploadMutation.isPending}
-                  >
-                    Upload
-                  </Button>
-                  <Button
-                    onClick={() => navigate("/admin/documents-admin")}
-                    disabled={uploadMutation.isPending}
-                  >
-                    Về danh sách
-                  </Button>
-                </Space>
-              </Form>
-            </Space>
-          </Card>
+          <aside className={styles.afterUploadCard}>
+            <h2>Sau khi tải lên</h2>
+            <ol>
+              <li><span>1</span>Tài liệu được tải lên qua URL bảo mật</li>
+              <li><span>2</span>Hệ thống trích xuất nội dung và OCR nếu cần</li>
+              <li><span>3</span>Tài liệu chuyển sang trạng thái xử lý</li>
+              <li><span>4</span>Bạn có thể theo dõi trong danh sách tài liệu</li>
+            </ol>
+          </aside>
         </div>
-      </main>
-    </div>
+
+        <section className={styles.metadataCard}>
+          <h2>Thông tin tài liệu</h2>
+          {!!items.length && (
+            <div className={styles.tableWrap}>
+              <Table
+                rowKey="clientItemId"
+                columns={columns}
+                dataSource={items}
+                pagination={false}
+                size="small"
+                scroll={{ x: 760 }}
+                rowClassName={(record) =>
+                  selectedItem?.clientItemId === record.clientItemId
+                    ? styles.selectedQueueRow
+                    : ""
+                }
+                onRow={(record) => ({
+                  onClick: () =>
+                    !uploadMutation.isPending && setSelectedClientItemId(record.clientItemId),
+                })}
+              />
+            </div>
+          )}
+          {selectedItem && (
+            <div className={styles.selectedFileHint}>
+              Đang nhập thông tin cho: <strong>{selectedItem.file.name}</strong>
+            </div>
+          )}
+          <div className={styles.formGrid}>
+            <Form.Item label="Tiêu đề file đang chọn *">
+              <Input
+                placeholder="VD: Quy trình kiểm soát chất lượng"
+                status={selectedItem && !selectedItem.title?.trim() ? "error" : undefined}
+                disabled={uploadMutation.isPending || !selectedItem}
+                value={selectedItem?.title || ""}
+                onChange={(event) =>
+                  selectedItem &&
+                  updateItem(selectedItem.clientItemId, { title: event.target.value })
+                }
+              />
+            </Form.Item>
+            <Form.Item label="Mã tài liệu">
+              <Input value={selectedItem?.documentCode || "Sẽ tự sinh sau upload"} disabled />
+            </Form.Item>
+            <Form.Item label="Danh mục *">
+              <TreeSelect
+                allowClear
+                showSearch
+                treeDefaultExpandAll
+                placeholder="Chọn danh mục"
+                status={selectedItem && !selectedItem.categoryId ? "error" : undefined}
+                value={selectedItem?.categoryId}
+                treeData={categoryTreeData}
+                loading={isCategoryLoading}
+                treeLine
+                disabled={uploadMutation.isPending || !selectedItem}
+                onChange={(value) =>
+                  selectedItem &&
+                  updateItem(selectedItem.clientItemId, { categoryId: value })
+                }
+                filterTreeNode={(input, node) =>
+                  node.title.toLowerCase().includes(input.toLowerCase())
+                }
+              />
+            </Form.Item>
+            <Form.Item label="Tags">
+              <Select
+                mode="multiple"
+                allowClear
+                showSearch
+                placeholder="ISO, QA, quy trình"
+                value={selectedItem?.tagIds || []}
+                options={tagOptions}
+                loading={isTagLoading}
+                disabled={uploadMutation.isPending || !selectedItem}
+                optionFilterProp="label"
+                onChange={(value) =>
+                  selectedItem &&
+                  updateItem(selectedItem.clientItemId, { tagIds: value })
+                }
+              />
+            </Form.Item>
+            <Form.Item label="Ngày hiệu lực">
+              <DatePicker
+                format="DD/MM/YYYY"
+                placeholder="dd/mm/yyyy"
+                value={selectedItem?.effectiveDate || null}
+                disabled={uploadMutation.isPending || !selectedItem}
+                onChange={(value) =>
+                  selectedItem &&
+                  updateItem(selectedItem.clientItemId, { effectiveDate: value })
+                }
+              />
+            </Form.Item>
+            <Form.Item
+              label="Ngày hết hạn"
+              validateStatus={
+                selectedItem?.effectiveDate &&
+                selectedItem?.expiryDate &&
+                !selectedItem.expiryDate.isAfter(selectedItem.effectiveDate, "day")
+                  ? "error"
+                  : undefined
+              }
+              help={
+                selectedItem?.effectiveDate &&
+                selectedItem?.expiryDate &&
+                !selectedItem.expiryDate.isAfter(selectedItem.effectiveDate, "day")
+                  ? "Ngày hết hạn phải sau ngày bắt đầu có hiệu lực."
+                  : undefined
+              }
+            >
+              <DatePicker
+                format="DD/MM/YYYY"
+                placeholder="dd/mm/yyyy"
+                value={selectedItem?.expiryDate || null}
+                disabled={uploadMutation.isPending || !selectedItem}
+                onChange={(value) =>
+                  selectedItem &&
+                  updateItem(selectedItem.clientItemId, { expiryDate: value })
+                }
+              />
+            </Form.Item>
+          </div>
+          <div className={styles.inlineActions}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              icon={<UploadOutlined />}
+              loading={uploadMutation.isPending}
+            >
+              Tải lên & xử lý
+            </Button>
+            <Button onClick={() => navigate("/documents")} disabled={uploadMutation.isPending}>
+              Huỷ
+            </Button>
+            <Button onClick={() => navigate("/documents")} disabled={uploadMutation.isPending}>
+              Về danh sách
+            </Button>
+          </div>
+        </section>
+      </Form>
+    </main>
   );
 }

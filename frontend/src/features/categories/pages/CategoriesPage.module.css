@@ -228,7 +228,27 @@
   padding: 22px 0;
 }
 
-.detailMetaGrid div { padding: 16px; border: 1px solid var(--cat-border); border-radius: 16px; background: #f8fbfd; }
+.detailMetaGrid div,
+.detailMetaButton {
+  padding: 16px;
+  border: 1px solid var(--cat-border);
+  border-radius: 16px;
+  background: #f8fbfd;
+  text-align: left;
+}
+
+.detailMetaButton {
+  cursor: pointer;
+  font: inherit;
+}
+
+.detailMetaButton:hover,
+.detailMetaButtonActive {
+  border-color: #8ec7df;
+  background: var(--cat-soft);
+  box-shadow: inset 0 0 0 2px rgba(142, 199, 223, 0.28);
+}
+
 .detailMetaGrid strong { display: block; overflow: hidden; color: var(--cat-text); font-size: 18px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
 .detailMetaGrid span { color: var(--cat-muted); font-size: 13px; font-weight: 700; }
 

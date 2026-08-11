@@ -205,6 +205,10 @@ export default function UploadAdmin() {
                         clientItemId,
                         file: nextFile,
                         title: defaultTitle(nextFile.name),
+                        categoryId: undefined,
+                        tagIds: [],
+                        effectiveDate: null,
+                        expiryDate: null,
                         status: "queued",
                         progress: 0,
                     },
@@ -238,26 +242,44 @@ export default function UploadAdmin() {
         );
     }
 
-    async function handleSubmit(values) {
+    async function handleSubmit() {
         if (!items.length) {
             toast.error("Vui lòng chọn ít nhất một file cần upload.");
             return;
         }
 
+        if (items.some((item) => !item.title?.trim())) {
+            toast.error("Tiêu đề tài liệu không được bỏ trống.");
+            return;
+        }
+
+        if (items.some((item) => !item.categoryId)) {
+            toast.error("Mỗi tài liệu phải chọn danh mục riêng.");
+            return;
+        }
+
+        if (items.some((item) => item.effectiveDate && item.expiryDate && !item.expiryDate.isAfter(item.effectiveDate, "day"))) {
+            toast.error("Ngày hết hạn phải sau ngày bắt đầu có hiệu lực.");
+            return;
+        }
+
+        const firstItem = items[0];
         const payload = {
+            categoryId: Number(firstItem.categoryId),
+            tagIds: firstItem.tagIds?.map(Number),
+            effectiveDate: firstItem.effectiveDate?.format("YYYY-MM-DD"),
+            expiryDate: firstItem.expiryDate?.format("YYYY-MM-DD"),
             files: items.map((item) => ({
                 clientItemId: item.clientItemId,
                 fileName: item.file.name,
                 fileSize: item.file.size,
                 contentType: item.file.type || "application/octet-stream",
-                title: item.title,
+                title: item.title.trim(),
+                categoryId: Number(item.categoryId),
+                tagIds: item.tagIds?.map(Number),
+                effectiveDate: item.effectiveDate?.format("YYYY-MM-DD"),
+                expiryDate: item.expiryDate?.format("YYYY-MM-DD"),
             })),
-            categoryId: values.categoryId
-                ? Number(values.categoryId)
-                : undefined,
-            tagIds: values.tagIds?.map(Number),
-            effectiveDate: values.effectiveDate?.format("YYYY-MM-DD"),
-            expiryDate: values.expiryDate?.format("YYYY-MM-DD"),
         };
 
         try {
@@ -302,6 +324,7 @@ export default function UploadAdmin() {
             dataIndex: "title",
             render: (value, record) => (
                 <Input
+                    status={!value?.trim() ? "error" : undefined}
                     value={value}
                     disabled={uploadMutation.isPending}
                     onChange={(event) =>
@@ -311,6 +334,11 @@ export default function UploadAdmin() {
                     }
                 />
             ),
+        },
+        {
+            title: "Mã tài liệu",
+            dataIndex: "documentCode",
+            render: (value) => value || "Sẽ tự sinh sau upload",
         },
         {
             title: "Trạng thái",
@@ -480,6 +508,7 @@ export default function UploadAdmin() {
                         <Form.Item label="Tiêu đề file đang chọn *">
                             <Input
                                 placeholder="VD: Quy trình kiểm soát chất lượng"
+                                status={selectedItem && !selectedItem.title?.trim() ? "error" : undefined}
                                 disabled={
                                     uploadMutation.isPending || !selectedItem
                                 }
@@ -493,26 +522,26 @@ export default function UploadAdmin() {
                             />
                         </Form.Item>
                         <Form.Item label="Mã tài liệu">
-                            <Input placeholder="VD: SOP-QA-002" disabled />
+                            <Input value={selectedItem?.documentCode || "Sẽ tự sinh sau upload"} disabled />
                         </Form.Item>
-                        <Form.Item
-                            name="categoryId"
-                            label="Danh mục"
-                            rules={[
-                                {
-                                    required: true,
-                                    message: "Vui lòng chọn danh mục.",
-                                },
-                            ]}
-                        >
+                        <Form.Item label="Danh mục *">
                             <TreeSelect
                                 allowClear
                                 showSearch
                                 treeDefaultExpandAll
                                 placeholder="Chọn danh mục"
+                                status={selectedItem && !selectedItem.categoryId ? "error" : undefined}
+                                value={selectedItem?.categoryId}
                                 treeData={categoryTreeData}
                                 loading={isCategoryLoading}
                                 treeLine
+                                disabled={uploadMutation.isPending || !selectedItem}
+                                onChange={(value) =>
+                                    selectedItem &&
+                                    updateItem(selectedItem.clientItemId, {
+                                        categoryId: value,
+                                    })
+                                }
                                 filterTreeNode={(input, node) =>
                                     node.title
                                         .toLowerCase()
@@ -520,27 +549,67 @@ export default function UploadAdmin() {
                                 }
                             />
                         </Form.Item>
-                        <Form.Item name="tagIds" label="Tags">
+                        <Form.Item label="Tags">
                             <Select
                                 mode="multiple"
                                 allowClear
                                 showSearch
                                 placeholder="ISO, QA, quy trình"
+                                value={selectedItem?.tagIds || []}
                                 options={tagOptions}
                                 loading={isTagLoading}
+                                disabled={uploadMutation.isPending || !selectedItem}
                                 optionFilterProp="label"
+                                onChange={(value) =>
+                                    selectedItem &&
+                                    updateItem(selectedItem.clientItemId, {
+                                        tagIds: value,
+                                    })
+                                }
                             />
                         </Form.Item>
-                        <Form.Item name="effectiveDate" label="Ngày hiệu lực">
+                        <Form.Item label="Ngày hiệu lực">
                             <DatePicker
                                 format="DD/MM/YYYY"
                                 placeholder="dd/mm/yyyy"
+                                value={selectedItem?.effectiveDate || null}
+                                disabled={uploadMutation.isPending || !selectedItem}
+                                onChange={(value) =>
+                                    selectedItem &&
+                                    updateItem(selectedItem.clientItemId, {
+                                        effectiveDate: value,
+                                    })
+                                }
                             />
                         </Form.Item>
-                        <Form.Item name="expiryDate" label="Ngày hết hạn">
+                        <Form.Item
+                            label="Ngày hết hạn"
+                            validateStatus={
+                                selectedItem?.effectiveDate &&
+                                selectedItem?.expiryDate &&
+                                !selectedItem.expiryDate.isAfter(selectedItem.effectiveDate, "day")
+                                    ? "error"
+                                    : undefined
+                            }
+                            help={
+                                selectedItem?.effectiveDate &&
+                                selectedItem?.expiryDate &&
+                                !selectedItem.expiryDate.isAfter(selectedItem.effectiveDate, "day")
+                                    ? "Ngày hết hạn phải sau ngày bắt đầu có hiệu lực."
+                                    : undefined
+                            }
+                        >
                             <DatePicker
                                 format="DD/MM/YYYY"
                                 placeholder="dd/mm/yyyy"
+                                value={selectedItem?.expiryDate || null}
+                                disabled={uploadMutation.isPending || !selectedItem}
+                                onChange={(value) =>
+                                    selectedItem &&
+                                    updateItem(selectedItem.clientItemId, {
+                                        expiryDate: value,
+                                    })
+                                }
                             />
                         </Form.Item>
 

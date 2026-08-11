@@ -62,7 +62,7 @@ export function useBatchUploadDocuments() {
         onItemChange?.(
           item.clientItemId,
           item.success
-            ? { status: 'processing', complete: item, progress: 100 }
+            ? { status: 'processing', complete: item, documentCode: item.documentCode, progress: 100 }
             : { status: 'complete_failed', error: item.message, complete: item },
         );
       });

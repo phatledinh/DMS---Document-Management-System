@@ -3,14 +3,13 @@ package com.dms.document.dto;
 import com.dms.document.entity.DocumentAccessLevel;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
 import java.util.List;
 
 public record BatchUploadInitRequest(
         @NotEmpty List<@Valid BatchUploadInitFileRequest> files,
-        @NotNull Long categoryId,
+        Long categoryId,
         Long departmentId,
         List<Long> tagIds,
         DocumentAccessLevel visibility,

@@ -134,6 +134,12 @@ export default function AppLayout({ children }) {
             path: "/documents",
         },
         {
+            key: "upload-documents",
+            label: "Upload tài liệu",
+            icon: <UploadOutlined />,
+            path: "/documents/upload",
+        },
+        {
             key: "my-versions",
             label: "Version của tôi",
             icon: <FileDoneOutlined />,

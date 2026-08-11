@@ -265,6 +265,7 @@ export default function CategoriesPage() {
     const [selectedCategoryId, setSelectedCategoryId] = useState(null);
     const [relatedDocuments, setRelatedDocuments] = useState([]);
     const [relatedTotal, setRelatedTotal] = useState(0);
+    const [activeDetailTab, setActiveDetailTab] = useState("documents");
     const [isLoading, setLoading] = useState(false);
     const [isLoadingDocuments, setLoadingDocuments] = useState(false);
     const [isSubmitting, setSubmitting] = useState(false);
@@ -312,12 +313,13 @@ export default function CategoriesPage() {
           )
         : null;
 
-    const selectedPermissionSummary = useMemo(() => {
+    const selectedDepartments = useMemo(() => {
         const items = normalizeDepartmentPermissions(selectedCategory?.departmentPermissions);
         return items.map((item) => {
             const department = departments.find((entry) => entry.id === item.departmentId);
             return {
                 ...item,
+                departmentCode: department?.code,
                 departmentName: department?.name || `Phòng ban #${item.departmentId}`,
             };
         });
@@ -443,7 +445,6 @@ export default function CategoriesPage() {
             name: category.name,
             slug: category.slug,
             description: category.description,
-            icon: category.icon,
             sortOrder: category.sortOrder,
             isActive: category.isActive,
             departmentPermissions: normalizeDepartmentPermissions(category.departmentPermissions),
@@ -457,7 +458,6 @@ export default function CategoriesPage() {
             name: values.name.trim(),
             slug: values.slug?.trim() || null,
             description: values.description?.trim() || null,
-            icon: values.icon?.trim() || null,
             sortOrder: Number(values.sortOrder || 0),
             isActive: values.isActive ?? true,
             departmentPermissions: normalizeDepartmentPermissions(values.departmentPermissions),
@@ -557,9 +557,6 @@ export default function CategoriesPage() {
                         rows={3}
                         placeholder="Nhập mô tả ngắn cho danh mục"
                     />
-                </Form.Item>
-                <Form.Item name="icon" label="Icon">
-                    <Input placeholder="Ví dụ: Folder" />
                 </Form.Item>
                 <Form.Item
                     name="isActive"
@@ -857,10 +854,30 @@ export default function CategoriesPage() {
                                             </div>
                                         </div>
                                         <div className={styles.detailMetaGrid}>
-                                            <div>
+                                            <button
+                                                type="button"
+                                                className={
+                                                    activeDetailTab === "documents"
+                                                        ? `${styles.detailMetaButton} ${styles.detailMetaButtonActive}`
+                                                        : styles.detailMetaButton
+                                                }
+                                                onClick={() => setActiveDetailTab("documents")}
+                                            >
                                                 <strong>{relatedTotal}</strong>
                                                 <span>Tài liệu</span>
-                                            </div>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={
+                                                    activeDetailTab === "departments"
+                                                        ? `${styles.detailMetaButton} ${styles.detailMetaButtonActive}`
+                                                        : styles.detailMetaButton
+                                                }
+                                                onClick={() => setActiveDetailTab("departments")}
+                                            >
+                                                <strong>{selectedDepartments.length}</strong>
+                                                <span>Phòng ban</span>
+                                            </button>
                                             <div>
                                                 <strong>
                                                     {selectedCategory.children
@@ -890,61 +907,87 @@ export default function CategoriesPage() {
                                             </span>
                                         </div>
                                         <div className={styles.relatedHeader}>
-                                            Tài liệu trong danh mục
+                                            {activeDetailTab === "documents"
+                                                ? "Tài liệu trong danh mục"
+                                                : "Phòng ban áp dụng danh mục"}
                                         </div>
-                                        <div className={styles.documentList}>
-                                            {isLoadingDocuments && (
-                                                <div
-                                                    className={
-                                                        styles.emptyState
-                                                    }
-                                                >
-                                                    Đang tải tài liệu...
-                                                </div>
-                                            )}
-                                            {!isLoadingDocuments &&
-                                                relatedDocuments.length ===
-                                                    0 && (
+                                        {activeDetailTab === "documents" ? (
+                                            <div className={styles.documentList}>
+                                                {isLoadingDocuments && (
                                                     <div
                                                         className={
                                                             styles.emptyState
                                                         }
                                                     >
-                                                        Chưa có tài liệu liên
-                                                        quan
+                                                        Đang tải tài liệu...
                                                     </div>
                                                 )}
-                                            {!isLoadingDocuments &&
-                                                relatedDocuments.map((doc) => (
+                                                {!isLoadingDocuments &&
+                                                    relatedDocuments.length ===
+                                                        0 && (
+                                                        <div
+                                                            className={
+                                                                styles.emptyState
+                                                            }
+                                                        >
+                                                            Chưa có tài liệu liên
+                                                            quan
+                                                        </div>
+                                                    )}
+                                                {!isLoadingDocuments &&
+                                                    relatedDocuments.map((doc) => (
+                                                        <div
+                                                            className={
+                                                                styles.documentCard
+                                                            }
+                                                            key={doc.id}
+                                                        >
+                                                            <FileTextOutlined />
+                                                            <div>
+                                                                <strong>
+                                                                    {doc.title ||
+                                                                        doc.fileName}
+                                                                </strong>
+                                                                <span>
+                                                                    {doc.documentCode ||
+                                                                        "—"}{" "}
+                                                                    ·{" "}
+                                                                    {formatFileSize(
+                                                                        doc.fileSize,
+                                                                    )}{" "}
+                                                                    ·{" "}
+                                                                    {formatDateTime(
+                                                                        doc.updatedAt ||
+                                                                            doc.createdAt,
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        ) : (
+                                            <div className={styles.documentList}>
+                                                {selectedDepartments.length === 0 && (
+                                                    <div className={styles.emptyState}>
+                                                        Chưa có phòng ban nào áp dụng danh mục này
+                                                    </div>
+                                                )}
+                                                {selectedDepartments.map((department) => (
                                                     <div
-                                                        className={
-                                                            styles.documentCard
-                                                        }
-                                                        key={doc.id}
+                                                        className={styles.documentCard}
+                                                        key={department.departmentId}
                                                     >
-                                                        <FileTextOutlined />
+                                                        <FolderFilled />
                                                         <div>
-                                                            <strong>
-                                                                {doc.title ||
-                                                                    doc.fileName}
-                                                            </strong>
+                                                            <strong>{department.departmentName}</strong>
                                                             <span>
-                                                                {doc.documentCode ||
-                                                                    "—"}{" "}
-                                                                ·{" "}
-                                                                {formatFileSize(
-                                                                    doc.fileSize,
-                                                                )}{" "}
-                                                                ·{" "}
-                                                                {formatDateTime(
-                                                                    doc.updatedAt ||
-                                                                        doc.createdAt,
-                                                                )}
+                                                                {department.departmentCode || "—"} · Quyền: {department.permissions.join(", ")}
                                                             </span>
                                                         </div>
                                                     </div>
                                                 ))}
-                                        </div>
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <div className={styles.emptyState}>

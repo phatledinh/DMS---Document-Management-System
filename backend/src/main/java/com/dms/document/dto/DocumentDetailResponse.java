@@ -2,6 +2,7 @@ package com.dms.document.dto;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 public record DocumentDetailResponse(
         Long id,
@@ -28,6 +29,13 @@ public record DocumentDetailResponse(
         String previewUrlEndpoint,
         String downloadUrlEndpoint,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        List<AuthorizedDepartmentResponse> authorizedDepartments
 ) {
+    public record AuthorizedDepartmentResponse(
+            Long id,
+            String name,
+            String code
+    ) {
+    }
 }

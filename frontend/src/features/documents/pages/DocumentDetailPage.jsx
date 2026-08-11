@@ -11,7 +11,6 @@ import { useDocument } from '../hooks/useDocument.js';
 import {
   formatDateTime,
   formatFileSize,
-  getAccessLevelLabel,
   getDocumentStatusMeta,
   normalizeDocument,
 } from '../utils/documentFormatters.js';
@@ -37,6 +36,13 @@ function getTags(document) {
   return [];
 }
 
+function getAuthorizedDepartments(document) {
+  if (Array.isArray(document?.authorizedDepartments)) {
+    return document.authorizedDepartments.filter(Boolean);
+  }
+  return [];
+}
+
 function InfoRow({ label, value }) {
   return (
     <div className={styles.infoRow}>
@@ -57,6 +63,7 @@ export default function DocumentDetailPage() {
   const statusMeta = getDocumentStatusMeta(document?.status);
   const isReady = document?.status === 'INDEXED';
   const tags = getTags(document);
+  const authorizedDepartments = getAuthorizedDepartments(document);
 
   async function handlePreview() {
     if (!document) return;
@@ -64,7 +71,7 @@ export default function DocumentDetailPage() {
     try {
       const previewData = await getPreviewUrl(document.id);
       const url = getPresignedUrl(previewData);
-      if (!url) throw new Error('Backend không trả về preview URL.');
+      if (!url) throw new Error('Backend không trả về URL mở tài liệu.');
 
       if (!canPreviewFile(document)) {
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -129,7 +136,7 @@ export default function DocumentDetailPage() {
             Version
           </Button>
           <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
-            Preview
+            Mở tài liệu
           </Button>
           <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload} disabled={!isReady}>
             Tải xuống
@@ -140,9 +147,9 @@ export default function DocumentDetailPage() {
       <section className={styles.detailGrid}>
         <section className={styles.previewCard}>
           <div className={styles.previewToolbar}>
-            <strong>Xem trước tài liệu</strong>
+            <strong>Mở tài liệu</strong>
             <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
-              Mở preview
+              Mở tài liệu
             </Button>
           </div>
           {!isReady && (
@@ -150,8 +157,8 @@ export default function DocumentDetailPage() {
               className={styles.readyAlert}
               type={document.status === 'EXTRACTION_FAILED' ? 'error' : 'info'}
               showIcon
-              message="Tài liệu chưa sẵn sàng để preview/download"
-              description="Backend chỉ cấp presigned URL sau khi trích xuất/OCR và INDEXED."
+              message="Tài liệu chưa sẵn sàng để mở/tải xuống"
+              description="Backend chỉ cấp URL mở tài liệu sau khi trích xuất/OCR và INDEXED."
             />
           )}
           <div className={styles.previewCanvas}>
@@ -204,13 +211,18 @@ export default function DocumentDetailPage() {
           </section>
 
           <section className={styles.infoCard}>
-            <h3>Quyền hiệu lực</h3>
-            <div className={styles.permissionPills}>
-              <span>VIEW</span>
-              <span>DOWNLOAD</span>
-              <span className={styles.mutedPill}>{getAccessLevelLabel(document.accessLevel)}</span>
-            </div>
-            <p>Nguồn quyền được xác định theo danh mục và cấu hình truy cập của tài liệu.</p>
+            <h3>Phòng ban có quyền xem</h3>
+            {authorizedDepartments.length ? (
+              <div className={styles.permissionPills}>
+                {authorizedDepartments.map((department) => (
+                  <span key={department.id} title={department.code || department.name}>
+                    {department.name || department.code || `Phòng ban #${department.id}`}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p>Danh mục của tài liệu này chưa cấp quyền xem cho phòng ban nào.</p>
+            )}
           </section>
 
           <section className={styles.infoCard}>
@@ -243,7 +255,7 @@ export default function DocumentDetailPage() {
         {preview?.contentType?.includes('html') ? (
           <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(preview.html || '') }} />
         ) : (
-          <iframe title="Document preview" src={preview?.url} className={styles.previewFrame} />
+          <iframe title="Mở tài liệu" src={preview?.url} className={styles.previewFrame} />
         )}
       </Modal>
     </main>

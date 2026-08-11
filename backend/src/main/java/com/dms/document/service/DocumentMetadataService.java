@@ -1,5 +1,7 @@
 package com.dms.document.service;
 
+import com.dms.category.entity.CategoryPermission;
+import com.dms.category.repository.CategoryDepartmentPermissionRepository;
 import com.dms.common.exception.AppException;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.common.security.CurrentUserProvider;
@@ -15,6 +17,8 @@ import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.repository.DocumentRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
+import com.dms.masterdata.entity.Department;
+import com.dms.masterdata.repository.DepartmentRepository;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.domain.Page;
@@ -29,6 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class DocumentMetadataService {
@@ -37,15 +44,21 @@ public class DocumentMetadataService {
     private static final int MAX_SIZE = 100;
 
     private final DocumentRepository documentRepository;
+    private final CategoryDepartmentPermissionRepository categoryPermissionRepository;
+    private final DepartmentRepository departmentRepository;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAccessPolicyService accessPolicyService;
 
     public DocumentMetadataService(
             DocumentRepository documentRepository,
+            CategoryDepartmentPermissionRepository categoryPermissionRepository,
+            DepartmentRepository departmentRepository,
             CurrentUserProvider currentUserProvider,
             DocumentAccessPolicyService accessPolicyService
     ) {
         this.documentRepository = documentRepository;
+        this.categoryPermissionRepository = categoryPermissionRepository;
+        this.departmentRepository = departmentRepository;
         this.currentUserProvider = currentUserProvider;
         this.accessPolicyService = accessPolicyService;
     }
@@ -196,6 +209,32 @@ public class DocumentMetadataService {
         );
     }
 
+    private List<DocumentDetailResponse.AuthorizedDepartmentResponse> authorizedDepartments(Long categoryId) {
+        if (categoryId == null) {
+            return List.of();
+        }
+        List<Long> departmentIds = categoryPermissionRepository.findByCategoryId(categoryId).stream()
+                .filter(permission -> permission.getPermission() == CategoryPermission.VIEW)
+                .map(permission -> permission.getDepartmentId())
+                .distinct()
+                .toList();
+        if (departmentIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Department> departmentsById = departmentRepository.findByIdInAndDeletedAtIsNull(departmentIds).stream()
+                .collect(Collectors.toMap(Department::getId, Function.identity()));
+        return departmentIds.stream()
+                .map(departmentId -> {
+                    Department department = departmentsById.get(departmentId);
+                    return new DocumentDetailResponse.AuthorizedDepartmentResponse(
+                            departmentId,
+                            department != null ? department.getName() : "Phòng ban #" + departmentId,
+                            department != null ? department.getCode() : null
+                    );
+                })
+                .toList();
+    }
+
     private DocumentDetailResponse toDetail(Document document) {
         String baseEndpoint = "/documents/" + document.getId();
         return new DocumentDetailResponse(
@@ -223,7 +262,8 @@ public class DocumentMetadataService {
                 baseEndpoint + "/preview-url",
                 baseEndpoint + "/download-url",
                 document.getCreatedAt(),
-                document.getUpdatedAt()
+                document.getUpdatedAt(),
+                authorizedDepartments(document.getCategoryId())
         );
     }
 }

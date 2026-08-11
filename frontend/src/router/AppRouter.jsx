@@ -23,6 +23,7 @@ import DocumentsAdmin from "../features/documents/pages/DocumentsAdmin.jsx";
 import DocumentsPage from "../features/documents/pages/DocumentsPage.jsx";
 import EditDocumentPage from "../features/documents/pages/EditDocumentPage.jsx";
 import UploadAdmin from "../features/documents/pages/UploadAdmin.jsx";
+import UploadDocumentPage from "../features/documents/pages/UploadDocumentPage.jsx";
 import HomePage from "../features/search/pages/HomePage.jsx";
 import SearchPage from "../features/search/pages/SearchPage.jsx";
 import TagsPage from "../features/tags/pages/TagsPage.jsx";
@@ -92,6 +93,7 @@ export default function AppRouter() {
           <Route path="history" element={<HistoryUser />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="documents" element={<DocumentsPage />} />
+          <Route path="documents/upload" element={<UploadDocumentPage />} />
           <Route path="documents/:id" element={<DocumentDetailPage />} />
           <Route path="documents/:id/history" element={<DocumentHistoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
@@ -150,10 +152,6 @@ export default function AppRouter() {
           </Route>
         </Route>
       </Route>
-      <Route
-        path="/documents/upload"
-        element={<Navigate to="/admin/upload-admin" replace />}
-      />
       <Route
         path="/documents/:id/edit"
         element={<AdminDocumentRedirect suffix="edit" />}

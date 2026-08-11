@@ -94,10 +94,10 @@ public class DocumentPresignedUrlService {
 
     @Transactional
     public UploadInitResponse initiateUpload(UploadInitRequest request) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
+        boolean admin = currentUser.getRole() == Role.ADMIN;
         ValidatedFile file = fileValidationService.validateDeclared(request.fileName(), request.fileSize(), request.contentType());
-        Long ownerId = request.ownerId() != null ? request.ownerId() : admin.getId();
+        Long ownerId = admin && request.ownerId() != null ? request.ownerId() : currentUser.getId();
         ensureUserExists(ownerId);
 
         String objectKey = objectStorageService.generateDocumentObjectKey();
@@ -108,7 +108,7 @@ public class DocumentPresignedUrlService {
         document.setDescription(request.description());
         document.setCategoryId(request.categoryId());
         document.setDepartmentId(request.departmentId());
-        document.setUploadedBy(admin.getId());
+        document.setUploadedBy(currentUser.getId());
         document.setOwnerId(ownerId);
         document.setFileName(file.fileName());
         document.setFileType(file.fileType());
@@ -117,11 +117,13 @@ public class DocumentPresignedUrlService {
         document.setStoragePath(objectKey);
         document.setUploadExpiresAt(presignedUrl.expiresAt());
         document.setStatus(DocumentStatus.AWAITING_UPLOAD);
-        document.setAccessLevel(request.visibility() != null ? request.visibility() : DocumentAccessLevel.PUBLIC);
+        document.setAccessLevel(admin && request.visibility() != null ? request.visibility() : DocumentAccessLevel.PUBLIC);
         document.setEffectiveDate(request.effectiveDate());
         document.setExpiryDate(request.expiryDate());
         document = documentRepository.save(document);
-        saveAudience(document.getId(), admin.getId(), request.departmentIds(), request.sharedUserIds());
+        if (admin) {
+            saveAudience(document.getId(), currentUser.getId(), request.departmentIds(), request.sharedUserIds());
+        }
         return new UploadInitResponse(
                 document.getId(),
                 document.getStatus().name(),
@@ -135,9 +137,9 @@ public class DocumentPresignedUrlService {
 
     @Transactional
     public UploadCompleteResponse completeUpload(Long documentId) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
+        requireUploadOwnerOrAdmin(currentUser, document);
         if (document.getStatus() != DocumentStatus.AWAITING_UPLOAD) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Document is not awaiting upload", HttpStatus.CONFLICT);
         }
@@ -165,14 +167,12 @@ public class DocumentPresignedUrlService {
             document.setDocumentCode(generateDocumentCode());
         }
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), null, document.getStoragePath(), document.getMimeType()));
-        logUpload(admin, document);
+        logUpload(currentUser, document);
         Document saved = documentRepository.save(document);
         return new UploadCompleteResponse(saved.getId(), saved.getStatus().name(), saved.getDocumentCode(), saved.getVersionNumber(), saved.getCreatedAt());
     }
 
     public BatchUploadResponse initiateBatchUpload(BatchUploadInitRequest request) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
         validateBatchUploadRequest(request);
         List<BatchUploadItemResponse> items = new ArrayList<>();
         Set<String> clientItemIds = new HashSet<>();
@@ -188,15 +188,15 @@ public class DocumentPresignedUrlService {
                         file.contentType(),
                         file.title(),
                         null,
-                        request.categoryId(),
+                        file.categoryId() != null ? file.categoryId() : request.categoryId(),
                         request.departmentId(),
-                        request.tagIds(),
+                        file.tagIds() != null ? file.tagIds() : request.tagIds(),
                         request.resolvedAccessLevel(),
                         request.departmentIds(),
                         request.ownerId(),
                         request.sharedUserIds(),
-                        request.effectiveDate(),
-                        request.expiryDate()
+                        file.effectiveDate() != null ? file.effectiveDate() : request.effectiveDate(),
+                        file.expiryDate() != null ? file.expiryDate() : request.expiryDate()
                 );
                 items.add(BatchUploadItemResponse.success(file.clientItemId(), file.fileName(), initiateUpload(itemRequest)));
             } catch (AppException exception) {
@@ -208,8 +208,6 @@ public class DocumentPresignedUrlService {
 
     @Transactional
     public BatchUploadResponse completeBatchUpload(BatchUploadCompleteRequest request) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
         List<BatchUploadItemResponse> items = new ArrayList<>();
         for (var item : request.items()) {
             try {
@@ -337,6 +335,13 @@ public class DocumentPresignedUrlService {
         if (user.getRole() != Role.ADMIN) {
             throw new AppException(ErrorCodes.ACCESS_DENIED, "Admin role is required", HttpStatus.FORBIDDEN);
         }
+    }
+
+    private void requireUploadOwnerOrAdmin(User user, Document document) {
+        if (user.getRole() == Role.ADMIN || user.getId().equals(document.getUploadedBy()) || user.getId().equals(document.getOwnerId())) {
+            return;
+        }
+        throw new AppException(ErrorCodes.ACCESS_DENIED, "Only uploader or owner can complete upload", HttpStatus.FORBIDDEN);
     }
 
     private void ensureUserExists(Long userId) {
