@@ -4,9 +4,15 @@ import com.dms.masterdata.dto.CategoryResponse;
 import com.dms.masterdata.entity.Category;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class CategoryMapper {
     public CategoryResponse toResponse(Category category) {
+        return toResponse(category, List.of());
+    }
+
+    public CategoryResponse toResponse(Category category, List<CategoryResponse.DepartmentPermissionResponse> departmentPermissions) {
         Long parentId = category.getParent() == null ? null : category.getParent().getId();
         return new CategoryResponse(
                 category.getId(),
@@ -17,7 +23,8 @@ public class CategoryMapper {
                 category.getIcon(),
                 category.getSortOrder(),
                 category.isActive(),
-                category.getCreatedAt()
+                category.getCreatedAt(),
+                departmentPermissions
         );
     }
 }

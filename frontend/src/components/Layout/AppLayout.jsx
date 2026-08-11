@@ -109,11 +109,9 @@ export default function AppLayout({ children }) {
     const displayName =
         user?.name || user?.fullName || user?.email || "Người dùng";
     const displayEmail = user?.email || "user@company.com";
-    const displayDepartment =
-        user?.departmentName ||
-        user?.department ||
-        user?.departmentCode ||
-        "Phòng Kỹ thuật";
+    const displayDepartment = Array.isArray(user?.departments) && user.departments.length > 0
+        ? user.departments.map(d => d.name || d.departmentName).filter(Boolean).join(', ')
+        : (user?.departmentName || user?.department || user?.departmentCode || "Phòng ban của bạn");
     const displayRole = user?.role || "USER";
     const userInitial = displayName.trim().charAt(0).toUpperCase() || "U";
     const userMenuLinks = [

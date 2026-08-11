@@ -1,12 +1,10 @@
 package com.dms.document.policy;
 
+import com.dms.category.entity.CategoryPermission;
 import com.dms.category.policy.CategoryAccessPolicyService;
 import com.dms.document.entity.Document;
-import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.entity.DocumentVersion;
-import com.dms.document.repository.DocumentDepartmentAccessRepository;
-import com.dms.document.repository.DocumentUserAccessRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import org.springframework.stereotype.Service;
@@ -18,17 +16,9 @@ public class DocumentAccessPolicyService {
     private static final String ACCESS_DENIED = "ACCESS_DENIED";
     private static final String VERSION_NOT_READY = "VERSION_NOT_READY";
 
-    private final DocumentDepartmentAccessRepository departmentAccessRepository;
-    private final DocumentUserAccessRepository userAccessRepository;
     private final CategoryAccessPolicyService categoryAccessPolicyService;
 
-    public DocumentAccessPolicyService(
-            DocumentDepartmentAccessRepository departmentAccessRepository,
-            DocumentUserAccessRepository userAccessRepository,
-            CategoryAccessPolicyService categoryAccessPolicyService
-    ) {
-        this.departmentAccessRepository = departmentAccessRepository;
-        this.userAccessRepository = userAccessRepository;
+    public DocumentAccessPolicyService(CategoryAccessPolicyService categoryAccessPolicyService) {
         this.categoryAccessPolicyService = categoryAccessPolicyService;
     }
 
@@ -42,7 +32,7 @@ public class DocumentAccessPolicyService {
                 || document.getStatus() == DocumentStatus.ARCHIVED) {
             return AccessDecision.denied(DOCUMENT_NOT_READY);
         }
-        return evaluateAudience(user, document);
+        return evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
     }
 
     public AccessDecision canPreview(User user, Document document) {
@@ -53,7 +43,7 @@ public class DocumentAccessPolicyService {
         if (!canUseDocumentStatus(user, document, true)) {
             return AccessDecision.denied(DOCUMENT_NOT_READY);
         }
-        return evaluateAudience(user, document);
+        return evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
     }
 
     public AccessDecision canDownload(User user, Document document) {
@@ -64,7 +54,11 @@ public class DocumentAccessPolicyService {
         if (!canUseDocumentStatus(user, document, true)) {
             return AccessDecision.denied(DOCUMENT_NOT_READY);
         }
-        return evaluateAudience(user, document);
+        AccessDecision viewDecision = evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
+        if (!viewDecision.granted()) {
+            return viewDecision;
+        }
+        return evaluateCategoryPermission(user, document, CategoryPermission.DOWNLOAD);
     }
 
     public AccessDecision canDownloadVersion(User user, Document document, DocumentVersion version) {
@@ -79,11 +73,7 @@ public class DocumentAccessPolicyService {
     }
 
     public AccessDecision canUseAudience(User user, Document document) {
-        AccessDecision userDecision = ensureActiveUser(user);
-        if (!userDecision.granted()) {
-            return userDecision;
-        }
-        return evaluateAudience(user, document);
+        return canViewMetadata(user, document);
     }
 
     private AccessDecision ensureActiveUser(User user) {
@@ -103,29 +93,11 @@ public class DocumentAccessPolicyService {
         return allowArchivedAdmin && user.getRole() == Role.ADMIN && document.getStatus() == DocumentStatus.ARCHIVED;
     }
 
-    private AccessDecision evaluateAudience(User user, Document document) {
-        if (document == null || document.getAccessLevel() == null) {
+    private AccessDecision evaluateCategoryPermission(User user, Document document, CategoryPermission permission) {
+        if (document == null || document.getCategoryId() == null) {
             return AccessDecision.denied(ACCESS_DENIED);
         }
-        if (user.getRole() == Role.ADMIN) {
-            return AccessDecision.allow();
-        }
-        if (document.getAccessLevel() == DocumentAccessLevel.PUBLIC) {
-            return AccessDecision.allow();
-        }
-        if (document.getAccessLevel() != DocumentAccessLevel.RESTRICTED) {
-            return AccessDecision.denied(ACCESS_DENIED);
-        }
-        if (user.getId() != null && user.getId().equals(document.getOwnerId())) {
-            return AccessDecision.allow();
-        }
-        if (user.getId() != null && userAccessRepository.existsByDocumentIdAndUserId(document.getId(), user.getId())) {
-            return AccessDecision.allow();
-        }
-        if (user.getDepartmentId() != null && departmentAccessRepository.existsByDocumentIdAndDepartmentId(document.getId(), user.getDepartmentId())) {
-            return AccessDecision.allow();
-        }
-        if (categoryAccessPolicyService.hasCategoryAudience(user, document.getCategoryId())) {
+        if (categoryAccessPolicyService.hasPermission(user, document.getCategoryId(), permission)) {
             return AccessDecision.allow();
         }
         return AccessDecision.denied(ACCESS_DENIED);

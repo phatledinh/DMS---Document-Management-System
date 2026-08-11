@@ -123,7 +123,7 @@ public class DocumentController {
         return ApiResponse.success("Documents restored successfully", lifecycleService.restoreTrash(request.documentIds()));
     }
 
-    @DeleteMapping("/trash/permanent-delete")
+    @PostMapping("/trash/permanent-delete")
     public ApiResponse<BatchDocumentLifecycleResponse> permanentDelete(@Valid @RequestBody DocumentIdsRequest request) {
         return ApiResponse.success("Documents permanently deleted successfully", lifecycleService.permanentDelete(request.documentIds()));
     }

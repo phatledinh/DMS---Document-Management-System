@@ -1,32 +1,56 @@
-import { BankOutlined, KeyOutlined, LockOutlined, MailOutlined, PhoneOutlined, SaveOutlined, UserOutlined } from '@ant-design/icons';
-import { useState } from 'react';
-import { Avatar, Breadcrumb, Button, Card, Col, Form, Input, Row, Space, Tag, Typography } from 'antd';
+import { KeyOutlined, LockOutlined, MailOutlined, PhoneOutlined, UserOutlined } from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { Avatar, Breadcrumb, Button, Card, Col, Form, Input, Row, Tag, Typography } from 'antd';
 import { toast } from 'react-toastify';
+import { getDepartments } from '../../../api/departmentApi.js';
 import { updateUser } from '../../../api/userApi.js';
 import { useAuthStore } from '../../../store/authStore.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './ProfilePage.module.css';
 
-const fallbackProfile = {
-  name: 'Nguyễn Văn A',
-  email: 'user@company.com',
-  phone: '0901234567',
-  department: 'Phòng Kỹ thuật',
-  role: 'USER',
-  address: '',
-  nationality: 'Việt Nam',
-  ethnicity: 'Kinh',
-  religion: 'Không',
-  bank: '',
-  accountNumber: '',
-};
+function normalizeList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.content)) return data.content;
+  if (Array.isArray(data?.items)) return data.items;
+  return [];
+}
 
 export default function ProfilePage() {
   const currentUser = useAuthStore((state) => state.user);
   const [passwordForm] = Form.useForm();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const profile = { ...fallbackProfile, ...currentUser };
-  const displayName = profile.name || profile.email || fallbackProfile.name;
+  const [departments, setDepartments] = useState([]);
+  const departmentById = useMemo(
+    () => new Map(departments.map((department) => [department.id, department])),
+    [departments],
+  );
+  const departmentIds = useMemo(() => {
+    if (Array.isArray(currentUser?.departmentIds) && currentUser.departmentIds.length > 0) {
+      return currentUser.departmentIds;
+    }
+    if (Array.isArray(currentUser?.departments) && currentUser.departments.length > 0) {
+      return currentUser.departments.map((d) => d.id).filter(Boolean);
+    }
+    return currentUser?.departmentId ? [currentUser.departmentId] : [];
+  }, [currentUser]);
+
+  const departmentText = departmentIds.length > 0
+    ? departmentIds.map((departmentId) => departmentById.get(departmentId)?.name || departmentId).join(', ')
+    : '—';
+  const displayName = currentUser?.name || currentUser?.email || '—';
+
+  useEffect(() => {
+    async function loadDepartments() {
+      try {
+        const data = await getDepartments();
+        setDepartments(normalizeList(data));
+      } catch (error) {
+        toast.error(getApiErrorMessage(error));
+      }
+    }
+
+    loadDepartments();
+  }, []);
 
   async function handlePasswordChange(values) {
     if (!currentUser?.id) {
@@ -70,85 +94,39 @@ export default function ProfilePage() {
               <Typography.Title level={2} className={styles.name}>
                 {displayName}
               </Typography.Title>
-              <Typography.Text className={styles.email}>{profile.email}</Typography.Text>
+              <Typography.Text className={styles.email}>{currentUser?.email || '—'}</Typography.Text>
               <div>
                 <Tag color="blue" className={styles.profileTag}>
-                  {profile.department} · {profile.role}
+                  {departmentText} · {currentUser?.role || 'USER'}
                 </Tag>
               </div>
             </div>
           </section>
 
-          <Form layout="vertical" initialValues={profile} className={styles.form}>
+          <Form layout="vertical" className={styles.form}>
             <section className={styles.section}>
               <Typography.Title level={4} className={styles.sectionTitle}>
                 Thông tin cá nhân
               </Typography.Title>
               <Row gutter={[16, 16]}>
                 <Col xs={24} md={12}>
-                  <Form.Item label="Họ tên" name="name">
-                    <Input prefix={<UserOutlined />} placeholder="Nhập họ tên" />
+                  <Form.Item label="Họ tên">
+                    <Input prefix={<UserOutlined />} value={currentUser?.name || ''} readOnly />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item label="Email" name="email">
-                    <Input prefix={<MailOutlined />} suffix={<LockOutlined />} readOnly />
+                  <Form.Item label="Email">
+                    <Input prefix={<MailOutlined />} suffix={<LockOutlined />} value={currentUser?.email || ''} readOnly />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item label="Số điện thoại" name="phone">
-                    <Input prefix={<PhoneOutlined />} placeholder="Nhập số điện thoại" />
+                  <Form.Item label="Số điện thoại">
+                    <Input prefix={<PhoneOutlined />} value={currentUser?.phone || ''} readOnly />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
-                  <Form.Item label="Phòng ban" name="department">
-                    <Input suffix={<LockOutlined />} readOnly />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </section>
-
-            <section className={styles.section}>
-              <Typography.Title level={4} className={styles.sectionTitle}>
-                Thông tin bổ sung
-              </Typography.Title>
-              <Row gutter={[16, 16]}>
-                <Col xs={24}>
-                  <Form.Item label="Địa chỉ" name="address">
-                    <Input placeholder="Nhập địa chỉ của bạn" />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={8}>
-                  <Form.Item label="Quốc tịch" name="nationality">
-                    <Input />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={8}>
-                  <Form.Item label="Dân tộc" name="ethnicity">
-                    <Input />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={8}>
-                  <Form.Item label="Tôn giáo" name="religion">
-                    <Input />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </section>
-
-            <section className={styles.section}>
-              <Typography.Title level={4} className={styles.sectionTitle}>
-                Thông tin thanh toán
-              </Typography.Title>
-              <Row gutter={[16, 16]}>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Ngân hàng" name="bank">
-                    <Input prefix={<BankOutlined />} placeholder="Tên ngân hàng" />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Số tài khoản" name="accountNumber">
-                    <Input placeholder="Số tài khoản ngân hàng" />
+                  <Form.Item label="Phòng ban">
+                    <Input suffix={<LockOutlined />} value={departmentText} readOnly />
                   </Form.Item>
                 </Col>
               </Row>
@@ -203,15 +181,6 @@ export default function ProfilePage() {
                 </div>
               </Form>
             </section>
-
-            <div className={styles.actions}>
-              <Space>
-                <Button>Cancel</Button>
-                <Button type="primary" icon={<SaveOutlined />}>
-                  Lưu thay đổi
-                </Button>
-              </Space>
-            </div>
           </Form>
         </Card>
       </div>

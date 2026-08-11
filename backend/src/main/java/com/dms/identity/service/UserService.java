@@ -6,8 +6,10 @@ import com.dms.identity.dto.UserCreateRequest;
 import com.dms.identity.dto.UserResponse;
 import com.dms.identity.dto.UserUpdateRequest;
 import com.dms.identity.entity.User;
+import com.dms.identity.entity.UserDepartment;
 import com.dms.identity.entity.UserStatus;
 import com.dms.identity.mapper.UserMapper;
+import com.dms.identity.repository.UserDepartmentRepository;
 import com.dms.identity.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -18,17 +20,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class UserService {
     private final UserRepository userRepository;
+    private final UserDepartmentRepository userDepartmentRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, UserDepartmentRepository userDepartmentRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.userDepartmentRepository = userDepartmentRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
     }
@@ -41,7 +49,7 @@ public class UserService {
         if (!user.isEnabled()) {
             throw new AppException(ErrorCodes.USER_DISABLED, "User is disabled", HttpStatus.FORBIDDEN);
         }
-        return userMapper.toResponse(user);
+        return toResponse(user);
     }
 
     private String currentUserEmail() {
@@ -58,15 +66,17 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers() {
-        return userRepository.findByDeletedAtIsNull().stream()
-                .map(userMapper::toResponse)
+        List<User> users = userRepository.findByDeletedAtIsNull();
+        Map<Long, List<Long>> departmentIdsByUserId = departmentIdsByUserId(users);
+        return users.stream()
+                .map(user -> userMapper.toResponse(user, departmentIdsByUserId.getOrDefault(user.getId(), fallbackDepartmentIds(user))))
                 .collect(Collectors.toList());
     }
     
     @Transactional(readOnly = true)
     public UserResponse getUserById(Long id) {
         User user = getUserEntityById(id);
-        return userMapper.toResponse(user);
+        return toResponse(user);
     }
     
     @Transactional
@@ -80,12 +90,14 @@ public class UserService {
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setPhone(request.phone());
-        user.setDepartmentId(request.departmentId());
+        List<Long> departmentIds = normalizeDepartmentIds(request.departmentIds());
+        user.setDepartmentId(primaryDepartmentId(departmentIds));
         user.setRole(request.role());
         user.setStatus(request.status());
-        
+
         user = userRepository.save(user);
-        return userMapper.toResponse(user);
+        syncDepartmentMemberships(user.getId(), departmentIds);
+        return userMapper.toResponse(user, departmentIds);
     }
     
     @Transactional
@@ -94,7 +106,14 @@ public class UserService {
         
         if (request.name() != null) user.setName(request.name());
         if (request.phone() != null) user.setPhone(request.phone());
-        if (request.departmentId() != null) user.setDepartmentId(request.departmentId());
+        List<Long> departmentIds = null;
+        if (request.departmentIds() != null) {
+            departmentIds = normalizeDepartmentIds(request.departmentIds());
+            user.setDepartmentId(primaryDepartmentId(departmentIds));
+        } else if (request.departmentId() != null) {
+            departmentIds = List.of(request.departmentId());
+            user.setDepartmentId(request.departmentId());
+        }
         if (request.role() != null) user.setRole(request.role());
         if (request.status() != null) user.setStatus(request.status());
         
@@ -104,7 +123,11 @@ public class UserService {
         
         user.setUpdatedAt(OffsetDateTime.now());
         user = userRepository.save(user);
-        return userMapper.toResponse(user);
+        if (departmentIds != null) {
+            syncDepartmentMemberships(user.getId(), departmentIds);
+            return userMapper.toResponse(user, departmentIds);
+        }
+        return toResponse(user);
     }
     
     @Transactional
@@ -115,6 +138,47 @@ public class UserService {
         userRepository.save(user);
     }
     
+    private UserResponse toResponse(User user) {
+        List<Long> departmentIds = userDepartmentRepository.findByUserId(user.getId()).stream()
+                .map(UserDepartment::getDepartmentId)
+                .collect(Collectors.toList());
+        return userMapper.toResponse(user, departmentIds.isEmpty() ? fallbackDepartmentIds(user) : departmentIds);
+    }
+
+    private Map<Long, List<Long>> departmentIdsByUserId(Collection<User> users) {
+        List<Long> userIds = users.stream().map(User::getId).toList();
+        return userDepartmentRepository.findByUserIdIn(userIds).stream()
+                .collect(Collectors.groupingBy(UserDepartment::getUserId, Collectors.mapping(UserDepartment::getDepartmentId, Collectors.toList())));
+    }
+
+    private List<Long> fallbackDepartmentIds(User user) {
+        return user.getDepartmentId() == null ? List.of() : List.of(user.getDepartmentId());
+    }
+
+    private List<Long> normalizeDepartmentIds(List<Long> departmentIds) {
+        if (departmentIds == null) return List.of();
+        return new ArrayList<>(new LinkedHashSet<>(departmentIds.stream()
+                .filter(departmentId -> departmentId != null)
+                .toList()));
+    }
+
+    private Long primaryDepartmentId(List<Long> departmentIds) {
+        return departmentIds.isEmpty() ? null : departmentIds.get(0);
+    }
+
+    private void syncDepartmentMemberships(Long userId, List<Long> departmentIds) {
+        userDepartmentRepository.deleteByUserId(userId);
+        List<UserDepartment> rows = departmentIds.stream()
+                .map(departmentId -> {
+                    UserDepartment row = new UserDepartment();
+                    row.setUserId(userId);
+                    row.setDepartmentId(departmentId);
+                    return row;
+                })
+                .toList();
+        userDepartmentRepository.saveAll(rows);
+    }
+
     private User getUserEntityById(Long id) {
         return userRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new AppException(ErrorCodes.NOT_FOUND, "Người dùng không tồn tại", HttpStatus.NOT_FOUND));

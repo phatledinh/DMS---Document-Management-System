@@ -4,21 +4,13 @@ public final class DocumentAclSqlFragments {
     public static final String USER_VISIBLE_PREDICATE = """
             d.status = 'INDEXED'
             AND d.permanently_deleted_at IS NULL
-            AND (
-                d.access_level = 'PUBLIC'
-                OR d.owner_id = :currentUserId
-                OR EXISTS (
-                    SELECT 1
-                    FROM document_department_accesses dda
-                    WHERE dda.document_id = d.id
-                      AND dda.department_id = :userDepartmentId
-                )
-                OR EXISTS (
-                    SELECT 1
-                    FROM document_user_accesses dua
-                    WHERE dua.document_id = d.id
-                      AND dua.user_id = :currentUserId
-                )
+            AND EXISTS (
+                SELECT 1
+                FROM user_departments ud
+                JOIN category_department_permissions cdp ON cdp.department_id = ud.department_id
+                WHERE ud.user_id = :currentUserId
+                  AND cdp.category_id = d.category_id
+                  AND cdp.permission = 'VIEW'
             )
             """;
 

@@ -158,7 +158,9 @@ function getDisplayName(user) {
 export default function DashboardUser() {
   const user = useAuthStore((state) => state.user);
   const displayName = getDisplayName(user);
-  const department = user?.departmentName || user?.department || user?.departmentCode || 'Phòng ban của bạn';
+  const department = Array.isArray(user?.departments) && user.departments.length > 0
+    ? user.departments.map(d => d.name || d.departmentName).filter(Boolean).join(', ')
+    : (user?.departmentName || user?.department || user?.departmentCode || 'Phòng ban của bạn');
   const role = user?.role || 'USER';
 
   return (

@@ -11,7 +11,7 @@ import {
     SearchOutlined,
     UpOutlined,
 } from "@ant-design/icons";
-import { Button, Form, Input, Modal, Switch, TreeSelect } from "antd";
+import { Button, Checkbox, Form, Input, Modal, Select, Switch, TreeSelect } from "antd";
 import { toast } from "react-toastify";
 import {
     createCategory,
@@ -19,6 +19,7 @@ import {
     getCategories,
     updateCategory,
 } from "../../../api/categoryApi.js";
+import { getDepartments } from "../../../api/departmentApi.js";
 import { searchDocuments } from "../../../api/searchApi.js";
 import {
     formatDateTime,
@@ -34,6 +35,26 @@ function normalizeList(data) {
     if (Array.isArray(data?.content)) return data.content;
     if (Array.isArray(data?.items)) return data.items;
     return [];
+}
+
+
+const CATEGORY_PERMISSIONS = [
+    { label: "Xem", value: "VIEW" },
+    { label: "Upload", value: "UPLOAD" },
+    { label: "Download", value: "DOWNLOAD" },
+    { label: "Sửa", value: "EDIT" },
+    { label: "Xóa", value: "DELETE" },
+];
+
+function normalizeDepartmentPermissions(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((item) => item?.departmentId && Array.isArray(item.permissions))
+        .map((item) => ({
+            departmentId: item.departmentId,
+            permissions: [...new Set(item.permissions)].filter(Boolean),
+        }))
+        .filter((item) => item.permissions.length > 0);
 }
 
 function buildCategoryTree(categories) {
@@ -239,6 +260,7 @@ export default function CategoriesPage() {
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const [categories, setCategories] = useState([]);
+    const [departments, setDepartments] = useState([]);
     const [filterText, setFilterText] = useState("");
     const [selectedCategoryId, setSelectedCategoryId] = useState(null);
     const [relatedDocuments, setRelatedDocuments] = useState([]);
@@ -279,11 +301,28 @@ export default function CategoriesPage() {
         );
     }, [flatCategories, selectedCategoryId]);
 
+    const departmentOptions = useMemo(() => departments.map((department) => ({
+        label: `${department.name} (${department.code})`,
+        value: department.id,
+    })), [departments]);
+
     const parentCategory = selectedCategory?.parentId
         ? categories.find(
               (category) => category.id === selectedCategory.parentId,
           )
         : null;
+
+    const selectedPermissionSummary = useMemo(() => {
+        const items = normalizeDepartmentPermissions(selectedCategory?.departmentPermissions);
+        return items.map((item) => {
+            const department = departments.find((entry) => entry.id === item.departmentId);
+            return {
+                ...item,
+                departmentName: department?.name || `Phòng ban #${item.departmentId}`,
+            };
+        });
+    }, [departments, selectedCategory?.departmentPermissions]);
+
 
     const handleToggle = useCallback((id) => {
         setExpandedIds((prev) => {
@@ -329,8 +368,19 @@ export default function CategoriesPage() {
         }
     }
 
+
+    async function loadDepartments() {
+        try {
+            const data = await getDepartments({ activeOnly: true });
+            setDepartments(normalizeList(data));
+        } catch {
+            setDepartments([]);
+        }
+    }
+
     useEffect(() => {
         loadCategories();
+        loadDepartments();
     }, []);
 
     useEffect(() => {
@@ -382,7 +432,7 @@ export default function CategoriesPage() {
     }
 
     function openCreateModal(parentId = null) {
-        form.setFieldsValue({ parentId, isActive: true, sortOrder: 0 });
+        form.setFieldsValue({ parentId, isActive: true, sortOrder: 0, departmentPermissions: [] });
         setCreateModalOpen(true);
     }
 
@@ -396,6 +446,7 @@ export default function CategoriesPage() {
             icon: category.icon,
             sortOrder: category.sortOrder,
             isActive: category.isActive,
+            departmentPermissions: normalizeDepartmentPermissions(category.departmentPermissions),
         });
         setEditModalOpen(true);
     }
@@ -409,6 +460,7 @@ export default function CategoriesPage() {
             icon: values.icon?.trim() || null,
             sortOrder: Number(values.sortOrder || 0),
             isActive: values.isActive ?? true,
+            departmentPermissions: normalizeDepartmentPermissions(values.departmentPermissions),
         };
     }
 
@@ -519,6 +571,51 @@ export default function CategoriesPage() {
                         unCheckedChildren="Không hoạt động"
                     />
                 </Form.Item>
+                <div className={styles.permissionBox}>
+                    <div className={styles.permissionHeader}>
+                        <div>
+                            <h3>Phân quyền phòng ban</h3>
+                            <p>
+                                Quyền áp dụng cho mọi tài liệu thuộc danh mục này.
+                            </p>
+                        </div>
+                    </div>
+                    <Form.List name="departmentPermissions">
+                        {(fields, { add, remove }) => (
+                            <div className={styles.permissionRows}>
+                                {fields.map(({ key, name, ...restField }) => (
+                                    <div className={styles.permissionRow} key={key}>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, "departmentId"]}
+                                            rules={[{ required: true, message: "Chọn phòng ban" }]}
+                                        >
+                                            <Select
+                                                showSearch
+                                                placeholder="Chọn phòng ban"
+                                                options={departmentOptions}
+                                                optionFilterProp="label"
+                                            />
+                                        </Form.Item>
+                                        <Form.Item
+                                            {...restField}
+                                            name={[name, "permissions"]}
+                                            rules={[{ required: true, message: "Chọn quyền" }]}
+                                        >
+                                            <Checkbox.Group options={CATEGORY_PERMISSIONS} />
+                                        </Form.Item>
+                                        <Button danger onClick={() => remove(name)}>
+                                            Xóa
+                                        </Button>
+                                    </div>
+                                ))}
+                                <Button type="dashed" onClick={() => add({ permissions: ["VIEW"] })}>
+                                    Thêm phòng ban
+                                </Button>
+                            </div>
+                        )}
+                    </Form.List>
+                </div>
                 <div className={styles.modalActions}>
                     <Button
                         onClick={

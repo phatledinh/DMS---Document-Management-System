@@ -3,6 +3,8 @@ package com.dms.masterdata.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record CategoryRequest(
         Long parentId,
 
@@ -20,6 +22,13 @@ public record CategoryRequest(
 
         Integer sortOrder,
 
-        Boolean isActive
+        Boolean isActive,
+
+        List<DepartmentPermissionRequest> departmentPermissions
 ) {
+    public record DepartmentPermissionRequest(
+            Long departmentId,
+            List<String> permissions
+    ) {
+    }
 }
