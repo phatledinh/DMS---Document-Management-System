@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
@@ -27,7 +28,9 @@ public class UserDashboardQueryRepository {
     }
 
     public List<UserDashboardMetricResponse> metrics(Long userId, OffsetDateTime dateFrom, OffsetDateTime dateTo) {
-        MapSqlParameterSource parameters = params(userId).addValue("dateFrom", dateFrom).addValue("dateTo", dateTo);
+        MapSqlParameterSource parameters = params(userId)
+                .addValue("dateFrom", dateFrom, Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", dateTo, Types.TIMESTAMP_WITH_TIMEZONE);
         long uploaded = longValue("""
                 SELECT count(*)
                 FROM documents
@@ -108,23 +111,23 @@ public class UserDashboardQueryRepository {
                 ORDER BY created_at DESC, id DESC
                 LIMIT :limit
                 """, params(userId)
-                .addValue("dateFrom", null)
-                .addValue("dateTo", null)
-                .addValue("action", null)
-                .addValue("category", null)
-                .addValue("permission", null)
-                .addValue("result", null)
+                .addValue("dateFrom", null, Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", null, Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("action", null, Types.VARCHAR)
+                .addValue("category", null, Types.VARCHAR)
+                .addValue("permission", null, Types.VARCHAR)
+                .addValue("result", null, Types.VARCHAR)
                 .addValue("limit", limit), (rs, rowNum) -> mapActivity(rs));
     }
 
     public PageResponse<UserActivityResponse> activityHistory(Long userId, String action, String category, String permission, String result, OffsetDateTime dateFrom, OffsetDateTime dateTo, int page, int size) {
         MapSqlParameterSource parameters = params(userId)
-                .addValue("action", blankToNull(action))
-                .addValue("category", blankToNull(category))
-                .addValue("permission", blankToNull(permission))
-                .addValue("result", blankToNull(result))
-                .addValue("dateFrom", dateFrom)
-                .addValue("dateTo", dateTo)
+                .addValue("action", blankToNull(action), Types.VARCHAR)
+                .addValue("category", blankToNull(category), Types.VARCHAR)
+                .addValue("permission", blankToNull(permission), Types.VARCHAR)
+                .addValue("result", blankToNull(result), Types.VARCHAR)
+                .addValue("dateFrom", dateFrom, Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", dateTo, Types.TIMESTAMP_WITH_TIMEZONE)
                 .addValue("limit", size)
                 .addValue("offset", page * size);
         String baseSql = activityBaseSql();
@@ -140,11 +143,11 @@ public class UserDashboardQueryRepository {
 
     public PageResponse<MyDocumentVersionResponse> myDocumentVersions(Long userId, String keyword, String category, String status, OffsetDateTime dateFrom, OffsetDateTime dateTo, int page, int size) {
         MapSqlParameterSource parameters = params(userId)
-                .addValue("keyword", blankToNull(keyword))
-                .addValue("category", blankToNull(category))
-                .addValue("status", blankToNull(status))
-                .addValue("dateFrom", dateFrom)
-                .addValue("dateTo", dateTo)
+                .addValue("keyword", blankToNull(keyword), Types.VARCHAR)
+                .addValue("category", blankToNull(category), Types.VARCHAR)
+                .addValue("status", blankToNull(status), Types.VARCHAR)
+                .addValue("dateFrom", dateFrom, Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", dateTo, Types.TIMESTAMP_WITH_TIMEZONE)
                 .addValue("limit", size)
                 .addValue("offset", page * size);
         String baseSql = """

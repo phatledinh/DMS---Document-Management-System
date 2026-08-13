@@ -1005,7 +1005,7 @@ export default function CategoriesPage() {
                 open={isCreateModalOpen}
                 onCancel={closeCreateModal}
                 footer={null}
-                destroyOnClose
+                destroyOnHidden
             >
                 {renderCategoryForm(
                     form,
@@ -1019,7 +1019,7 @@ export default function CategoriesPage() {
                 open={isEditModalOpen}
                 onCancel={closeEditModal}
                 footer={null}
-                destroyOnClose
+                destroyOnHidden
             >
                 {renderCategoryForm(editForm, handleUpdateCategory, "Cập nhật")}
             </Modal>

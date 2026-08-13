@@ -273,11 +273,11 @@ export default function TagsPage() {
         </div>
       </main>
 
-      <Modal title="Thêm tag mới" open={isCreateModalOpen} onCancel={closeCreateModal} footer={null} destroyOnClose>
+      <Modal title="Thêm tag mới" open={isCreateModalOpen} onCancel={closeCreateModal} footer={null} destroyOnHidden>
         {renderTagForm(form, handleCreateTag, 'Thêm tag')}
       </Modal>
 
-      <Modal title="Cập nhật tag" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnClose>
+      <Modal title="Cập nhật tag" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnHidden>
         {renderTagForm(editForm, handleUpdateTag, 'Cập nhật')}
       </Modal>
     </div>

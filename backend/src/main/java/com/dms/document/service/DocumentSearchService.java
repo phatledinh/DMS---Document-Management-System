@@ -47,7 +47,9 @@ public class DocumentSearchService {
         long total = searchRepository.count(user, request);
         Map<String, List<SearchFacetValueResponse>> facets = facets(user, request);
         long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
-        searchRepository.logSearch(user, request, total, latencyMs);
+        if (request.hasSearchCriteria()) {
+            searchRepository.logSearch(user, request, total, latencyMs);
+        }
         return new DocumentSearchResponse(
                 rows.stream().map(this::toResult).toList(),
                 page(request),

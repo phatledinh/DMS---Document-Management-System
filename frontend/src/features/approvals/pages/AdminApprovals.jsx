@@ -137,7 +137,6 @@ export default function AdminApprovals() {
     <main className={styles.page}>
       <section className={styles.pageHeader}>
         <div>
-          <span>MH24</span>
           <h1>Duyệt bài đăng của người dùng</h1>
           <p>Kiểm tra tài liệu người dùng gửi lên, phê duyệt để xuất bản hoặc trả lại kèm lý do.</p>
         </div>

@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -236,19 +237,19 @@ public class DocumentSearchRepository {
 
     private MapSqlParameterSource parameters(User user, DocumentSearchRequest request) {
         MapSqlParameterSource parameters = new MapSqlParameterSource()
-                .addValue("admin", user.getRole() == Role.ADMIN)
-                .addValue("currentUserId", user.getId())
-                .addValue("userDepartmentId", user.getDepartmentId())
-                .addValue("query", normalize(request.q()))
-                .addValue("categoryId", request.categoryId())
-                .addValue("departmentId", request.departmentId())
-                .addValue("fileType", normalize(request.fileType()))
-                .addValue("accessLevel", enumName(request.resolvedAccessLevel()))
-                .addValue("ownerId", request.ownerId())
-                .addValue("uploadedBy", request.uploadedBy())
-                .addValue("status", enumName(request.status()))
-                .addValue("dateFrom", request.resolvedDateFrom())
-                .addValue("dateTo", request.resolvedDateTo());
+                .addValue("admin", user.getRole() == Role.ADMIN, Types.BOOLEAN)
+                .addValue("currentUserId", user.getId(), Types.BIGINT)
+                .addValue("userDepartmentId", user.getDepartmentId(), Types.BIGINT)
+                .addValue("query", normalize(request.q()), Types.VARCHAR)
+                .addValue("categoryId", request.categoryId(), Types.BIGINT)
+                .addValue("departmentId", request.departmentId(), Types.BIGINT)
+                .addValue("fileType", normalize(request.fileType()), Types.VARCHAR)
+                .addValue("accessLevel", enumName(request.resolvedAccessLevel()), Types.VARCHAR)
+                .addValue("ownerId", request.ownerId(), Types.BIGINT)
+                .addValue("uploadedBy", request.uploadedBy(), Types.BIGINT)
+                .addValue("status", enumName(request.status()), Types.VARCHAR)
+                .addValue("dateFrom", request.resolvedDateFrom(), Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", request.resolvedDateTo(), Types.TIMESTAMP_WITH_TIMEZONE);
         if (request.tagIds() != null && !request.tagIds().isEmpty()) {
             parameters.addValue("tagIds", request.tagIds().toArray(Long[]::new));
         }

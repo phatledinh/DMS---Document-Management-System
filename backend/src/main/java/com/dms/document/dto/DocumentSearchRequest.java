@@ -36,4 +36,8 @@ public record DocumentSearchRequest(
     public LocalDate resolvedDateTo() {
         return dateTo != null ? dateTo : effectiveDateTo;
     }
+
+    public boolean hasSearchCriteria() {
+        return q != null && !q.trim().isEmpty();
+    }
 }

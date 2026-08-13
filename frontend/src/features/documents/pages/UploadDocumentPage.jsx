@@ -7,6 +7,7 @@ import {
   DatePicker,
   Form,
   Input,
+  Modal,
   Progress,
   Select,
   Space,
@@ -22,6 +23,8 @@ import { getTags } from "../../../api/tagApi.js";
 import { getApiErrorMessage } from "../../../utils/response.js";
 import { formatFileSize } from "../utils/documentFormatters.js";
 import { useBatchUploadDocuments } from "../hooks/useBatchUploadDocuments.js";
+import { useUserDashboard } from "../../dashboard/hooks/useUserDashboard.js";
+import { useAuthStore } from "../../../store/authStore.js";
 import styles from "./UploadDocumentPage.module.css";
 
 const { Text } = Typography;
@@ -85,25 +88,44 @@ function statusTag(status) {
   return <Tag color={meta[0]}>{meta[1]}</Tag>;
 }
 
-function buildCategoryTree(categories) {
-  const byId = new Map(categories.map((c) => [c.id, { ...c, children: [] }]));
+function buildCategoryTree(categories, allowedIds) {
+  const includedIds = new Set(allowedIds);
+  const parentMap = new Map();
+  categories.forEach((c) => parentMap.set(c.id, c.parentId));
+
+  allowedIds.forEach((id) => {
+    let currentId = parentMap.get(id);
+    while (currentId) {
+      includedIds.add(currentId);
+      currentId = parentMap.get(currentId);
+    }
+  });
+
+  const byId = new Map(
+    categories
+      .filter((c) => includedIds.has(c.id))
+      .map((c) => [c.id, { ...c, children: [] }])
+  );
+
   const roots = [];
-  byId.forEach((c) => {
-    if (c.parentId && byId.has(c.parentId)) {
-      byId.get(c.parentId).children.push(c);
+  byId.forEach((node, id) => {
+    const category = categories.find((c) => c.id === id);
+    if (category?.parentId && byId.has(category.parentId)) {
+      byId.get(category.parentId).children.push(node);
     } else {
-      roots.push(c);
+      roots.push(node);
     }
   });
   return roots;
 }
 
-function buildTreeSelectData(tree) {
+function buildTreeSelectData(tree, allowedIds) {
   return tree.map((node) => ({
     title: node.name,
     value: node.id,
+    selectable: allowedIds.includes(node.id),
     children:
-      node.children?.length > 0 ? buildTreeSelectData(node.children) : [],
+      node.children?.length > 0 ? buildTreeSelectData(node.children, allowedIds) : [],
   }));
 }
 
@@ -117,11 +139,32 @@ export default function UploadDocumentPage() {
   const [tagList, setTagList] = useState([]);
   const [isCategoryLoading, setCategoryLoading] = useState(false);
   const [isTagLoading, setTagLoading] = useState(false);
+  const userDashboardQuery = useUserDashboard();
+  const user = useAuthStore((state) => state.user);
+
+  const allowedCategoryIds = useMemo(() => {
+    if (user?.role === "ADMIN") {
+      return categoryList.map((c) => c.id);
+    }
+    return userDashboardQuery.data?.permissionGroups
+      ?.filter((g) => g.permissions?.includes("UPLOAD"))
+      ?.map((g) => g.categoryId) || [];
+  }, [userDashboardQuery.data, user, categoryList]);
 
   const categoryTreeData = useMemo(() => {
-    const tree = buildCategoryTree(categoryList);
-    return buildTreeSelectData(tree);
-  }, [categoryList]);
+    const tree = buildCategoryTree(categoryList, allowedCategoryIds);
+    return buildTreeSelectData(tree, allowedCategoryIds);
+  }, [categoryList, allowedCategoryIds]);
+
+  useEffect(() => {
+    if (userDashboardQuery.isSuccess && allowedCategoryIds.length === 0) {
+      Modal.warning({
+        title: "Không có quyền upload",
+        content: "Bạn không có quyền upload tài liệu cho bất kỳ danh mục nào. Vui lòng liên hệ quản trị viên.",
+        onOk: () => navigate("/documents"),
+      });
+    }
+  }, [userDashboardQuery.isSuccess, allowedCategoryIds.length, navigate]);
 
   const tagOptions = useMemo(
     () => tagList.map((tag) => ({ label: tag.name, value: tag.id })),
@@ -447,9 +490,13 @@ export default function UploadDocumentPage() {
               />
             </div>
           )}
-          {selectedItem && (
+          {selectedItem ? (
             <div className={styles.selectedFileHint}>
               Đang nhập thông tin cho: <strong>{selectedItem.file.name}</strong>
+            </div>
+          ) : (
+            <div className={styles.selectedFileHint} style={{ color: '#8c8c8c', fontStyle: 'italic' }}>
+              Vui lòng kéo thả hoặc chọn tệp ở khung bên trái trước để mở khoá form điền thông tin.
             </div>
           )}
           <div className={styles.formGrid}>

@@ -25,10 +25,10 @@ public class AdminApprovalRepository {
 
     public PageResponse<ApprovalItemResponse> search(String status, String keyword, String department, String category, int page, int size) {
         MapSqlParameterSource parameters = new MapSqlParameterSource()
-                .addValue("status", normalizeStatus(status))
-                .addValue("keyword", blankToNull(keyword))
-                .addValue("department", blankToNull(department))
-                .addValue("category", blankToNull(category))
+                .addValue("status", normalizeStatus(status), java.sql.Types.VARCHAR)
+                .addValue("keyword", blankToNull(keyword), java.sql.Types.VARCHAR)
+                .addValue("department", blankToNull(department), java.sql.Types.VARCHAR)
+                .addValue("category", blankToNull(category), java.sql.Types.VARCHAR)
                 .addValue("limit", size)
                 .addValue("offset", page * size);
         String baseSql = baseSql();

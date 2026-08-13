@@ -136,7 +136,6 @@ export default function HistoryUser() {
     <main className={styles.page}>
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH23</span>
           <h1>Lịch sử thao tác của tôi</h1>
           <p>Mọi thao tác được ghi nhận kèm quyền yêu cầu và kết quả.</p>
         </div>

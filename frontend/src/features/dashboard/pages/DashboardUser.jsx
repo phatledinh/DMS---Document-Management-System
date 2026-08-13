@@ -157,7 +157,6 @@ export default function DashboardUser() {
     <main className={styles.page}>
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH20</span>
           <h1>Xin chào, {displayName}</h1>
           <p>Tổng quan hoạt động và quyền truy cập của bạn.</p>
         </div>
@@ -183,7 +182,6 @@ export default function DashboardUser() {
             <SectionCard
               title="Tài liệu liên quan gần đây"
               className={styles.documentsPanel}
-              action={<span className={styles.sectionAction}><SearchOutlined /> Gợi ý theo quyền truy cập</span>}
             >
               <DocumentList documents={dashboard?.recentDocuments || []} />
             </SectionCard>

@@ -58,6 +58,7 @@ export default function DocumentsPage() {
   const [keyword, setKeyword] = useState('');
   const [status, setStatus] = useState();
   const [fileType, setFileType] = useState();
+  const [scope, setScope] = useState('mine'); // Default to 'Tài liệu của tôi'
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -75,8 +76,10 @@ export default function DocumentsPage() {
       q: keyword.trim() || undefined,
       status,
       fileType,
+      ownerId: scope === 'mine' ? user?.id : undefined,
+      departmentId: scope === 'department' ? user?.departmentId : undefined,
     }),
-    [fileType, keyword, page, status],
+    [fileType, keyword, page, status, scope, user?.id, user?.departmentId],
   );
 
   const documentsQuery = useDocuments(params);
@@ -311,11 +314,23 @@ export default function DocumentsPage() {
             style={{ width: 320 }}
           />
           <Select
+            placeholder="Phạm vi"
+            allowClear={false}
+            value={scope}
+            onChange={(value) => resetToFirstPage(() => setScope(value))}
+            style={{ width: 160 }}
+            options={[
+              { label: 'Tài liệu của tôi', value: 'mine' },
+              { label: 'Phòng ban của tôi', value: 'department' },
+              { label: 'Tất cả tài liệu', value: 'all' },
+            ]}
+          />
+          <Select
             allowClear
             placeholder="Trạng thái"
             value={status}
             onChange={(value) => resetToFirstPage(() => setStatus(value))}
-            style={{ width: 200 }}
+            style={{ width: 160 }}
             options={[
               { value: 'PROCESSING', label: 'Đang xử lý' },
               { value: 'INDEXED', label: 'Sẵn sàng' },
@@ -335,9 +350,10 @@ export default function DocumentsPage() {
             style={{ width: 160 }}
             options={[
               { value: 'PDF', label: 'PDF' },
-              { value: 'DOCX', label: 'DOCX' },
-              { value: 'XLSX', label: 'XLSX' },
-              { value: 'IMAGE', label: 'Ảnh' },
+              { value: 'DOCX', label: 'Word (DOCX)' },
+              { value: 'DOC', label: 'Word (DOC)' },
+              { value: 'XLSX', label: 'Excel (XLSX)' },
+              { value: 'XLS', label: 'Excel (XLS)' },
             ]}
           />
           <Button icon={<ReloadOutlined />} onClick={() => documentsQuery.refetch()}>

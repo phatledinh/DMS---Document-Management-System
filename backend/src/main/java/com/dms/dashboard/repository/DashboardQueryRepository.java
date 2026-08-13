@@ -356,7 +356,9 @@ public class DashboardQueryRepository {
     }
 
     private MapSqlParameterSource dateParams(OffsetDateTime dateFrom, OffsetDateTime dateTo) {
-        return params().addValue("dateFrom", dateFrom).addValue("dateTo", dateTo);
+        return params()
+                .addValue("dateFrom", dateFrom, java.sql.Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", dateTo, java.sql.Types.TIMESTAMP_WITH_TIMEZONE);
     }
 
     private int totalPages(long total, int size) {

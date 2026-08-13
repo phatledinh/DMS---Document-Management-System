@@ -14,12 +14,12 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getCategories } from '../../../api/categoryApi.js';
 import { searchDocuments } from '../../../api/searchApi.js';
+import { useAuthStore } from '../../../store/authStore.js';
+import { useUserDashboard } from '../hooks/useUserDashboard.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import { formatDateTime, formatFileSize, getPageContent, normalizeDocument } from '../../documents/utils/documentFormatters.js';
 import styles from './CategoriesUser.module.css';
 
-const restrictedCategories = ['Báo cáo tài chính', 'Chính sách'];
-const defaultPermissions = ['VIEW', 'DOWNLOAD'];
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -28,15 +28,32 @@ function normalizeList(data) {
   return [];
 }
 
-function buildCategoryTree(categories) {
-  const byId = new Map(categories.map((category) => [category.id, { ...category, children: [] }]));
-  const roots = [];
+function buildCategoryTree(categories, allowedIds) {
+  const includedIds = new Set(allowedIds);
+  const parentMap = new Map();
+  categories.forEach((c) => parentMap.set(c.id, c.parentId));
 
-  byId.forEach((category) => {
-    if (category.parentId && byId.has(category.parentId)) {
-      byId.get(category.parentId).children.push(category);
+  allowedIds.forEach((id) => {
+    let currentId = parentMap.get(id);
+    while (currentId) {
+      includedIds.add(currentId);
+      currentId = parentMap.get(currentId);
+    }
+  });
+
+  const byId = new Map(
+    categories
+      .filter((c) => includedIds.has(c.id))
+      .map((c) => [c.id, { ...c, children: [] }])
+  );
+
+  const roots = [];
+  byId.forEach((node, id) => {
+    const category = categories.find((c) => c.id === id);
+    if (category?.parentId && byId.has(category.parentId)) {
+      byId.get(category.parentId).children.push(node);
     } else {
-      roots.push(category);
+      roots.push(node);
     }
   });
 
@@ -121,7 +138,7 @@ function CategoryNode({ item, level = 0, selectedId, expandedIds, onSelect, onTo
             </div>
             <span>{item.children?.length || 0} danh mục con</span>
           </div>
-          <PermissionPills permissions={item.permissions || defaultPermissions} />
+          <PermissionPills permissions={item.computedPermissions || []} />
         </div>
       </button>
       {hasChildren && isExpanded && (
@@ -174,7 +191,45 @@ export default function CategoriesUser() {
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
 
-  const categoryTree = useMemo(() => buildCategoryTree(categories), [categories]);
+  const userDashboardQuery = useUserDashboard();
+  const user = useAuthStore((state) => state.user);
+
+  const permissionsMap = useMemo(() => {
+    const map = new Map();
+    if (userDashboardQuery.data?.permissionGroups) {
+      userDashboardQuery.data.permissionGroups.forEach(g => {
+        map.set(g.categoryId, g.permissions || []);
+      });
+    }
+    return map;
+  }, [userDashboardQuery.data]);
+
+  const allowedCategoryIds = useMemo(() => {
+    if (user?.role === "ADMIN") {
+      return categories.map((c) => c.id);
+    }
+    return Array.from(permissionsMap.keys());
+  }, [permissionsMap, user, categories]);
+
+  const categoryTree = useMemo(() => {
+    const tree = buildCategoryTree(categories, allowedCategoryIds);
+    // Recursively attach computedPermissions to each node
+    function attachPermissions(nodes) {
+      nodes.forEach(node => {
+        if (user?.role === 'ADMIN') {
+          node.computedPermissions = ['VIEW', 'UPLOAD', 'DOWNLOAD', 'EDIT', 'DELETE'];
+        } else {
+          node.computedPermissions = permissionsMap.get(node.id) || [];
+        }
+        if (node.children?.length) {
+          attachPermissions(node.children);
+        }
+      });
+    }
+    attachPermissions(tree);
+    return tree;
+  }, [categories, allowedCategoryIds, permissionsMap, user?.role]);
+
   const flatCategories = useMemo(() => flattenTree(categoryTree), [categoryTree]);
   const selectedCategory = useMemo(() => {
     return flatCategories.find((category) => category.id === selectedCategoryId) || flatCategories[0] || null;
@@ -213,13 +268,7 @@ export default function CategoriesUser() {
       try {
         const data = await getCategories({ activeOnly: true });
         const list = normalizeList(data);
-        const tree = buildCategoryTree(list);
         setCategories(list);
-        setSelectedCategoryId((currentId) => {
-          if (currentId && list.some((category) => category.id === currentId)) return currentId;
-          return list[0]?.id || null;
-        });
-        setExpandedIds(collectAllIds(tree));
       } catch (error) {
         toast.error(getApiErrorMessage(error));
         setCategories([]);
@@ -231,6 +280,19 @@ export default function CategoriesUser() {
 
     loadCategories();
   }, []);
+
+  useEffect(() => {
+    if (categoryTree.length > 0) {
+      setExpandedIds(collectAllIds(categoryTree));
+      setSelectedCategoryId((currentId) => {
+        if (currentId && flatCategories.some((c) => c.id === currentId)) return currentId;
+        return flatCategories[0]?.id || null;
+      });
+    } else {
+      setSelectedCategoryId(null);
+      setExpandedIds(new Set());
+    }
+  }, [categoryTree, flatCategories]);
 
   useEffect(() => {
     if (!selectedCategory?.id) {
@@ -261,7 +323,6 @@ export default function CategoriesUser() {
     <main className={styles.page}>
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH24</span>
           <h1>Danh mục của tôi</h1>
           <p>Chỉ hiển thị các danh mục nằm trong phạm vi quyền truy cập của bạn.</p>
         </div>
@@ -295,18 +356,6 @@ export default function CategoriesUser() {
             </div>
           </Spin>
 
-          <section className={styles.restrictedCard}>
-            <div className={styles.restrictedHeader}>
-              <LockOutlined />
-              <h3>Danh mục chưa được cấp quyền</h3>
-            </div>
-            <div className={styles.restrictedTags}>
-              {restrictedCategories.map((category) => (
-                <Tag key={category}>{category}</Tag>
-              ))}
-            </div>
-            <p>Liên hệ quản trị viên nếu bạn cần truy cập các danh mục này.</p>
-          </section>
         </div>
 
         <aside className={styles.sidePanel}>
@@ -316,7 +365,19 @@ export default function CategoriesUser() {
                 <h3>{selectedCategory.name}</h3>
                 <div className={styles.permissionLine}>
                   <SafetyCertificateOutlined />
-                  <span>Quyền của bạn: {(selectedCategory.permissions || defaultPermissions).join(', ')}</span>
+                  <span>
+                    Quyền của bạn:{' '}
+                    {(() => {
+                      if (user?.role === 'ADMIN') {
+                        return 'TẤT CẢ (Quản trị viên)';
+                      }
+                      const group = userDashboardQuery.data?.permissionGroups?.find(
+                        (g) => g.categoryId === selectedCategory.id
+                      );
+                      const perms = group?.permissions || [];
+                      return perms.length > 0 ? perms.join(', ') : 'Không có quyền';
+                    })()}
+                  </span>
                 </div>
                 <div className={styles.detailStats}>
                   <div><strong>{selectedCategory.children?.length || 0}</strong><span>Danh mục con</span></div>

@@ -420,7 +420,7 @@ export default function UsersPage() {
         open={isCreateModalOpen}
         onCancel={closeCreateModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -465,7 +465,7 @@ export default function UsersPage() {
         </Form>
       </Modal>
 
-      <Modal title="Cập nhật người dùng" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnClose>
+      <Modal title="Cập nhật người dùng" open={isEditModalOpen} onCancel={closeEditModal} footer={null} destroyOnHidden>
         <Form form={editForm} layout="vertical" onFinish={handleUpdateUser}>
           <Form.Item name="name" label="Họ tên" rules={[{ required: true, message: "Vui lòng nhập họ tên." }]}>
             <Input placeholder="Ví dụ: Nguyễn Văn A" />

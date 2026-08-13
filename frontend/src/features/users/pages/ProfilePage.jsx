@@ -103,34 +103,36 @@ export default function ProfilePage() {
             </div>
           </section>
 
-          <Form layout="vertical" className={styles.form}>
-            <section className={styles.section}>
-              <Typography.Title level={4} className={styles.sectionTitle}>
-                Thông tin cá nhân
-              </Typography.Title>
-              <Row gutter={[16, 16]}>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Họ tên">
-                    <Input prefix={<UserOutlined />} value={currentUser?.name || ''} readOnly />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Email">
-                    <Input prefix={<MailOutlined />} suffix={<LockOutlined />} value={currentUser?.email || ''} readOnly />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Số điện thoại">
-                    <Input prefix={<PhoneOutlined />} value={currentUser?.phone || ''} readOnly />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Form.Item label="Phòng ban">
-                    <Input suffix={<LockOutlined />} value={departmentText} readOnly />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </section>
+          <div className={styles.form}>
+            <Form layout="vertical">
+              <section className={styles.section}>
+                <Typography.Title level={4} className={styles.sectionTitle}>
+                  Thông tin cá nhân
+                </Typography.Title>
+                <Row gutter={[16, 16]}>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Họ tên">
+                      <Input prefix={<UserOutlined />} value={currentUser?.name || ''} readOnly />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Email">
+                      <Input prefix={<MailOutlined />} suffix={<LockOutlined />} value={currentUser?.email || ''} readOnly />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Số điện thoại">
+                      <Input prefix={<PhoneOutlined />} value={currentUser?.phone || ''} readOnly />
+                    </Form.Item>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Form.Item label="Phòng ban">
+                      <Input suffix={<LockOutlined />} value={departmentText} readOnly />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </section>
+            </Form>
 
             <section className={styles.section}>
               <Typography.Title level={4} className={styles.sectionTitle}>
@@ -181,7 +183,7 @@ export default function ProfilePage() {
                 </div>
               </Form>
             </section>
-          </Form>
+          </div>
         </Card>
       </div>
     </main>

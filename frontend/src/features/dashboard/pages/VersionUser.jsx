@@ -61,7 +61,6 @@ export default function VersionUser() {
     <main className={styles.page}>
       <header className={styles.heroHeader}>
         <div>
-          <span className={styles.eyebrow}>MH22</span>
           <h1>Version của tôi</h1>
           <p>Phiên bản tài liệu bạn đã tải lên.</p>
         </div>

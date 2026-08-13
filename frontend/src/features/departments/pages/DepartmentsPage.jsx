@@ -332,7 +332,7 @@ export default function DepartmentsPage() {
         open={isCreateModalOpen}
         onCancel={closeCreateModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleCreateDepartment} initialValues={{ isActive: true }}>
           <Form.Item name="name" label="Tên phòng ban" rules={[{ required: true, message: 'Vui lòng nhập tên phòng ban.' }]}>
@@ -362,7 +362,7 @@ export default function DepartmentsPage() {
         open={isEditModalOpen}
         onCancel={closeEditModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdateDepartment}>
           <Form.Item name="name" label="Tên phòng ban" rules={[{ required: true, message: 'Vui lòng nhập tên phòng ban.' }]}>
