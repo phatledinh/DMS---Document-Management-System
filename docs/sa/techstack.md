@@ -148,9 +148,9 @@ frontend/
 | **Apache PDFBox** | PDF text extraction (extractor chính cho PDF) |
 | **Apache POI** | DOC/DOCX/XLS/XLSX text extraction (extractor chính cho Office) |
 | **JODConverter + LibreOffice (headless)** | Convert Word/Excel → PDF/HTML cho Preview (F2.7, MH05) |
-| **Tesseract OCR** | OCR cho scanned PDF & images |
+| **VietOCR OCR** | OCR cho scanned PDF & images |
 
-> **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho PostgreSQL FTS. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image worker phải cài sẵn LibreOffice; API image có thể bỏ LibreOffice/Tesseract nếu tách image runtime. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
+> **Phân định trách nhiệm**: **Tika** dùng để phát hiện MIME type thực tế phục vụ validate upload và làm fallback; **PDFBox/POI** là extractor chính lấy `extracted_content` cho PostgreSQL FTS. **POI chỉ trích xuất text, không render** — nên preview Office cần **JODConverter** điều khiển **LibreOffice headless** convert sang PDF/HTML. Docker image worker phải cài sẵn LibreOffice; API image có thể bỏ LibreOffice/VietOCR nếu tách image runtime. Với Excel có thể dựng HTML table từ POI rồi sanitize thay vì convert PDF.
 
 ### Object Storage & Presigned URL
 

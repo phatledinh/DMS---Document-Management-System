@@ -208,12 +208,12 @@ Business decisions:
 | Loại          | Định dạng               | Trích xuất nội dung | Preview | Ghi chú                                          |
 | ------------- | ----------------------- | :-----------------: | :-----: | ------------------------------------------------ |
 | PDF (Text)    | `.pdf`                  |         ✅          |   ✅    | Apache PDFBox, browser render trực tiếp          |
-| PDF (Scanned) | `.pdf`                  |         ✅          |   ✅    | OCR bằng Tesseract để search nội dung            |
+| PDF (Scanned) | `.pdf`                  |         ✅          |   ✅    | OCR bằng VietOCR để search nội dung            |
 | Word (mới)    | `.docx`                 |         ✅          |   ✅    | Apache POI - XWPF, convert sang PDF/HTML preview |
 | Word (cũ)     | `.doc`                  |         ✅          |   ✅    | Apache POI - HWPF, convert sang PDF/HTML preview |
 | Excel (mới)   | `.xlsx`                 |         ✅          |   ✅    | Apache POI, convert sang HTML table hoặc PDF     |
 | Excel (cũ)    | `.xls`                  |         ✅          |   ✅    | Apache POI, convert sang HTML table hoặc PDF     |
-| Ảnh           | `.jpg`, `.png`, `.tiff` |         ✅          |   ✅    | Preview trực tiếp, OCR bằng Tesseract            |
+| Ảnh           | `.jpg`, `.png`, `.tiff` |         ✅          |   ✅    | Preview trực tiếp, OCR bằng VietOCR            |
 
 ### Upload Constraints
 

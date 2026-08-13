@@ -12,26 +12,32 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
+import java.time.Duration;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 @Service
 public class DocumentOcrService {
     private final DocumentOcrProperties properties;
+    private final HttpClient httpClient;
 
     public DocumentOcrService(DocumentOcrProperties properties) {
         this.properties = properties;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
     }
 
     public ExtractedDocumentText extractImage(Document document, InputStream inputStream) {
         try (inputStream) {
-            return new ExtractedDocumentText(normalize(runTesseract(inputStream.readAllBytes(), extension(document))), "TESSERACT_IMAGE", properties.languages());
+            return new ExtractedDocumentText(normalize(runVietOcr(inputStream.readAllBytes(), extension(document))), "VIETOCR_IMAGE", "vi");
         } catch (IOException exception) {
-            throw new IllegalStateException("Could not OCR image", exception);
+            throw new IllegalStateException("Could not OCR image: " + exception.getMessage(), exception);
         }
     }
 
@@ -42,7 +48,7 @@ public class DocumentOcrService {
             StringBuilder text = new StringBuilder();
             for (int pageIndex = 0; pageIndex < pageCount; pageIndex++) {
                 BufferedImage image = renderer.renderImageWithDPI(pageIndex, properties.dpi(), ImageType.RGB);
-                String pageText = runTesseract(toPng(image), "png");
+                String pageText = runVietOcr(toPng(image), "png");
                 if (!pageText.isBlank()) {
                     if (!text.isEmpty()) {
                         text.append(System.lineSeparator()).append(System.lineSeparator());
@@ -50,43 +56,71 @@ public class DocumentOcrService {
                     text.append(pageText);
                 }
             }
-            return new ExtractedDocumentText(normalize(text.toString()), "TESSERACT_PDF", properties.languages());
+            return new ExtractedDocumentText(normalize(text.toString()), "VIETOCR_PDF", "vi");
         } catch (IOException exception) {
-            throw new IllegalStateException("Could not OCR PDF", exception);
+            throw new IllegalStateException("Could not OCR PDF: " + exception.getMessage(), exception);
         }
     }
 
-    private String runTesseract(byte[] input, String extension) throws IOException {
-        Path inputFile = Files.createTempFile("dms-ocr-", "." + extension);
-        Path outputBase = Files.createTempFile("dms-ocr-output-", "");
-        Path outputFile = Path.of(outputBase.toString() + ".txt");
-        Files.deleteIfExists(outputBase);
+    private String runVietOcr(byte[] input, String extension) throws IOException {
+        String boundary = "dms-ocr-" + UUID.randomUUID();
+        byte[] body = multipartBody(input, extension, boundary);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(properties.serviceUrl()))
+                .version(HttpClient.Version.HTTP_1_1)
+                .timeout(properties.timeoutPerPage())
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
         try {
-            Files.write(inputFile, input);
-            Process process = new ProcessBuilder(List.of(
-                    "tesseract",
-                    inputFile.toString(),
-                    outputBase.toString(),
-                    "-l",
-                    properties.languages()
-            )).redirectErrorStream(true).start();
-            boolean finished = process.waitFor(properties.timeoutPerPage().toMillis(), TimeUnit.MILLISECONDS);
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            if (!finished) {
-                process.destroyForcibly();
-                throw new IllegalStateException("Tesseract timed out");
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("VietOCR service failed: HTTP " + response.statusCode() + " " + response.body());
             }
-            if (process.exitValue() != 0) {
-                throw new IllegalStateException("Tesseract failed: " + output.strip());
-            }
-            return Files.exists(outputFile) ? Files.readString(outputFile, StandardCharsets.UTF_8) : "";
+            return extractJsonString(response.body(), "text");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Tesseract was interrupted", exception);
-        } finally {
-            Files.deleteIfExists(inputFile);
-            Files.deleteIfExists(outputFile);
+            throw new IllegalStateException("VietOCR service was interrupted", exception);
         }
+    }
+
+    private byte[] multipartBody(byte[] input, String extension, String boundary) throws IOException {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(("Content-Disposition: form-data; name=\"file\"; filename=\"ocr." + extension + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(("Content-Type: image/" + extension + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        body.write(input);
+        body.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return body.toByteArray();
+    }
+
+    private String extractJsonString(String json, String field) {
+        String marker = "\"" + field + "\":\"";
+        int start = json.indexOf(marker);
+        if (start < 0) {
+            return "";
+        }
+        start += marker.length();
+        StringBuilder value = new StringBuilder();
+        boolean escaping = false;
+        for (int index = start; index < json.length(); index++) {
+            char character = json.charAt(index);
+            if (escaping) {
+                value.append(switch (character) {
+                    case 'n' -> '\n';
+                    case 'r' -> '\r';
+                    case 't' -> '\t';
+                    default -> character;
+                });
+                escaping = false;
+            } else if (character == '\\') {
+                escaping = true;
+            } else if (character == '"') {
+                return value.toString();
+            } else {
+                value.append(character);
+            }
+        }
+        return value.toString();
     }
 
     private byte[] toPng(BufferedImage image) throws IOException {

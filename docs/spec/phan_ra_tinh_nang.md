@@ -100,7 +100,7 @@
 |------------|----------|
 | Actor | System (Background) |
 | Mô tả | Tự động trích xuất text từ file sau khi upload |
-| Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → Tesseract OCR |
+| Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → VietOCR |
 | Output | `extracted_content` lưu trong `document_contents` |
 | Business Rules | - Chạy trong RabbitMQ worker, không chạy in-process trong API server<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan publish task `dms.ocr` để tạo `extracted_content` khi có thể<br>- Retry qua RabbitMQ delay queues `30s -> 5m -> 30m`, vượt `maxAttempts = 3` thì vào DLQ và alert |
 

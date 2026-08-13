@@ -6,14 +6,14 @@ import java.time.Duration;
 
 @ConfigurationProperties(prefix = "app.ocr")
 public record DocumentOcrProperties(
-        String languages,
+        String serviceUrl,
         int dpi,
         int maxPages,
         Duration timeoutPerPage,
         int minPdfTextLength
 ) {
-    public String languages() {
-        return languages == null || languages.isBlank() ? "vie+eng" : languages;
+    public String serviceUrl() {
+        return serviceUrl == null || serviceUrl.isBlank() ? "http://localhost:8000/ocr" : serviceUrl;
     }
 
     public int dpi() {

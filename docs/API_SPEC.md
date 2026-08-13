@@ -115,14 +115,14 @@ Tất cả JSON endpoint trả về format thống nhất.
 
 | MIME Type | Extension | Extraction | Preview |
 |-----------|-----------|:---:|:---:|
-| `application/pdf` | `.pdf` | PDFBox cho PDF text; Tesseract OCR cho scan | Presigned inline PDF |
+| `application/pdf` | `.pdf` | PDFBox cho PDF text; VietOCR cho scan | Presigned inline PDF |
 | `application/msword` | `.doc` | POI HWPF | Convert PDF/HTML |
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | POI XWPF | Convert PDF/HTML |
 | `application/vnd.ms-excel` | `.xls` | POI | HTML table/PDF |
 | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `.xlsx` | POI | HTML table/PDF |
-| `image/jpeg` | `.jpg`, `.jpeg` | Tesseract OCR | Image stream |
-| `image/png` | `.png` | Tesseract OCR | Image stream |
-| `image/tiff` | `.tiff` | Tesseract OCR | Image stream |
+| `image/jpeg` | `.jpg`, `.jpeg` | VietOCR | Image stream |
+| `image/png` | `.png` | VietOCR | Image stream |
+| `image/tiff` | `.tiff` | VietOCR | Image stream |
 
 Upload rules:
 

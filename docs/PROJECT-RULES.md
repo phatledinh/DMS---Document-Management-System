@@ -800,7 +800,7 @@ DELETED → INDEXED / ARCHIVED (restore nếu còn retention window)
 | Queue | Task | Trigger |
 |-------|------|---------|
 | `dms.extract` | Extract text (PDFBox/POI) | upload-complete, retry |
-| `dms.ocr` | OCR scanned PDF/image (Tesseract) | Extract phát hiện scan |
+| `dms.ocr` | OCR scanned PDF/image (VietOCR) | Extract phát hiện scan |
 | `dms.preview` | Generate preview PDF/HTML (LibreOffice) | File Office sau upload |
 | `dms.index` | Refresh `document_search_index` | Extract thành công, metadata đổi |
 

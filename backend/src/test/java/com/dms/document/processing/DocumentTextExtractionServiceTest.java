@@ -33,7 +33,7 @@ class DocumentTextExtractionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DocumentTextExtractionService(ocrService, new DocumentOcrProperties("vie+eng", 200, 20, Duration.ofSeconds(30), 20));
+        service = new DocumentTextExtractionService(ocrService, new DocumentOcrProperties("http://localhost:8000/ocr", 200, 20, Duration.ofSeconds(30), 20));
     }
 
     @Test
@@ -54,7 +54,7 @@ class DocumentTextExtractionServiceTest {
     @Test
     void extract_imageUsesOcrService() {
         Document document = document("PNG");
-        ExtractedDocumentText ocrText = new ExtractedDocumentText("xin chào", "TESSERACT_IMAGE", "vie+eng");
+        ExtractedDocumentText ocrText = new ExtractedDocumentText("xin chào", "VIETOCR_IMAGE", "vi");
         when(ocrService.extractImage(eq(document), any())).thenReturn(ocrText);
 
         ExtractedDocumentText extracted = service.extract(document, new ByteArrayInputStream(new byte[]{1}));
@@ -93,7 +93,7 @@ class DocumentTextExtractionServiceTest {
             pdf.addPage(new PDPage());
             pdf.save(output);
         }
-        ExtractedDocumentText ocrText = new ExtractedDocumentText("scan text", "TESSERACT_PDF", "vie+eng");
+        ExtractedDocumentText ocrText = new ExtractedDocumentText("scan text", "VIETOCR_PDF", "vi");
         when(ocrService.extractPdf(any())).thenReturn(ocrText);
 
         ExtractedDocumentText extracted = service.extract(document("PDF"), new ByteArrayInputStream(output.toByteArray()));

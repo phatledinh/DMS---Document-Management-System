@@ -299,20 +299,20 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 ### 2.1 OCR
 
-- [x] Bổ sung Tesseract vào worker Docker image
-    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr`; API/worker hiện vẫn dùng chung image theo phạm vi 2.1.
-- [x] Cài language data `eng`
-    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr-eng`.
-- [x] Cài language data `vie`
-    - Ghi chú: `backend/Dockerfile` cài `tesseract-ocr-vie`.
+- [x] Bổ sung VietOCR vào worker Docker image
+    - Ghi chú: `backend/Dockerfile` dùng command `vietocr` cấu hình qua `OCR_COMMAND`; API/worker hiện vẫn dùng chung image theo phạm vi 2.1.
+- [x] Cấu hình model VietOCR
+    - Ghi chú: đường dẫn model cấu hình qua `OCR_VIETOCR_MODEL_PATH`.
+- [x] OCR tiếng Việt
+    - Ghi chú: VietOCR là engine OCR mặc định cho ảnh/PDF scan.
 - [x] Tạo queue `dms.ocr`
     - Ghi chú: `DocumentProcessingRabbitConfig` khai báo durable queue `dms.ocr` và binding routing key `ocr`; OCR vẫn chạy trong extract pipeline để tái sử dụng retry hiện có.
 - [x] OCR ảnh JPG/PNG/TIFF
-    - Ghi chú: `DocumentTextExtractionService` route `jpg/jpeg/png/tif/tiff` sang `DocumentOcrService` dùng Tesseract CLI.
+    - Ghi chú: `DocumentTextExtractionService` route `jpg/jpeg/png/tif/tiff` sang `DocumentOcrService` dùng VietOCR CLI.
 - [x] OCR scanned PDF
-    - Ghi chú: PDFBox extract trước; nếu text native dưới ngưỡng cấu hình thì render từng page bằng PDFBox và OCR bằng Tesseract.
+    - Ghi chú: PDFBox extract trước; nếu text native dưới ngưỡng cấu hình thì render từng page bằng PDFBox và OCR bằng VietOCR.
 - [x] Lưu OCR text vào `document_contents`
-    - Ghi chú: OCR trả `ExtractedDocumentText` với method `TESSERACT_IMAGE`/`TESSERACT_PDF`, dùng lại `DocumentExtractionPipeline` + `DocumentContentService.saveSuccess`.
+    - Ghi chú: OCR trả `ExtractedDocumentText` với method `VIETOCR_IMAGE`/`VIETOCR_PDF`, dùng lại `DocumentExtractionPipeline` + `DocumentContentService.saveSuccess`.
 - [x] Refresh search index sau OCR
     - Ghi chú: Dùng lại `PostgresSearchEngine.refreshIndex(document, extractedText.text())`; đã chạy `backend/mvnw -f backend/pom.xml test` pass 64 tests. Cần smoke Docker thực tế với ảnh/scanned PDF khi dựng stack.
 
@@ -511,9 +511,9 @@ File này dùng để theo dõi tiến độ triển khai theo từng milestone.
 
 - [ ] Cân nhắc tách API image và worker image
     - Ghi chú:
-- [ ] API image không cần LibreOffice/Tesseract nếu đã tách
+- [ ] API image không cần LibreOffice/VietOCR nếu đã tách
     - Ghi chú:
-- [ ] Worker image có LibreOffice/Tesseract đầy đủ
+- [ ] Worker image có LibreOffice/VietOCR đầy đủ
     - Ghi chú:
 - [ ] Kiểm thử production-like Docker Compose hoặc deployment manifest
     - Ghi chú:

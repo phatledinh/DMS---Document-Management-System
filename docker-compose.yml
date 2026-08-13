@@ -73,6 +73,8 @@ services:
                 condition: service_healthy
             rabbitmq:
                 condition: service_healthy
+            ocr-service:
+                condition: service_healthy
         environment:
             - SPRING_PROFILES_ACTIVE=worker,dev
             - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
@@ -90,6 +92,25 @@ services:
             - STORAGE_REGION=auto
             - STORAGE_PATH_STYLE_ACCESS=true
             - PROCESSING_MAX_RETRY_COUNT=3
+            - OCR_SERVICE_URL=http://ocr-service:8000/ocr
+            - OCR_TIMEOUT_PER_PAGE=PT3M
+
+    ocr-service:
+        image: qlktl-ocr-service:latest
+        build:
+            context: ./ocr-service
+            dockerfile: Dockerfile
+        ports:
+            - "8000:8000"
+        environment:
+            - VIETOCR_DEVICE=cpu
+            - VIETOCR_MODEL_PATH=${OCR_VIETOCR_MODEL_PATH:-}
+        healthcheck:
+            test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 60s
 
     rabbitmq:
         image: rabbitmq:3-management

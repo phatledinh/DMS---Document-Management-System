@@ -134,7 +134,7 @@ Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau
 [After Commit] — Publish RabbitMQ message {type: EXTRACT} vào dms.extract
         ↓
 [Worker] — Consume dms.extract / dms.ocr / dms.preview / dms.index
-  • Extract text bằng PDFBox/POI hoặc OCR bằng Tesseract
+  • Extract text bằng PDFBox/POI hoặc OCR bằng VietOCR
   • Generate preview artifact PDF/HTML cho Office nếu cần
   • Refresh document_search_index trong PostgreSQL
         ↓

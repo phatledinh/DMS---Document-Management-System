@@ -101,9 +101,9 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | POI (XWPF) |
 | `application/vnd.ms-excel` | `.xls` | POI |
 | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `.xlsx` | POI |
-| `image/jpeg` | `.jpg`, `.jpeg` | Tesseract OCR |
-| `image/png` | `.png` | Tesseract OCR |
-| `image/tiff` | `.tiff` | Tesseract OCR |
+| `image/jpeg` | `.jpg`, `.jpeg` | VietOCR |
+| `image/png` | `.png` | VietOCR |
+| `image/tiff` | `.tiff` | VietOCR |
 
 Upload validation rules:
 

@@ -120,7 +120,7 @@ Document Management
   │     ├── DocxExtractor           (Apache POI - XWPF)
   │     ├── DocExtractor            (Apache POI - HWPF)
   │     ├── ExcelExtractor          (Apache POI)
-  │     └── ImageOcrExtractor       (Tesseract OCR)
+  │     └── ImageOcrExtractor       (VietOCR)
   ├── PreviewService                — Convert, sanitize & stream file preview
   ├── HtmlSanitizer                 — Làm sạch HTML preview để tránh XSS
   ├── VersionService                — Quản lý phiên bản

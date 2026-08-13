@@ -55,11 +55,11 @@ Hệ thống hỗ trợ nhiều loại file, sử dụng **Strategy Pattern** đ
 ```text
 ContentExtractorService
   ├── PdfTextExtractor          (Apache PDFBox)
-  ├── PdfOcrExtractor           (Tika + Tesseract OCR)
+  ├── PdfOcrExtractor           (Tika + VietOCR OCR)
   ├── DocxExtractor             (Apache POI - XWPF)
   ├── DocExtractor              (Apache POI - HWPF)
   ├── ExcelExtractor            (Apache POI)
-  └── ImageOcrExtractor         (Tesseract OCR)
+  └── ImageOcrExtractor         (VietOCR OCR)
 ```
 
 ```java
@@ -208,13 +208,13 @@ Tika không phải extractor chính cho toàn bộ file. Trách nhiệm được
 | **Apache POI** | Extractor chính cho DOC/DOCX/XLS/XLSX |
 | **JODConverter + LibreOffice headless** | Worker convert Word/Excel sang PDF hoặc HTML preview artifact |
 | **OWASP Java HTML Sanitizer / Jsoup** | Sanitize HTML preview và search highlight trước khi trả frontend |
-| **Tesseract OCR** | Worker OCR scanned PDF/image |
+| **VietOCR OCR** | Worker OCR scanned PDF/image |
 ### RabbitMQ queues
 
 | Queue | Task | Trigger |
 |-------|------|---------|
 | `dms.extract` | Extract text bằng PDFBox/POI hoặc phát hiện cần OCR | `upload-complete`, version complete, retry thủ công |
-| `dms.ocr` | OCR scanned PDF/image bằng Tesseract | Worker extract phát hiện scan/image |
+| `dms.ocr` | OCR scanned PDF/image bằng VietOCR | Worker extract phát hiện scan/image |
 | `dms.preview` | Generate preview artifact PDF/HTML bằng LibreOffice/JODConverter | File Office sau upload/version complete |
 | `dms.index` | Refresh `document_search_index` / search vector | Extract/OCR thành công hoặc metadata/audience đổi |
 
@@ -232,7 +232,7 @@ File Input
     ├── XLS/XLSX      → Apache POI extract text → extracted_content
     ├── Word/Excel    → JODConverter + LibreOffice → PDF/HTML preview
     ├── HTML preview  → HtmlSanitizer → safe preview response
-    └── Image/PDF scan → Tesseract OCR
+    └── Image/PDF scan → VietOCR OCR
     ↓
 ExtractionResult {
     extractedText: String,
@@ -247,7 +247,7 @@ ExtractionResult {
 ```text
 Scanned PDF / Image
     ↓
-[Tika + Tesseract]
+[Tika + VietOCR]
     ├── PDF → Render từng trang thành image → OCR
     └── Image → OCR trực tiếp
     ↓
@@ -443,6 +443,6 @@ backend/
 
 | Quy mô | Mục tiêu | Giải pháp |
 |--------|----------|-----------|
-| **MVP / single server** | < 10k documents | PostgreSQL FTS single-node, MinIO dev object storage, Monolith, OCR (Tesseract) |
+| **MVP / single server** | < 10k documents | PostgreSQL FTS single-node, MinIO dev object storage, Monolith, OCR (VietOCR) |
 | **Production scale** | 10k–100k documents | PostgreSQL FTS cluster, Cloudflare R2 qua S3-compatible API, OCR queue, Redis Cache |
 | **Enterprise scale** | > 100k documents | Multi-node PostgreSQL FTS, CDN, Async queue (RabbitMQ), Vietnamese NLP |

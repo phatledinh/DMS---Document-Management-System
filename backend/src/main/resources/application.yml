@@ -75,7 +75,7 @@ app:
         retry-interval: ${PROCESSING_RETRY_INTERVAL:PT30M}
         max-retry-count: ${PROCESSING_MAX_RETRY_COUNT:3}
     ocr:
-        languages: ${OCR_LANGUAGES:vie+eng}
+        service-url: ${OCR_SERVICE_URL:http://localhost:8000/ocr}
         dpi: ${OCR_DPI:200}
         max-pages: ${OCR_MAX_PAGES:20}
         timeout-per-page: ${OCR_TIMEOUT_PER_PAGE:PT30S}

@@ -16,7 +16,7 @@ Single Server / VPS
 ├── Backend API Container (Spring Boot profile=api): 8080
 │   └── REST API, auth, resource access policy, metadata, presigned URL signing, RabbitMQ publish
 ├── Worker Container (Spring Boot profile=worker)
-│   └── RabbitMQ consumers, PDFBox/POI, LibreOffice, Tesseract, PostgreSQL FTS refresh
+│   └── RabbitMQ consumers, PDFBox/POI, LibreOffice, VietOCR, PostgreSQL FTS refresh
 ├── RabbitMQ Container: 5672 / 15672
 │   └── dms.tasks, retry queues, DLQ
 ├── PostgreSQL Container: 5432
