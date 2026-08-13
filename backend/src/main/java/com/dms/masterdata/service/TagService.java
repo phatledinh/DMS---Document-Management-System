@@ -27,9 +27,23 @@ public class TagService {
 
     @Transactional(readOnly = true)
     public List<TagResponse> getTags() {
-        return tagRepository.findByDeletedAtIsNullOrderByNameAsc().stream()
-                .map(tagMapper::toResponse)
+        return tagRepository.findAllWithDocumentCount().stream()
+                .map(row -> new TagResponse(
+                        ((Number) row[0]).longValue(),
+                        (String) row[1],
+                        (String) row[2],
+                        toOffsetDateTime(row[3]),
+                        ((Number) row[4]).longValue()
+                ))
                 .toList();
+    }
+
+    private OffsetDateTime toOffsetDateTime(Object value) {
+        if (value instanceof OffsetDateTime odt) return odt;
+        if (value instanceof java.sql.Timestamp ts) return ts.toInstant().atOffset(java.time.ZoneOffset.UTC);
+        if (value instanceof java.time.Instant instant) return instant.atOffset(java.time.ZoneOffset.UTC);
+        if (value instanceof java.time.LocalDateTime ldt) return ldt.atOffset(java.time.ZoneOffset.UTC);
+        return null;
     }
 
     @Transactional(readOnly = true)

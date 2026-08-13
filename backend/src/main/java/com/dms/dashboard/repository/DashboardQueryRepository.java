@@ -318,7 +318,7 @@ public class DashboardQueryRepository {
     public PageResponse<ProcessingErrorResponse> processingErrors(int page, int size) {
         MapSqlParameterSource parameters = params().addValue("limit", size).addValue("offset", page * size);
         List<ProcessingErrorResponse> content = jdbcTemplate.query("""
-                SELECT d.id AS document_id, d.title, d.file_type, d.status,
+                SELECT d.id AS document_id, d.slug, d.title, d.file_type, d.status,
                        coalesce(c.retry_count, 0) AS retry_count, c.error_message,
                        coalesce(d.updated_at, c.extracted_at, d.created_at) AS updated_at
                 FROM documents d
@@ -329,6 +329,7 @@ public class DashboardQueryRepository {
                 LIMIT :limit OFFSET :offset
                 """, parameters, (rs, rowNum) -> new ProcessingErrorResponse(
                 rs.getLong("document_id"),
+                rs.getString("slug"),
                 rs.getString("title"),
                 rs.getString("file_type"),
                 rs.getString("status"),

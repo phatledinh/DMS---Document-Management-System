@@ -61,7 +61,7 @@ export default function AuditLogsPage() {
     {
       title: 'Người thực hiện',
       dataIndex: 'actorName',
-      render: (name, record) => name || (record.actorId ? `User #${record.actorId}` : 'System'),
+      render: (name, record) => name || 'Hệ thống / Ẩn danh',
     },
     {
       title: 'Hành động',
@@ -81,9 +81,20 @@ export default function AuditLogsPage() {
           return <span>Từ khóa: <strong>{record.keyword || '—'}</strong> ({record.resultCount || 0} kết quả)</span>;
         }
         if (record.logType === 'ACCESS') {
-          return <span>Tài liệu: <strong>{record.documentTitle || `#${record.documentId}`}</strong>{record.denialReason ? ` — ${record.denialReason}` : ''}</span>;
+          return <span>Tài liệu: <strong>{record.documentTitle || record.documentSlug || 'Không xác định'}</strong>{record.denialReason ? ` — ${record.denialReason}` : ''}</span>;
         }
-        return <span>{record.targetType || '—'} {record.targetId ? `#${record.targetId}` : ''}</span>;
+        let targetName = null;
+        try {
+          const payload = record.newValue ? JSON.parse(record.newValue) : (record.oldValue ? JSON.parse(record.oldValue) : null);
+          targetName = payload?.name || payload?.title;
+        } catch (e) {
+          // ignore
+        }
+        
+        if (targetName) {
+          return <span>{record.targetType || '—'} <strong>{targetName}</strong></span>;
+        }
+        return <span>{record.targetType || '—'} {record.targetId ? `(ID: ${record.targetId})` : ''}</span>;
       },
     },
     {
@@ -131,21 +142,11 @@ export default function AuditLogsPage() {
 
           <section className={styles.filters}>
             <div className={styles.dateGroup}><CalendarOutlined /><RangePicker onChange={updateDateRange} /></div>
-            <Input
-              placeholder="Actor ID"
-              type="number"
-              onChange={(event) => setDraftFilters((current) => ({ ...current, actorId: event.target.value || undefined }))}
-            />
             <Select
               allowClear
               placeholder="Hành động"
               options={actionOptions}
               onChange={(value) => setDraftFilters((current) => ({ ...current, action: value }))}
-            />
-            <Input
-              placeholder="Document ID"
-              type="number"
-              onChange={(event) => setDraftFilters((current) => ({ ...current, documentId: event.target.value || undefined }))}
             />
             <label className={styles.detailSearch}>
               <SearchOutlined />

@@ -337,6 +337,7 @@ public class DocumentLifecycleService {
     private TrashDocumentResponse trashResponse(Document document) {
         return new TrashDocumentResponse(
                 document.getId(),
+                document.getSlug(),
                 document.getTitle(),
                 document.getDocumentCode(),
                 document.getFileName(),

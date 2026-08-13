@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 
 public record TrashDocumentResponse(
         Long id,
+        String slug,
         String title,
         String documentCode,
         String fileName,

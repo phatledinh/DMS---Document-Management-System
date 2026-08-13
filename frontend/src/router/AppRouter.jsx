@@ -34,8 +34,8 @@ import NotFoundPage from "../pages/NotFoundPage.jsx";
 import { useAuthStore } from "../store/authStore.js";
 
 function AdminDocumentRedirect({ suffix }) {
-  const { id } = useParams();
-  return <Navigate to={`/admin/documents-admin/${id}/${suffix}`} replace />;
+  const { slug } = useParams();
+  return <Navigate to={`/admin/documents-admin/${slug}/${suffix}`} replace />;
 }
 
 export default function AppRouter() {
@@ -94,8 +94,8 @@ export default function AppRouter() {
           <Route path="search" element={<SearchPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="documents/upload" element={<UploadDocumentPage />} />
-          <Route path="documents/:id" element={<DocumentDetailPage />} />
-          <Route path="documents/:id/history" element={<DocumentHistoryPage />} />
+          <Route path="documents/:slug" element={<DocumentDetailPage />} />
+          <Route path="documents/:slug/history" element={<DocumentHistoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route element={<ProtectedRoute roles={["ADMIN"]} />}>
             <Route path="/admin/dashboard-admin" element={<DashboardAdmin />} />
@@ -118,19 +118,19 @@ export default function AppRouter() {
               element={<Navigate to="/admin/upload-admin" replace />}
             />
             <Route
-              path="/admin/documents-admin/:id/edit"
+              path="/admin/documents-admin/:slug/edit"
               element={<EditDocumentPage />}
             />
             <Route
-              path="/admin/documents/:id/edit"
+              path="/admin/documents/:slug/edit"
               element={<AdminDocumentRedirect suffix="edit" />}
             />
             <Route
-              path="/admin/documents-admin/:id/history"
+              path="/admin/documents-admin/:slug/history"
               element={<DocumentHistoryPage />}
             />
             <Route
-              path="/admin/documents/:id/history"
+              path="/admin/documents/:slug/history"
               element={<AdminDocumentRedirect suffix="history" />}
             />
             <Route path="/admin/trash" element={<DocumentTrashPage />} />
@@ -153,11 +153,11 @@ export default function AppRouter() {
         </Route>
       </Route>
       <Route
-        path="/documents/:id/edit"
+        path="/documents/:slug/edit"
         element={<AdminDocumentRedirect suffix="edit" />}
       />
       <Route
-        path="/documents/:id/history"
+        path="/documents/:slug/history"
         element={<AdminDocumentRedirect suffix="history" />}
       />
       <Route

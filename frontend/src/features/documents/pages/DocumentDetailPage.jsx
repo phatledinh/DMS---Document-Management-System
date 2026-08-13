@@ -54,9 +54,9 @@ function InfoRow({ label, value }) {
 
 export default function DocumentDetailPage() {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { slug } = useParams();
   const queryClient = useQueryClient();
-  const documentQuery = useDocument(id);
+  const documentQuery = useDocument(slug);
   const [preview, setPreview] = useState(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const document = normalizeDocument(documentQuery.data);
@@ -100,7 +100,7 @@ export default function DocumentDetailPage() {
       window.document.body.appendChild(link);
       link.click();
       link.remove();
-      queryClient.invalidateQueries({ queryKey: ['documents', id] });
+      queryClient.invalidateQueries({ queryKey: ['documents', slug] });
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     }
@@ -132,7 +132,7 @@ export default function DocumentDetailPage() {
           </Space>
         </div>
         <Space wrap className={styles.headerActions}>
-          <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${document.id}/history`)}>
+          <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${document.slug}/history`)}>
             Version
           </Button>
           <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
@@ -228,7 +228,7 @@ export default function DocumentDetailPage() {
           <section className={styles.infoCard}>
             <div className={styles.versionHeader}>
               <h3>Lịch sử phiên bản</h3>
-              <button type="button" onClick={() => navigate(`/documents/${document.id}/history`)}>Xem tất cả</button>
+              <button type="button" onClick={() => navigate(`/documents/${document.slug}/history`)}>Xem tất cả</button>
             </div>
             <div className={styles.versionItem}>
               <strong>{document.version || document.currentVersion || 'Hiện tại'}</strong>

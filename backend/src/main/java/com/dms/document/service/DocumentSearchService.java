@@ -85,6 +85,7 @@ public class DocumentSearchService {
     private DocumentSearchResultResponse toResult(DocumentSearchRow row) {
         DocumentListItemResponse document = new DocumentListItemResponse(
                 row.id(),
+                row.slug(),
                 row.title(),
                 row.documentCode(),
                 row.fileType(),

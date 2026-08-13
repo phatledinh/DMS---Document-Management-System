@@ -9,8 +9,11 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface DocumentRepository extends JpaRepository<Document, Long>, JpaSpecificationExecutor<Document> {
+    Optional<Document> findBySlug(String slug);
+
     List<Document> findByStatusAndUploadExpiresAtBefore(DocumentStatus status, OffsetDateTime uploadExpiresAt);
 
     Page<Document> findByStatus(DocumentStatus status, Pageable pageable);

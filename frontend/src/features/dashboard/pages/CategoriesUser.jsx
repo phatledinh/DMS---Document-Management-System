@@ -389,7 +389,7 @@ export default function CategoriesUser() {
                   {documents.length ? (
                     <div className={styles.documentList}>
                       {documents.map((doc) => (
-                        <DocumentItem doc={doc} key={doc.id || doc.title || doc.fileName} onOpen={(id) => navigate(`/documents/${id}`)} />
+                        <DocumentItem doc={doc} key={doc.slug || doc.id || doc.title || doc.fileName} onOpen={(id) => navigate(`/documents/`)} />
                       ))}
                     </div>
                   ) : (

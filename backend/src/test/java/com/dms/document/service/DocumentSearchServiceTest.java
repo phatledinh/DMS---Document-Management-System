@@ -83,6 +83,7 @@ class DocumentSearchServiceTest {
     private DocumentSearchRow row() {
         return new DocumentSearchRow(
                 1L,
+                "quy-che-nhan-su",
                 "Quy chế nhân sự",
                 "DOC-001",
                 "PDF",

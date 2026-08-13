@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -50,6 +51,7 @@ public class AdminLogQueryRepository {
                            al.target_type,
                            al.target_id,
                            NULL::bigint AS document_id,
+                           NULL::text AS document_slug,
                            NULL::text AS document_title,
                            NULL::text AS keyword,
                            NULL::bigint AS result_count,
@@ -70,8 +72,8 @@ public class AdminLogQueryRepository {
                       AND (:targetId IS NULL OR al.target_id = :targetId)
                       AND (:documentId IS NULL OR false)
                       AND (:keyword IS NULL OR false)
-                      AND (:dateFrom IS NULL OR al.created_at >= :dateFrom)
-                      AND (:dateTo IS NULL OR al.created_at <= :dateTo)
+                      AND (CAST(:dateFrom AS timestamptz) IS NULL OR al.created_at >= :dateFrom)
+                      AND (CAST(:dateTo AS timestamptz) IS NULL OR al.created_at <= :dateTo)
                     """);
         }
         if (include(filter.logType(), "ACCESS")) {
@@ -84,6 +86,7 @@ public class AdminLogQueryRepository {
                            'DOCUMENT' AS target_type,
                            al.document_id AS target_id,
                            al.document_id,
+                           d.slug AS document_slug,
                            d.title AS document_title,
                            NULL::text AS keyword,
                            NULL::bigint AS result_count,
@@ -105,8 +108,8 @@ public class AdminLogQueryRepository {
                       AND (:targetId IS NULL OR al.document_id = :targetId)
                       AND (:documentId IS NULL OR al.document_id = :documentId)
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%'))
-                      AND (:dateFrom IS NULL OR al.created_at >= :dateFrom)
-                      AND (:dateTo IS NULL OR al.created_at <= :dateTo)
+                      AND (CAST(:dateFrom AS timestamptz) IS NULL OR al.created_at >= :dateFrom)
+                      AND (CAST(:dateTo AS timestamptz) IS NULL OR al.created_at <= :dateTo)
                     """);
         }
         if (include(filter.logType(), "SEARCH")) {
@@ -119,6 +122,7 @@ public class AdminLogQueryRepository {
                            'SEARCH' AS target_type,
                            NULL::bigint AS target_id,
                            NULL::bigint AS document_id,
+                           NULL::text AS document_slug,
                            NULL::text AS document_title,
                            sl.keyword,
                            sl.result_count::bigint AS result_count,
@@ -139,15 +143,15 @@ public class AdminLogQueryRepository {
                       AND (:targetId IS NULL OR false)
                       AND (:documentId IS NULL OR false)
                       AND (:keyword IS NULL OR lower(sl.keyword) LIKE concat('%', lower(:keyword), '%'))
-                      AND (:dateFrom IS NULL OR sl.created_at >= :dateFrom)
-                      AND (:dateTo IS NULL OR sl.created_at <= :dateTo)
+                      AND (CAST(:dateFrom AS timestamptz) IS NULL OR sl.created_at >= :dateFrom)
+                      AND (CAST(:dateTo AS timestamptz) IS NULL OR sl.created_at <= :dateTo)
                     """);
         }
         if (branches.isEmpty()) {
             branches.add("""
                     SELECT NULL::bigint AS id, NULL::text AS log_type, NULL::bigint AS actor_id, NULL::text AS actor_name,
                            NULL::text AS action, NULL::text AS target_type, NULL::bigint AS target_id, NULL::bigint AS document_id,
-                           NULL::text AS document_title, NULL::text AS keyword, NULL::bigint AS result_count, NULL::bigint AS latency_ms,
+                           NULL::text AS document_slug, NULL::text AS document_title, NULL::text AS keyword, NULL::bigint AS result_count, NULL::bigint AS latency_ms,
                            NULL::boolean AS access_granted, NULL::text AS denial_reason, NULL::text AS ip_address, NULL::text AS user_agent,
                            NULL::text AS old_value, NULL::text AS new_value, NULL::text AS filters, NULL::timestamptz AS created_at
                     WHERE false
@@ -158,14 +162,14 @@ public class AdminLogQueryRepository {
 
     private MapSqlParameterSource parameters(AdminLogFilterRequest filter) {
         return new MapSqlParameterSource()
-                .addValue("actorId", filter.actorId())
-                .addValue("action", blankToNull(filter.action()))
-                .addValue("targetType", blankToNull(filter.targetType()))
-                .addValue("targetId", filter.targetId())
-                .addValue("documentId", filter.documentId())
-                .addValue("keyword", blankToNull(filter.keyword()))
-                .addValue("dateFrom", filter.dateFrom())
-                .addValue("dateTo", filter.dateTo());
+                .addValue("actorId", filter.actorId(), Types.BIGINT)
+                .addValue("action", blankToNull(filter.action()), Types.VARCHAR)
+                .addValue("targetType", blankToNull(filter.targetType()), Types.VARCHAR)
+                .addValue("targetId", filter.targetId(), Types.BIGINT)
+                .addValue("documentId", filter.documentId(), Types.BIGINT)
+                .addValue("keyword", blankToNull(filter.keyword()), Types.VARCHAR)
+                .addValue("dateFrom", filter.dateFrom(), Types.TIMESTAMP_WITH_TIMEZONE)
+                .addValue("dateTo", filter.dateTo(), Types.TIMESTAMP_WITH_TIMEZONE);
     }
 
     private boolean include(String requestedType, String type) {
@@ -182,6 +186,7 @@ public class AdminLogQueryRepository {
                 rs.getString("target_type"),
                 nullableLong(rs, "target_id"),
                 nullableLong(rs, "document_id"),
+                rs.getString("document_slug"),
                 rs.getString("document_title"),
                 rs.getString("keyword"),
                 nullableLong(rs, "result_count"),

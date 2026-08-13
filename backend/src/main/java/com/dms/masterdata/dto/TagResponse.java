@@ -6,6 +6,7 @@ public record TagResponse(
         Long id,
         String name,
         String slug,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        long documentCount
 ) {
 }

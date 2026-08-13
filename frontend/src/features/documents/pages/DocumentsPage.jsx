@@ -216,7 +216,7 @@ export default function DocumentsPage() {
         <Flex gap={12} align="center">
           <FileIcon fileType={record.fileType || record.mimeType || record.fileName} />
           <div>
-            <Button type="link" className={styles.titleLink} onClick={() => navigate(`/documents/${record.id}`)}>
+            <Button type="link" className={styles.titleLink} onClick={() => navigate(`/documents/`)}>
               {record.title || record.fileName || 'Không có tiêu đề'}
             </Button>
             <div>
@@ -256,7 +256,7 @@ export default function DocumentsPage() {
       key: 'actions',
       render: (_, record) => (
         <Space wrap>
-          <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/${record.id}`)}>
+          <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/`)}>
             Chi tiết
           </Button>
           {isAdmin && record.status === 'INDEXED' && (

@@ -252,7 +252,7 @@ export default function DocumentsAdmin() {
         key: 'view',
         icon: <EyeOutlined />,
         label: 'Chi tiết',
-        onClick: () => navigate(`/documents/${record.id}`),
+        onClick: () => navigate(`/documents/`),
       },
       {
         key: 'edit',
@@ -284,7 +284,7 @@ export default function DocumentsAdmin() {
       dataIndex: 'title',
       width: 320,
       render: (_, record) => (
-        <button className={styles.documentTitle} type="button" onClick={() => navigate(`/documents/${record.id}`)}>
+        <button className={styles.documentTitle} type="button" onClick={() => navigate(`/documents/`)}>
           <span className={styles.documentIconWrap}>
             <FileIcon fileType={record.fileType || record.mimeType || record.fileName} />
           </span>

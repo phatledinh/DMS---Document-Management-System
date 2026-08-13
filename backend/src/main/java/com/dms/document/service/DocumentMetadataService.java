@@ -87,6 +87,13 @@ public class DocumentMetadataService {
         return toDetail(document);
     }
 
+    @Transactional(readOnly = true)
+    public Long getDocumentIdBySlug(String slug) {
+        return documentRepository.findBySlug(slug)
+                .map(Document::getId)
+                .orElseThrow(() -> new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found by slug", HttpStatus.NOT_FOUND));
+    }
+
     private Specification<Document> listSpecification(User user, DocumentSearchRequest request) {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -189,6 +196,7 @@ public class DocumentMetadataService {
     private DocumentListItemResponse toListItem(Document document) {
         return new DocumentListItemResponse(
                 document.getId(),
+                document.getSlug(),
                 document.getTitle(),
                 document.getDocumentCode(),
                 document.getFileType(),

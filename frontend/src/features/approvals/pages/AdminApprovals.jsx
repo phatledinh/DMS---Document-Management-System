@@ -245,7 +245,7 @@ export default function AdminApprovals() {
             </section>
 
             <Space wrap className={styles.detailActions}>
-              <Link to={`/documents/${selectedItem.id}`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
+              <Link to={`/documents/`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
               <Button danger disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={rejectMutation.isPending} onClick={rejectSelected}>Từ chối</Button>
               <Button type="primary" disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={approveMutation.isPending} onClick={approveSelected}>Phê duyệt</Button>
             </Space>

@@ -88,29 +88,29 @@ public class DocumentController {
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<DocumentDetailResponse> documentDetail(@PathVariable Long id) {
-        return ApiResponse.success(metadataService.getDocumentDetail(id));
+    public ApiResponse<DocumentDetailResponse> documentDetail(@PathVariable("id") String identifier) {
+        return ApiResponse.success(metadataService.getDocumentDetail(resolveId(identifier)));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> softDelete(@PathVariable Long id) {
-        lifecycleService.softDelete(id);
+    public ResponseEntity<Void> softDelete(@PathVariable("id") String identifier) {
+        lifecycleService.softDelete(resolveId(identifier));
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/archive")
-    public ApiResponse<DocumentLifecycleResponse> archive(@PathVariable Long id) {
-        return ApiResponse.success("Document archived successfully", lifecycleService.archive(id));
+    public ApiResponse<DocumentLifecycleResponse> archive(@PathVariable("id") String identifier) {
+        return ApiResponse.success("Document archived successfully", lifecycleService.archive(resolveId(identifier)));
     }
 
     @PostMapping("/{id}/restore")
-    public ApiResponse<DocumentLifecycleResponse> restore(@PathVariable Long id) {
-        return ApiResponse.success("Document restored successfully", lifecycleService.restore(id));
+    public ApiResponse<DocumentLifecycleResponse> restore(@PathVariable("id") String identifier) {
+        return ApiResponse.success("Document restored successfully", lifecycleService.restore(resolveId(identifier)));
     }
 
     @PostMapping("/{id}/retry-indexing")
-    public ApiResponse<DocumentLifecycleResponse> retryIndexing(@PathVariable Long id) {
-        return ApiResponse.success("Retry search refresh started", lifecycleService.retryIndexing(id));
+    public ApiResponse<DocumentLifecycleResponse> retryIndexing(@PathVariable("id") String identifier) {
+        return ApiResponse.success("Retry search refresh started", lifecycleService.retryIndexing(resolveId(identifier)));
     }
 
     @GetMapping("/trash")
@@ -166,47 +166,56 @@ public class DocumentController {
     }
 
     @PostMapping("/{id}/upload-complete")
-    public ApiResponse<UploadCompleteResponse> completeUpload(@PathVariable Long id) {
-        return ApiResponse.success("Document upload accepted", presignedUrlService.completeUpload(id));
+    public ApiResponse<UploadCompleteResponse> completeUpload(@PathVariable("id") String identifier) {
+        return ApiResponse.success("Document upload accepted", presignedUrlService.completeUpload(resolveId(identifier)));
     }
 
     @GetMapping("/{id}/download-url")
-    public ApiResponse<PresignedUrlResponse> downloadUrl(@PathVariable Long id, HttpServletRequest request) {
-        return ApiResponse.success(presignedUrlService.createDownloadUrl(id, request));
+    public ApiResponse<PresignedUrlResponse> downloadUrl(@PathVariable("id") String identifier, HttpServletRequest request) {
+        return ApiResponse.success(presignedUrlService.createDownloadUrl(resolveId(identifier), request));
     }
 
     @GetMapping("/{id}/preview-url")
-    public ApiResponse<PresignedUrlResponse> previewUrl(@PathVariable Long id, HttpServletRequest request) {
-        return ApiResponse.success(presignedUrlService.createPreviewUrl(id, request));
+    public ApiResponse<PresignedUrlResponse> previewUrl(@PathVariable("id") String identifier, HttpServletRequest request) {
+        return ApiResponse.success(presignedUrlService.createPreviewUrl(resolveId(identifier), request));
     }
 
     @GetMapping("/{id}/versions")
-    public ApiResponse<List<DocumentVersionResponse>> versions(@PathVariable Long id) {
-        return ApiResponse.success(versionService.history(id));
+    public ApiResponse<List<DocumentVersionResponse>> versions(@PathVariable("id") String identifier) {
+        return ApiResponse.success(versionService.history(resolveId(identifier)));
     }
 
     @PostMapping("/{id}/versions/init")
     public ResponseEntity<ApiResponse<VersionUploadInitResponse>> initiateVersionUpload(
-            @PathVariable Long id,
+            @PathVariable("id") String identifier,
             @Valid @RequestBody VersionUploadInitRequest request
     ) {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Version upload URL created", versionService.initiateVersionUpload(id, request)));
+                .body(ApiResponse.success("Version upload URL created", versionService.initiateVersionUpload(resolveId(identifier), request)));
     }
 
     @PostMapping("/{id}/versions/{versionId}/complete")
-    public ApiResponse<VersionUploadCompleteResponse> completeVersionUpload(@PathVariable Long id, @PathVariable Long versionId) {
-        return ApiResponse.success("New version upload accepted", versionService.completeVersionUpload(id, versionId));
+    public ApiResponse<VersionUploadCompleteResponse> completeVersionUpload(@PathVariable("id") String identifier, @PathVariable Long versionId) {
+        return ApiResponse.success("New version upload accepted", versionService.completeVersionUpload(resolveId(identifier), versionId));
     }
 
     @GetMapping("/{id}/versions/{versionId}/download-url")
-    public ApiResponse<PresignedUrlResponse> versionDownloadUrl(@PathVariable Long id, @PathVariable Long versionId, HttpServletRequest request) {
-        return ApiResponse.success(versionService.createDownloadUrl(id, versionId, request));
+    public ApiResponse<PresignedUrlResponse> versionDownloadUrl(@PathVariable("id") String identifier, @PathVariable Long versionId, HttpServletRequest request) {
+        return ApiResponse.success(versionService.createDownloadUrl(resolveId(identifier), versionId, request));
     }
 
     @PostMapping("/{id}/versions/{versionId}/restore")
-    public ApiResponse<VersionRestoreResponse> restoreVersion(@PathVariable Long id, @PathVariable Long versionId) {
-        return ApiResponse.success("Document version restored successfully", versionService.restore(id, versionId));
+    public ApiResponse<VersionRestoreResponse> restoreVersion(@PathVariable("id") String identifier, @PathVariable Long versionId) {
+        return ApiResponse.success("Document version restored successfully", versionService.restore(resolveId(identifier), versionId));
+    }
+
+    private Long resolveId(String identifier) {
+        if (identifier == null) return null;
+        try {
+            return Long.parseLong(identifier);
+        } catch (NumberFormatException e) {
+            return metadataService.getDocumentIdBySlug(identifier);
+        }
     }
 }

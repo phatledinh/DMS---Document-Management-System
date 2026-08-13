@@ -48,14 +48,14 @@ function initials(value) {
 }
 
 export default function DocumentHistoryPage() {
-  const { id } = useParams();
+  const { slug } = useParams();
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
 
   const documentQuery = useQuery({
-    queryKey: ['documents', id],
+    queryKey: ['documents', slug],
     queryFn: () => getDocumentById(id),
     enabled: Boolean(id),
   });
@@ -76,7 +76,7 @@ export default function DocumentHistoryPage() {
 
   async function refreshVersions() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['documents', id] }),
+      queryClient.invalidateQueries({ queryKey: ['documents', slug] }),
       queryClient.invalidateQueries({ queryKey: ['documentVersions', id] }),
     ]);
   }
@@ -167,7 +167,7 @@ export default function DocumentHistoryPage() {
         <div className={styles.canvas}>
           <div className={styles.container}>
             <nav className={styles.breadcrumbs}>
-              <Link to="/">Home</Link><span>›</span><Link to="/documents">Tài liệu</Link><span>›</span><Link to={`/documents/${id}`}>{document?.title || document?.fileName || 'Chi tiết'}</Link><span>›</span><strong>Lịch sử phiên bản</strong>
+              <Link to="/">Home</Link><span>›</span><Link to="/documents">Tài liệu</Link><span>›</span><Link to={`/documents/`}>{document?.title || document?.fileName || 'Chi tiết'}</Link><span>›</span><strong>Lịch sử phiên bản</strong>
             </nav>
 
             <section className={styles.documentHeader}>

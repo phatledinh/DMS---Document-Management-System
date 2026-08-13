@@ -152,7 +152,7 @@ public class DocumentSearchRepository {
 
     private String searchSql(DocumentSearchRequest request) {
         return baseSql(request) + """
-                SELECT id, title, document_code, file_type, file_size, status, access_level, version_number,
+                SELECT id, slug, title, document_code, file_type, file_size, status, access_level, version_number,
                        view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                        effective_date, expiry_date, created_at, updated_at, relevance_score,
                        title_highlight, description_highlight, content_highlight
@@ -184,7 +184,7 @@ public class DocumentSearchRepository {
                       %s
                       %s
                 ), matched AS (
-                    SELECT id, title, document_code, file_type, file_size, status, access_level, version_number,
+                    SELECT id, slug, title, document_code, file_type, file_size, status, access_level, version_number,
                            view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                            effective_date, expiry_date, created_at, updated_at,
                            %s AS relevance_score,
@@ -276,6 +276,7 @@ public class DocumentSearchRepository {
     private DocumentSearchRow searchRow(ResultSet rs) throws SQLException {
         return new DocumentSearchRow(
                 rs.getLong("id"),
+                rs.getString("slug"),
                 rs.getString("title"),
                 rs.getString("document_code"),
                 rs.getString("file_type"),

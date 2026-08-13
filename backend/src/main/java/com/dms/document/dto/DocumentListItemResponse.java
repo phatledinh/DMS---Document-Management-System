@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 
 public record DocumentListItemResponse(
         Long id,
+        String slug,
         String title,
         String documentCode,
         String fileType,

@@ -15,4 +15,15 @@ public interface TagRepository extends JpaRepository<Tag, Long> {
     boolean existsByNameAndIdNotAndDeletedAtIsNull(String name, Long id);
     boolean existsBySlugAndDeletedAtIsNull(String slug);
     boolean existsBySlugAndIdNotAndDeletedAtIsNull(String slug, Long id);
+
+    @org.springframework.data.jpa.repository.Query(value = """
+        SELECT t.id, t.name, t.slug, t.created_at,
+               (SELECT COUNT(dt.document_id) FROM document_tags dt
+                JOIN documents d ON d.id = dt.document_id
+                WHERE dt.tag_id = t.id AND d.deleted_at IS NULL)
+        FROM tags t
+        WHERE t.deleted_at IS NULL
+        ORDER BY t.name ASC
+        """, nativeQuery = true)
+    List<Object[]> findAllWithDocumentCount();
 }

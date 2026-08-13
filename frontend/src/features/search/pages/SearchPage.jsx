@@ -319,7 +319,7 @@ export default function SearchPage() {
                   const relevance = relevanceMeta(r.relevanceScore, mc);
 
                   return (
-                    <article key={r.id} className={styles.card} onClick={() => r.id && navigate(`/documents/${r.id}`)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && r.id && navigate(`/documents/${r.id}`)}>
+                    <article key={r.id} className={styles.card} onClick={() => r.slug && navigate(`/documents/`)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && r.slug && navigate(`/documents/`)}>
                       <div className={styles.cardIconWrap}>
                         <div className={`${styles.cardIcon} ${fi.cls}`}>
                           <MI name={fi.icon} />
