@@ -7,7 +7,7 @@ import {
   SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Table, Tag } from 'antd';
+import { Alert, Button, Space, Table, Tag } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -85,7 +85,10 @@ export default function ProcessingErrorsPage() {
       title: 'Trạng thái lỗi',
       dataIndex: 'status',
       width: 180,
-      render: (value) => <Tag color="red">{value || 'FAILED'}</Tag>,
+      render: (value) => {
+        if (value === 'PROCESSING') return <Tag color="processing">Đang xử lý</Tag>;
+        return <Tag color="red">{value || 'FAILED'}</Tag>;
+      },
     },
     {
       title: 'Retry',
@@ -107,12 +110,24 @@ export default function ProcessingErrorsPage() {
     },
     {
       title: 'Thao tác',
-      width: 120,
+      width: 150,
       render: (_, record) => (
-        <div className={styles.rowActions}>
-          <button disabled={retryMutation.isPending} title="Retry extraction/search refresh" type="button" onClick={() => retryDocument(record.documentId)}><SyncOutlined /></button>
-          <Link to={`/documents/${record.documentId}`}><EyeOutlined /></Link>
-        </div>
+        <Space>
+          <Button 
+            size="small" 
+            type="primary" 
+            ghost 
+            icon={<SyncOutlined />} 
+            loading={retryMutation.isPending || record.status === 'PROCESSING'} 
+            disabled={record.status === 'PROCESSING'}
+            onClick={() => retryDocument(record.documentId)}
+          >
+            {record.status === 'PROCESSING' ? 'Đang xử lý' : 'Thử lại'}
+          </Button>
+          <Link to={`/documents/${record.documentId}`}>
+            <Button size="small" icon={<EyeOutlined />} title="Chi tiết" />
+          </Link>
+        </Space>
       ),
     },
   ];

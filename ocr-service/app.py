@@ -53,6 +53,16 @@ def sort_boxes(boxes):
     return sorted(boxes, key=key)
 
 
+def normalize_boxes(detection_result):
+    horizontal = detection_result[0] if detection_result else []
+    freeform = detection_result[1] if len(detection_result) > 1 else []
+    boxes = []
+    for left, right, top, bottom in horizontal:
+        boxes.append([(left, top), (right, top), (right, bottom), (left, bottom)])
+    boxes.extend(freeform)
+    return boxes
+
+
 def expand(bounds, image_size, padding=4):
     left, top, right, bottom = bounds
     width, height = image_size
@@ -62,7 +72,7 @@ def expand(bounds, image_size, padding=4):
 def recognize_page(image):
     detector = get_detector()
     predictor = get_predictor()
-    boxes = detector.detect(np.array(image), text_threshold=0.6, low_text=0.3, link_threshold=0.4)[0][0]
+    boxes = normalize_boxes(detector.detect(np.array(image), text_threshold=0.6, low_text=0.3, link_threshold=0.4)[0])
     lines = []
     for box in sort_boxes(boxes):
         crop_bounds = expand(box_bounds(box), image.size)

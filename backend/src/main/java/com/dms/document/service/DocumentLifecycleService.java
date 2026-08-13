@@ -14,6 +14,8 @@ import com.dms.document.dto.TrashDocumentResponse;
 import com.dms.document.entity.AccessLog;
 import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
+import com.dms.document.entity.DocumentContent;
+import com.dms.document.entity.DocumentExtractionStatus;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.entity.DocumentVersion;
 import com.dms.document.processing.DocumentProcessingMessage;
@@ -154,7 +156,12 @@ public class DocumentLifecycleService {
     public DocumentLifecycleResponse retryIndexing(Long documentId) {
         User admin = requireAdmin();
         Document document = findDocument(documentId);
-        if (document.getStatus() != DocumentStatus.EXTRACTION_FAILED) {
+        DocumentContent content = contentRepository.findByDocumentId(documentId).orElse(null);
+        
+        boolean canRetry = document.getStatus() == DocumentStatus.EXTRACTION_FAILED
+                || (content != null && content.getExtractionStatus() == DocumentExtractionStatus.FAILED);
+                
+        if (!canRetry) {
             throw invalidStatus("Only extraction failed documents can be retried");
         }
         OffsetDateTime now = OffsetDateTime.now();

@@ -9,6 +9,7 @@ import {
   InboxOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SyncOutlined,
   UndoOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
@@ -21,6 +22,7 @@ import {
   useArchiveDocument,
   useDeleteDocument,
   useRestoreDocument,
+  useRetryDocumentIndexing,
 } from '../hooks/useDocumentLifecycle.js';
 import { useDocuments } from '../hooks/useDocuments.js';
 import {
@@ -63,6 +65,7 @@ export default function DocumentsPage() {
   const archiveMutation = useArchiveDocument();
   const deleteMutation = useDeleteDocument();
   const restoreMutation = useRestoreDocument();
+  const retryMutation = useRetryDocumentIndexing();
 
   const params = useMemo(
     () => ({
@@ -126,6 +129,16 @@ export default function DocumentsPage() {
       mutation: restoreMutation,
       documentId: record.id,
       successMessage: 'Đã khôi phục tài liệu',
+    });
+  }
+
+  function retryRecord(record) {
+    runLifecycleAction({
+      title: 'Thử lại xử lý tài liệu?',
+      content: `Gửi lại yêu cầu xử lý cho tài liệu "${record.title || record.fileName}".`,
+      mutation: retryMutation,
+      documentId: record.id,
+      successMessage: 'Đã gửi yêu cầu thử lại',
     });
   }
 
@@ -251,6 +264,11 @@ export default function DocumentsPage() {
           {isAdmin && record.status === 'ARCHIVED' && (
             <Button icon={<UndoOutlined />} onClick={() => restoreRecord(record)} loading={restoreMutation.isPending}>
               Khôi phục
+            </Button>
+          )}
+          {isAdmin && record.status === 'EXTRACTION_FAILED' && (
+            <Button icon={<SyncOutlined />} onClick={() => retryRecord(record)} loading={retryMutation.isPending}>
+              Thử lại
             </Button>
           )}
           {isAdmin && ['INDEXED', 'ARCHIVED', 'EXTRACTION_FAILED'].includes(record.status) && (
