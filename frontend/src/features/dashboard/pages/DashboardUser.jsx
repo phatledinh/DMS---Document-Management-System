@@ -9,60 +9,35 @@ import {
   UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Empty } from 'antd';
+import { Alert, Empty, Skeleton } from 'antd';
 import { useAuthStore } from '../../../store/authStore.js';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useUserDashboard } from '../hooks/useUserDashboard.js';
 import styles from './DashboardUser.module.css';
 
-const metricCards = [
-  {
-    label: 'Tài liệu đã upload',
-    value: '14',
-    detail: '+3 trong 30 ngày',
-    icon: <UploadOutlined />,
-    tone: 'primary',
-  },
-  {
-    label: 'Lượt xem gần đây',
-    value: '126',
-    detail: '30 ngày qua',
-    icon: <EyeOutlined />,
-    tone: 'cyan',
-  },
-  {
-    label: 'Lượt tải',
-    value: '48',
-    detail: '30 ngày qua',
-    icon: <DownloadOutlined />,
-    tone: 'green',
-  },
-  {
-    label: 'Thao tác bị từ chối',
-    value: '3',
-    detail: 'Thiếu quyền',
-    icon: <WarningOutlined />,
-    tone: 'orange',
-  },
-];
+const metricIcons = {
+  uploads: <UploadOutlined />,
+  previews: <EyeOutlined />,
+  downloads: <DownloadOutlined />,
+  denied: <WarningOutlined />,
+};
 
-const recentDocuments = [
-  { title: 'Quy trình ISO 9001 — Kiểm soát chất lượng', meta: 'SOP-QA-001 · ISO', status: 'Sẵn sàng', tone: 'success' },
-  { title: 'Biểu mẫu đăng ký nhân sự mới', meta: 'HR-FRM-014 · Biểu mẫu', status: 'Sẵn sàng', tone: 'success' },
-  { title: 'Báo cáo tài chính Quý 2 / 2026', meta: 'FIN-RPT-Q2 · Báo cáo', status: 'Đang xử lý', tone: 'info' },
-  { title: 'Chính sách an toàn thông tin nội bộ', meta: 'IT-POL-003 · Chính sách', status: 'Sẵn sàng', tone: 'success' },
-];
+const metricTones = {
+  uploads: 'primary',
+  previews: 'cyan',
+  downloads: 'green',
+  denied: 'orange',
+};
 
-const permissionGroups = [
-  { category: 'ISO', permissions: ['VIEW', 'DOWNLOAD'] },
-  { category: 'Biểu mẫu', permissions: ['VIEW', 'DOWNLOAD', 'UPLOAD'] },
-  { category: 'Báo cáo', permissions: ['VIEW'] },
-];
+const activityTones = {
+  denied: 'danger',
+  allowed: 'success',
+};
 
-const recentActivities = [
-  { action: 'DOWNLOAD', detail: 'Chính sách an toàn thông tin nội bộ', time: '07/08/2026 09:12', tone: 'danger' },
-  { action: 'PREVIEW', detail: 'Quy trình ISO 9001 — Kiểm soát chất lượng', time: '07/08/2026 08:40', tone: 'success' },
-  { action: 'SEARCH', detail: 'Từ khoá: “biểu mẫu nhân sự”', time: '06/08/2026 16:05', tone: 'success' },
-  { action: 'UPLOAD', detail: 'Biểu mẫu đăng ký nhân sự mới', time: '05/08/2026 11:22', tone: 'success' },
-];
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+}
 
 function MetricCard({ label, value, detail, icon, tone }) {
   return (
@@ -106,13 +81,13 @@ function DocumentList({ documents }) {
   return (
     <div className={styles.documentList}>
       {documents.map((doc) => (
-        <article className={styles.documentItem} key={doc.title}>
+        <article className={styles.documentItem} key={doc.id}>
           <span className={styles.documentIcon}><FileTextOutlined /></span>
           <div className={styles.itemMain}>
             <strong>{doc.title}</strong>
-            <span>{doc.meta}</span>
+            <span>{[doc.documentCode, doc.categoryName].filter(Boolean).join(' · ')}</span>
           </div>
-          <StatusPill status={doc.status} tone={doc.tone} />
+          <StatusPill status={doc.status} tone={doc.status === 'INDEXED' ? 'success' : 'info'} />
         </article>
       ))}
     </div>
@@ -120,11 +95,15 @@ function DocumentList({ documents }) {
 }
 
 function PermissionList({ groups }) {
+  if (!groups.length) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có quyền theo danh mục" />;
+  }
+
   return (
     <div className={styles.permissionList}>
       {groups.map((group) => (
-        <article className={styles.permissionItem} key={group.category}>
-          <strong>{group.category}</strong>
+        <article className={styles.permissionItem} key={group.categoryId}>
+          <strong>{group.categoryName}</strong>
           <div className={styles.permissionPills}>
             {group.permissions.map((permission) => (
               <span className={styles.permissionPill} key={permission}>{permission}</span>
@@ -137,14 +116,18 @@ function PermissionList({ groups }) {
 }
 
 function ActivityTimeline({ activities }) {
+  if (!activities.length) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có hoạt động gần đây" />;
+  }
+
   return (
     <div className={styles.timeline}>
       {activities.map((activity) => (
-        <article className={styles.timelineItem} key={`${activity.action}-${activity.time}`}>
-          <span className={`${styles.timelineDot} ${styles[activity.tone]}`} />
+        <article className={styles.timelineItem} key={activity.id}>
+          <span className={`${styles.timelineDot} ${styles[activityTones[activity.resultType] || 'success']}`} />
           <strong>{activity.action}</strong>
           <span>{activity.detail}</span>
-          <time>{activity.time}</time>
+          <time>{formatDate(activity.createdAt)}</time>
         </article>
       ))}
     </div>
@@ -157,11 +140,18 @@ function getDisplayName(user) {
 
 export default function DashboardUser() {
   const user = useAuthStore((state) => state.user);
+  const dashboardQuery = useUserDashboard();
+  const dashboard = dashboardQuery.data;
   const displayName = getDisplayName(user);
   const department = Array.isArray(user?.departments) && user.departments.length > 0
     ? user.departments.map(d => d.name || d.departmentName).filter(Boolean).join(', ')
     : (user?.departmentName || user?.department || user?.departmentCode || 'Phòng ban của bạn');
   const role = user?.role || 'USER';
+  const metrics = (dashboard?.metrics || []).map((metric) => ({
+    ...metric,
+    icon: metricIcons[metric.key] || <FileDoneOutlined />,
+    tone: metricTones[metric.key] || 'primary',
+  }));
 
   return (
     <main className={styles.page}>
@@ -177,30 +167,38 @@ export default function DashboardUser() {
         </div>
       </header>
 
-      <section className={styles.metricsGrid} aria-label="Thống kê cá nhân">
-        {metricCards.map((card) => (
-          <MetricCard key={card.label} {...card} />
-        ))}
-      </section>
+      {dashboardQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(dashboardQuery.error)} />}
 
-      <section className={styles.contentGrid}>
-        <SectionCard
-          title="Tài liệu liên quan gần đây"
-          className={styles.documentsPanel}
-          action={<span className={styles.sectionAction}><SearchOutlined /> Gợi ý theo quyền truy cập</span>}
-        >
-          <DocumentList documents={recentDocuments} />
-        </SectionCard>
+      {dashboardQuery.isLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : (
+        <>
+          <section className={styles.metricsGrid} aria-label="Thống kê cá nhân">
+            {metrics.map((card) => (
+              <MetricCard key={card.key} {...card} />
+            ))}
+          </section>
 
-        <aside className={styles.sideRail}>
-          <SectionCard title="Quyền theo danh mục">
-            <PermissionList groups={permissionGroups} />
-          </SectionCard>
-          <SectionCard title="Hoạt động gần đây" action={<HistoryOutlined className={styles.headerIcon} />}>
-            <ActivityTimeline activities={recentActivities} />
-          </SectionCard>
-        </aside>
-      </section>
+          <section className={styles.contentGrid}>
+            <SectionCard
+              title="Tài liệu liên quan gần đây"
+              className={styles.documentsPanel}
+              action={<span className={styles.sectionAction}><SearchOutlined /> Gợi ý theo quyền truy cập</span>}
+            >
+              <DocumentList documents={dashboard?.recentDocuments || []} />
+            </SectionCard>
+
+            <aside className={styles.sideRail}>
+              <SectionCard title="Quyền theo danh mục">
+                <PermissionList groups={dashboard?.permissionGroups || []} />
+              </SectionCard>
+              <SectionCard title="Hoạt động gần đây" action={<HistoryOutlined className={styles.headerIcon} />}>
+                <ActivityTimeline activities={dashboard?.recentActivities || []} />
+              </SectionCard>
+            </aside>
+          </section>
+        </>
+      )}
     </main>
   );
 }

@@ -1,49 +1,62 @@
 import { DownloadOutlined, FileDoneOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons';
-import { Button, Input, Select, Tag } from 'antd';
+import { Alert, Button, Empty, Input, Pagination, Select, Skeleton, Tag } from 'antd';
+import { useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
+import { getDocumentVersionDownloadUrl } from '../../../api/documentApi.js';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useMyDocumentVersions } from '../hooks/useMyDocumentVersions.js';
 import styles from './VersionUser.module.css';
 
-const versionRows = [
-  {
-    document: 'Quy trình ISO 9001 — Kiểm soát chất lượng',
-    version: 'v1.2',
-    current: true,
-    note: 'Cập nhật mục 4.2 và biểu mẫu đính kèm',
-    size: '2.4 MB',
-    uploadedAt: '21/07/2026',
-    category: 'ISO',
-    status: 'Sẵn sàng',
-  },
-  {
-    document: 'Quy trình ISO 9001 — Kiểm soát chất lượng',
-    version: 'v1.1',
-    note: 'Bổ sung phụ lục kiểm tra định kỳ',
-    size: '2.3 MB',
-    uploadedAt: '12/05/2026',
-    category: 'ISO',
-    status: 'Sẵn sàng',
-  },
-  {
-    document: 'Quy trình ISO 9001 — Kiểm soát chất lượng',
-    version: 'v1.0',
-    note: 'Phiên bản ban hành đầu tiên',
-    size: '2.1 MB',
-    uploadedAt: '02/01/2026',
-    category: 'ISO',
-    status: 'Lưu trữ',
-  },
-  {
-    document: 'Báo cáo tài chính Quý 2 / 2026',
-    version: 'v1.0',
-    current: true,
-    note: 'Bản nộp lần đầu',
-    size: '3.1 MB',
-    uploadedAt: '02/08/2026',
-    category: 'Báo cáo',
-    status: 'Sẵn sàng',
-  },
-];
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / (1024 ** index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(new Date(value));
+}
+
+function getDateRange(value) {
+  if (!value) return {};
+  const dateTo = new Date();
+  const dateFrom = new Date(dateTo);
+  dateFrom.setDate(dateFrom.getDate() - Number(value));
+  return { dateFrom: dateFrom.toISOString(), dateTo: dateTo.toISOString() };
+}
 
 export default function VersionUser() {
+  const [keyword, setKeyword] = useState('');
+  const [category, setCategory] = useState();
+  const [status, setStatus] = useState();
+  const [range, setRange] = useState();
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
+  const params = useMemo(() => ({
+    keyword: keyword || undefined,
+    category,
+    status,
+    ...getDateRange(range),
+    page,
+    size,
+  }), [category, keyword, page, range, size, status]);
+  const versionsQuery = useMyDocumentVersions(params);
+  const versionRows = useMemo(() => versionsQuery.data?.content || [], [versionsQuery.data?.content]);
+  const categoryOptions = useMemo(() => [
+    ...[...new Set(versionRows.map((row) => row.categoryName).filter(Boolean))].map((value) => ({ value, label: value })),
+  ], [versionRows]);
+
+  async function downloadVersion(row) {
+    try {
+      const result = await getDocumentVersionDownloadUrl(row.documentId, row.versionId);
+      window.open(result.url || result.presignedUrl || result.downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    }
+  }
+
   return (
     <main className={styles.page}>
       <header className={styles.heroHeader}>
@@ -52,34 +65,48 @@ export default function VersionUser() {
           <h1>Version của tôi</h1>
           <p>Phiên bản tài liệu bạn đã tải lên.</p>
         </div>
-        <span className={styles.summaryBadge}><FileDoneOutlined /> {versionRows.length} bản ghi</span>
+        <span className={styles.summaryBadge}><FileDoneOutlined /> {versionsQuery.data?.totalElements || 0} bản ghi</span>
       </header>
 
+      {versionsQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(versionsQuery.error)} />}
+
       <section className={styles.filterCard} aria-label="Bộ lọc version">
-        <Input className={styles.searchInput} prefix={<SearchOutlined />} placeholder="Tìm theo tên tài liệu…" allowClear />
+        <Input
+          className={styles.searchInput}
+          prefix={<SearchOutlined />}
+          placeholder="Tìm theo tên tài liệu…"
+          allowClear
+          value={keyword}
+          onChange={(event) => { setKeyword(event.target.value); setPage(0); }}
+        />
         <Select
           className={styles.filterSelect}
           placeholder="Danh mục"
           suffixIcon={<FilterOutlined />}
           allowClear
-          options={[
-            { value: 'iso', label: 'ISO' },
-            { value: 'report', label: 'Báo cáo' },
-          ]}
+          value={category}
+          onChange={(value) => { setCategory(value); setPage(0); }}
+          options={categoryOptions}
         />
         <Select
           className={styles.filterSelect}
           placeholder="Trạng thái"
           allowClear
+          value={status}
+          onChange={(value) => { setStatus(value); setPage(0); }}
           options={[
-            { value: 'ready', label: 'Sẵn sàng' },
-            { value: 'archive', label: 'Lưu trữ' },
+            { value: 'INDEXED', label: 'Sẵn sàng' },
+            { value: 'ARCHIVED', label: 'Lưu trữ' },
+            { value: 'PROCESSING', label: 'Đang xử lý' },
+            { value: 'EXTRACTION_FAILED', label: 'Lỗi xử lý' },
           ]}
         />
         <Select
           className={styles.filterSelect}
           placeholder="Thời gian"
           allowClear
+          value={range}
+          onChange={(value) => { setRange(value); setPage(0); }}
           options={[
             { value: '30', label: '30 ngày qua' },
             { value: '90', label: '90 ngày qua' },
@@ -88,55 +115,64 @@ export default function VersionUser() {
       </section>
 
       <section className={styles.tableCard}>
-        <div className={styles.tableScroll}>
-          <table className={styles.versionTable}>
-            <thead>
-              <tr>
-                <th>Tài liệu</th>
-                <th>Phiên bản</th>
-                <th>Ghi chú</th>
-                <th>Dung lượng</th>
-                <th>Ngày tải lên</th>
-                <th>Hành động</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versionRows.map((row) => (
-                <tr key={`${row.document}-${row.version}`}>
-                  <td>
-                    <strong>{row.document}</strong>
-                    <span>{row.category} · {row.status}</span>
-                  </td>
-                  <td>
-                    <div className={styles.versionCell}>
-                      <span>{row.version}</span>
-                      {row.current && <Tag className={styles.currentTag}>hiện hành</Tag>}
-                    </div>
-                  </td>
-                  <td>{row.note}</td>
-                  <td>{row.size}</td>
-                  <td>{row.uploadedAt}</td>
-                  <td>
-                    <Button type="link" className={styles.downloadButton} icon={<DownloadOutlined />}>
-                      Tải
-                    </Button>
-                  </td>
+        {versionsQuery.isLoading ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : versionRows.length ? (
+          <div className={styles.tableScroll}>
+            <table className={styles.versionTable}>
+              <thead>
+                <tr>
+                  <th>Tài liệu</th>
+                  <th>Phiên bản</th>
+                  <th>Ghi chú</th>
+                  <th>Dung lượng</th>
+                  <th>Ngày tải lên</th>
+                  <th>Hành động</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {versionRows.map((row) => (
+                  <tr key={`${row.documentId}-${row.versionId}`}>
+                    <td>
+                      <strong>{row.documentTitle}</strong>
+                      <span>{row.categoryName || '—'} · {row.status}</span>
+                    </td>
+                    <td>
+                      <div className={styles.versionCell}>
+                        <span>{row.versionNumber}</span>
+                        {row.current && <Tag className={styles.currentTag}>hiện hành</Tag>}
+                      </div>
+                    </td>
+                    <td>{row.note || '—'}</td>
+                    <td>{formatBytes(row.fileSize)}</td>
+                    <td>{formatDate(row.uploadedAt)}</td>
+                    <td>
+                      <Button type="link" className={styles.downloadButton} icon={<DownloadOutlined />} onClick={() => downloadVersion(row)}>
+                        Tải
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có version phù hợp bộ lọc" />
+        )}
       </section>
 
       <footer className={styles.paginationFooter}>
-        <span>Hiển thị 1–4 trong 4 bản ghi</span>
-        <div className={styles.paginationButtons}>
-          <button type="button">‹</button>
-          <button type="button" className={styles.activePage}>1</button>
-          <button type="button">2</button>
-          <button type="button">3</button>
-          <button type="button">›</button>
-        </div>
+        <span>Hiển thị {versionRows.length ? page * size + 1 : 0}–{page * size + versionRows.length} trong {versionsQuery.data?.totalElements || 0} bản ghi</span>
+        <Pagination
+          current={page + 1}
+          pageSize={size}
+          total={versionsQuery.data?.totalElements || 0}
+          showSizeChanger
+          onChange={(nextPage, nextSize) => {
+            setPage(nextPage - 1);
+            setSize(nextSize);
+          }}
+        />
       </footer>
     </main>
   );

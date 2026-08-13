@@ -33,7 +33,7 @@ export default function ProcessingErrorsPage() {
   const [size, setSize] = useState(20);
   const errorsQuery = useProcessingErrors({ page, size });
   const retryMutation = useRetryDocumentIndexing();
-  const rows = errorsQuery.data?.content || [];
+  const rows = useMemo(() => errorsQuery.data?.content || [], [errorsQuery.data?.content]);
 
   async function retryDocument(documentId) {
     try {

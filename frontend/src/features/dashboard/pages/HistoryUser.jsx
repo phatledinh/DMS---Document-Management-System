@@ -8,52 +8,17 @@ import {
   UploadOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Button, Empty, Select } from 'antd';
+import { Alert, Button, Empty, Pagination, Select, Skeleton } from 'antd';
 import { useMemo, useState } from 'react';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useUserActivityHistory } from '../hooks/useUserActivityHistory.js';
 import styles from './HistoryUser.module.css';
-
-const historyItems = [
-  {
-    action: 'DOWNLOAD',
-    category: 'Chính sách',
-    requiredPermission: 'DOWNLOAD',
-    result: 'MISSING_DOWNLOAD',
-    resultType: 'denied',
-    detail: 'Chính sách an toàn thông tin nội bộ',
-    time: '07/08/2026 09:12',
-  },
-  {
-    action: 'PREVIEW',
-    category: 'ISO',
-    requiredPermission: 'VIEW',
-    result: 'Được phép',
-    resultType: 'allowed',
-    detail: 'Quy trình ISO 9001 — Kiểm soát chất lượng',
-    time: '07/08/2026 08:40',
-  },
-  {
-    action: 'SEARCH',
-    category: 'Biểu mẫu',
-    requiredPermission: 'SEARCH',
-    result: 'Được phép',
-    resultType: 'allowed',
-    detail: 'Từ khoá: "biểu mẫu nhân sự"',
-    time: '06/08/2026 16:05',
-  },
-  {
-    action: 'UPLOAD',
-    category: 'Biểu mẫu',
-    requiredPermission: 'UPLOAD',
-    result: 'Được phép',
-    resultType: 'allowed',
-    detail: 'Biểu mẫu đăng ký nhân sự mới',
-    time: '05/08/2026 11:22',
-  },
-];
 
 const actionIcons = {
   DOWNLOAD: <DownloadOutlined />,
+  VERSION_DOWNLOAD: <DownloadOutlined />,
   PREVIEW: <EyeOutlined />,
+  VIEW: <EyeOutlined />,
   SEARCH: <SearchOutlined />,
   UPLOAD: <UploadOutlined />,
 };
@@ -66,11 +31,49 @@ const initialFilters = {
   date: 'all',
 };
 
-function buildOptions(values, allLabel) {
-  return [
-    { value: 'all', label: allLabel },
-    ...values.map((value) => ({ value, label: value })),
-  ];
+const actionOptions = [
+  { value: 'all', label: 'Tất cả hành động' },
+  { value: 'DOWNLOAD', label: 'DOWNLOAD' },
+  { value: 'VERSION_DOWNLOAD', label: 'VERSION_DOWNLOAD' },
+  { value: 'PREVIEW', label: 'PREVIEW' },
+  { value: 'VIEW', label: 'VIEW' },
+  { value: 'SEARCH', label: 'SEARCH' },
+  { value: 'UPLOAD', label: 'UPLOAD' },
+];
+
+const permissionOptions = [
+  { value: 'all', label: 'Tất cả quyền' },
+  { value: 'VIEW', label: 'VIEW' },
+  { value: 'DOWNLOAD', label: 'DOWNLOAD' },
+  { value: 'SEARCH', label: 'SEARCH' },
+  { value: 'UPLOAD', label: 'UPLOAD' },
+];
+
+const resultOptions = [
+  { value: 'all', label: 'Tất cả kết quả' },
+  { value: 'allowed', label: 'Được phép' },
+  { value: 'denied', label: 'Bị từ chối' },
+];
+
+const dateOptions = [
+  { value: 'all', label: 'Tất cả thời gian' },
+  { value: '7', label: '7 ngày qua' },
+  { value: '30', label: '30 ngày qua' },
+  { value: '90', label: '90 ngày qua' },
+];
+
+function getDateRange(value) {
+  if (value === 'all') return {};
+  const days = Number(value);
+  const dateTo = new Date();
+  const dateFrom = new Date(dateTo);
+  dateFrom.setDate(dateFrom.getDate() - days);
+  return { dateFrom: dateFrom.toISOString(), dateTo: dateTo.toISOString() };
+}
+
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
 
 function HistoryItem({ item }) {
@@ -93,11 +96,11 @@ function HistoryItem({ item }) {
           </div>
           <p>{item.detail}</p>
           <div className={styles.metaRow}>
-            <span>{item.category}</span>
-            <span>Quyền yêu cầu: {item.requiredPermission}</span>
+            <span>{item.category || '—'}</span>
+            <span>Quyền yêu cầu: {item.requiredPermission || '—'}</span>
           </div>
         </div>
-        <time>{item.time}</time>
+        <time>{formatDate(item.createdAt)}</time>
       </div>
     </article>
   );
@@ -105,37 +108,28 @@ function HistoryItem({ item }) {
 
 export default function HistoryUser() {
   const [filters, setFilters] = useState(initialFilters);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
+  const params = useMemo(() => ({
+    action: filters.action,
+    category: filters.category,
+    permission: filters.permission,
+    result: filters.result,
+    ...getDateRange(filters.date),
+    page,
+    size,
+  }), [filters, page, size]);
+  const historyQuery = useUserActivityHistory(params);
+  const items = useMemo(() => historyQuery.data?.content || [], [historyQuery.data?.content]);
 
-  const filterOptions = useMemo(() => {
-    const actions = [...new Set(historyItems.map((item) => item.action))];
-    const categories = [...new Set(historyItems.map((item) => item.category))];
-    const permissions = [...new Set(historyItems.map((item) => item.requiredPermission))];
-    const dates = [...new Set(historyItems.map((item) => item.time.slice(0, 10)))];
-
-    return {
-      actions: buildOptions(actions, 'Tất cả hành động'),
-      categories: buildOptions(categories, 'Tất cả danh mục'),
-      permissions: buildOptions(permissions, 'Tất cả quyền'),
-      results: [
-        { value: 'all', label: 'Tất cả kết quả' },
-        { value: 'allowed', label: 'Được phép' },
-        { value: 'denied', label: 'Bị từ chối' },
-      ],
-      dates: buildOptions(dates, 'Tất cả thời gian'),
-    };
-  }, []);
-
-  const filteredItems = useMemo(() => historyItems.filter((item) => {
-    if (filters.action !== 'all' && item.action !== filters.action) return false;
-    if (filters.category !== 'all' && item.category !== filters.category) return false;
-    if (filters.permission !== 'all' && item.requiredPermission !== filters.permission) return false;
-    if (filters.result !== 'all' && item.resultType !== filters.result) return false;
-    if (filters.date !== 'all' && item.time.slice(0, 10) !== filters.date) return false;
-    return true;
-  }), [filters]);
+  const categoryOptions = useMemo(() => [
+    { value: 'all', label: 'Tất cả danh mục' },
+    ...[...new Set(items.map((item) => item.category).filter(Boolean))].map((value) => ({ value, label: value })),
+  ], [items]);
 
   function updateFilter(name, value) {
     setFilters((current) => ({ ...current, [name]: value || 'all' }));
+    setPage(0);
   }
 
   return (
@@ -148,24 +142,40 @@ export default function HistoryUser() {
         </div>
       </header>
 
+      {historyQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(historyQuery.error)} />}
+
       <section className={styles.filterPanel} aria-label="Bộ lọc lịch sử thao tác">
-        <Select value={filters.action} onChange={(value) => updateFilter('action', value)} options={filterOptions.actions} />
-        <Select value={filters.category} onChange={(value) => updateFilter('category', value)} options={filterOptions.categories} />
-        <Select value={filters.permission} onChange={(value) => updateFilter('permission', value)} options={filterOptions.permissions} />
-        <Select value={filters.result} onChange={(value) => updateFilter('result', value)} options={filterOptions.results} />
-        <Select value={filters.date} onChange={(value) => updateFilter('date', value)} options={filterOptions.dates} />
-        <Button icon={<ReloadOutlined />} onClick={() => setFilters(initialFilters)}>
+        <Select value={filters.action} onChange={(value) => updateFilter('action', value)} options={actionOptions} />
+        <Select value={filters.category} onChange={(value) => updateFilter('category', value)} options={categoryOptions} />
+        <Select value={filters.permission} onChange={(value) => updateFilter('permission', value)} options={permissionOptions} />
+        <Select value={filters.result} onChange={(value) => updateFilter('result', value)} options={resultOptions} />
+        <Select value={filters.date} onChange={(value) => updateFilter('date', value)} options={dateOptions} />
+        <Button icon={<ReloadOutlined />} onClick={() => { setFilters(initialFilters); setPage(0); }}>
           Đặt lại
         </Button>
       </section>
 
       <section className={styles.timelineCard}>
-        {filteredItems.length ? (
-          <div className={styles.timeline}>
-            {filteredItems.map((item) => (
-              <HistoryItem item={item} key={`${item.action}-${item.time}`} />
-            ))}
-          </div>
+        {historyQuery.isLoading ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : items.length ? (
+          <>
+            <div className={styles.timeline}>
+              {items.map((item) => (
+                <HistoryItem item={item} key={item.id} />
+              ))}
+            </div>
+            <Pagination
+              current={page + 1}
+              pageSize={size}
+              total={historyQuery.data?.totalElements || 0}
+              showSizeChanger
+              onChange={(nextPage, nextSize) => {
+                setPage(nextPage - 1);
+                setSize(nextSize);
+              }}
+            />
+          </>
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Không có thao tác phù hợp với bộ lọc" />
         )}

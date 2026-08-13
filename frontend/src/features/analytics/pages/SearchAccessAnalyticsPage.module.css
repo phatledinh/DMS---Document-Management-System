@@ -225,6 +225,14 @@
   white-space: nowrap;
 }
 
+.emptyState {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  color: #5f6368;
+  text-align: center;
+}
+
 .pdfIcon {
   color: #ba1a1a;
 }

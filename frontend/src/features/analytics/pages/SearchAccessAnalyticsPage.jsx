@@ -9,109 +9,60 @@ import {
   SwapOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons';
-import { Card, Col, Row, Select, Space, Table, Tabs, Typography } from 'antd';
+import { Alert, Card, Col, Row, Select, Space, Table, Tabs, Typography } from 'antd';
+import { useMemo, useState } from 'react';
+import { getApiErrorMessage } from '../../../utils/response.js';
+import { useSearchAccessAnalytics } from '../hooks/useSearchAccessAnalytics.js';
 import styles from './SearchAccessAnalyticsPage.module.css';
 
-const trendData = [
-  { label: '1', searches: 300, accesses: 200 },
-  { label: '4', searches: 450, accesses: 350 },
-  { label: '7', searches: 400, accesses: 300 },
-  { label: '10', searches: 600, accesses: 500 },
-  { label: '13', searches: 550, accesses: 450 },
-  { label: '16', searches: 800, accesses: 700 },
-  { label: '19', searches: 700, accesses: 600 },
-  { label: '22', searches: 900, accesses: 800 },
-  { label: '25', searches: 850, accesses: 750 },
-  { label: '28', searches: 1100, accesses: 900 },
-  { label: '30', searches: 1050, accesses: 850 },
-];
+const rangeOptions = {
+  today: 1,
+  '7d': 7,
+  '30d': 30,
+};
 
-const keywordData = [
-  { keyword: 'Q3 Report', value: 1245 },
-  { keyword: 'Handbook', value: 982 },
-  { keyword: 'Marketing', value: 876 },
-  { keyword: 'Contracts', value: 654 },
-  { keyword: 'Security', value: 432 },
-];
+function getDateRange(range) {
+  const days = rangeOptions[range];
+  if (!days) return {};
+  const dateTo = new Date();
+  const dateFrom = new Date(dateTo);
+  dateFrom.setDate(dateFrom.getDate() - (days - 1));
+  dateFrom.setHours(0, 0, 0, 0);
+  return {
+    dateFrom: dateFrom.toISOString(),
+    dateTo: dateTo.toISOString(),
+  };
+}
 
-const metrics = [
-  {
-    title: 'Total Searches',
-    value: '12,450',
-    change: '+8.2% vs last month',
-    tone: 'success',
-    icon: <SearchOutlined />,
-  },
-  {
-    title: 'Avg. Search Time',
-    value: '1.2s',
-    change: '-0.3s vs last month',
-    tone: 'success',
-    icon: <ClockCircleOutlined />,
-  },
-  {
-    title: 'Total Previews',
-    value: '45,892',
-    change: '0% vs last month',
-    tone: 'warning',
-    icon: <EyeOutlined />,
-  },
-  {
-    title: 'Total Downloads',
-    value: '8,304',
-    change: '+12.5% vs last month',
-    tone: 'success',
-    icon: <DownloadOutlined />,
-  },
-];
+function formatNumber(value) {
+  return new Intl.NumberFormat('en-US').format(value || 0);
+}
 
-const keywords = [
-  { keyword: 'Q3 Financial Report', count: '1,245', avgResults: '4.2', avgTime: '0.8s' },
-  { keyword: 'Employee Handbook', count: '982', avgResults: '1.0', avgTime: '0.5s' },
-  { keyword: 'Marketing Assets 2024', count: '876', avgResults: '12.5', avgTime: '1.2s' },
-  { keyword: 'Vendor Contracts', count: '654', avgResults: '8.1', avgTime: '1.5s' },
-  { keyword: 'Security Policy', count: '432', avgResults: '2.4', avgTime: '0.6s' },
-];
+function formatDuration(milliseconds) {
+  if (!milliseconds) return '0s';
+  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  return `${(milliseconds / 1000).toFixed(1)}s`;
+}
 
-const documents = [
-  {
-    title: 'Q3_2024_Financial_Summary.pdf',
-    previews: '3,450',
-    downloads: '1,205',
-    lastAccess: '2 mins ago',
-    type: 'pdf',
-  },
-  {
-    title: 'Employee_Handbook_v2.docx',
-    previews: '2,890',
-    downloads: '450',
-    lastAccess: '15 mins ago',
-    type: 'doc',
-  },
-  {
-    title: 'Marketing_Budget_2025.xlsx',
-    previews: '1,750',
-    downloads: '890',
-    lastAccess: '1 hour ago',
-    type: 'sheet',
-  },
-  {
-    title: 'Acme_Corp_MSA_Signed.pdf',
-    previews: '1,200',
-    downloads: '1,150',
-    lastAccess: '3 hours ago',
-    type: 'pdf',
-  },
-  {
-    title: 'IT_Security_Guidelines.docx',
-    previews: '980',
-    downloads: '210',
-    lastAccess: 'Yesterday',
-    type: 'doc',
-  },
-];
+function formatDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+}
+
+function getDocumentType(title) {
+  const extension = title?.split('.').pop()?.toLowerCase();
+  if (extension === 'pdf') return 'pdf';
+  if (['xls', 'xlsx', 'csv'].includes(extension)) return 'sheet';
+  return 'doc';
+}
 
 function createLinePath(points, key, width, height, padding, maxValue) {
+  if (points.length === 1) {
+    const x = width / 2;
+    const y = height - padding - (points[0][key] / maxValue) * (height - padding * 2);
+    return `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+
   return points
     .map((point, index) => {
       const x = padding + (index * (width - padding * 2)) / (points.length - 1);
@@ -121,33 +72,37 @@ function createLinePath(points, key, width, height, padding, maxValue) {
     .join(' ');
 }
 
-function TrendChart() {
+function TrendChart({ data }) {
   const width = 720;
   const height = 300;
   const padding = 36;
-  const maxValue = 1200;
-  const searchesPath = createLinePath(trendData, 'searches', width, height, padding, maxValue);
-  const accessesPath = createLinePath(trendData, 'accesses', width, height, padding, maxValue);
-  const areaPath = `${searchesPath} L ${width - padding} ${height - padding} L ${padding} ${height - padding} Z`;
+  const maxValue = Math.max(1, ...data.flatMap((point) => [point.searches, point.accesses]));
+  const searchesPath = createLinePath(data, 'searches', width, height, padding, maxValue);
+  const accessesPath = createLinePath(data, 'accesses', width, height, padding, maxValue);
+  const areaPath = data.length > 1 ? `${searchesPath} L ${width - padding} ${height - padding} L ${padding} ${height - padding} Z` : '';
+
+  if (!data.length) {
+    return <div className={styles.emptyState}>Chưa có dữ liệu xu hướng trong khoảng thời gian này.</div>;
+  }
 
   return (
     <div className={styles.chartFrame}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Xu hướng tìm kiếm và truy cập trong 30 ngày">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Xu hướng tìm kiếm và truy cập trong khoảng thời gian đã chọn">
         <defs>
           <linearGradient id="searchArea" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#005bbf" stopOpacity="0.18" />
             <stop offset="100%" stopColor="#005bbf" stopOpacity="0.02" />
           </linearGradient>
         </defs>
-        {[0, 300, 600, 900, 1200].map((tick) => {
-          const y = height - padding - (tick / maxValue) * (height - padding * 2);
-          return <line key={tick} x1={padding} x2={width - padding} y1={y} y2={y} className={styles.gridLine} />;
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+          const y = height - padding - ratio * (height - padding * 2);
+          return <line key={ratio} x1={padding} x2={width - padding} y1={y} y2={y} className={styles.gridLine} />;
         })}
-        <path d={areaPath} fill="url(#searchArea)" />
+        {areaPath && <path d={areaPath} fill="url(#searchArea)" />}
         <path d={searchesPath} className={styles.searchLine} />
         <path d={accessesPath} className={styles.accessLine} />
-        {trendData.map((point, index) => {
-          const x = padding + (index * (width - padding * 2)) / (trendData.length - 1);
+        {data.map((point, index) => {
+          const x = data.length === 1 ? width / 2 : padding + (index * (width - padding * 2)) / (data.length - 1);
           return (
             <text key={point.label} x={x} y={height - 8} textAnchor="middle" className={styles.axisText}>
               {point.label}
@@ -163,16 +118,20 @@ function TrendChart() {
   );
 }
 
-function KeywordChart() {
-  const maxValue = Math.max(...keywordData.map((item) => item.value));
+function KeywordChart({ data }) {
+  if (!data.length) {
+    return <div className={styles.emptyState}>Chưa có dữ liệu từ khóa.</div>;
+  }
+
+  const maxValue = Math.max(...data.map((item) => item.value));
 
   return (
     <div className={styles.barChart} role="img" aria-label="Top từ khóa tìm kiếm phổ biến">
-      {keywordData.map((item) => (
-        <div className={styles.barItem} key={item.keyword}>
+      {data.map((item) => (
+        <div className={styles.barItem} key={item.keyword} title={`${item.keyword}: ${formatNumber(item.value)} lượt tìm kiếm`}>
           <div className={styles.barTrack}>
             <div className={styles.bar} style={{ height: `${(item.value / maxValue) * 100}%` }}>
-              <span>{item.value}</span>
+              <span>{formatNumber(item.value)}</span>
             </div>
           </div>
           <span className={styles.barLabel}>{item.keyword}</span>
@@ -213,6 +172,71 @@ const documentColumns = [
 ];
 
 export default function SearchAccessAnalyticsPage() {
+  const [range, setRange] = useState('30d');
+  const dateRange = useMemo(() => getDateRange(range), [range]);
+  const analytics = useSearchAccessAnalytics({ ...dateRange, granularity: 'day', limit: 5 });
+  const systemAccess = analytics.systemAccessQuery.data;
+  const topKeywords = useMemo(() => analytics.topSearchKeywordsQuery.data || [], [analytics.topSearchKeywordsQuery.data]);
+  const topDocuments = useMemo(() => analytics.topDocumentsQuery.data || [], [analytics.topDocumentsQuery.data]);
+
+  const trendData = useMemo(() => (systemAccess?.accessTrend || []).map((point) => ({
+    label: point.date?.slice(5) || point.date,
+    searches: point.searches || 0,
+    accesses: (point.views || 0) + (point.previews || 0) + (point.downloads || 0),
+  })), [systemAccess?.accessTrend]);
+
+  const keywordData = useMemo(() => topKeywords.map((item) => ({
+    keyword: item.keyword,
+    value: item.searchCount || 0,
+  })), [topKeywords]);
+
+  const metrics = useMemo(() => [
+    {
+      title: 'Total Searches',
+      value: formatNumber(systemAccess?.searchCount),
+      change: 'Trong khoảng đã chọn',
+      tone: 'success',
+      icon: <SearchOutlined />,
+    },
+    {
+      title: 'Avg. Search Time',
+      value: formatDuration(topKeywords.reduce((sum, item) => sum + (item.averageLatencyMs || 0), 0) / (topKeywords.length || 1)),
+      change: 'Trung bình top keywords',
+      tone: 'success',
+      icon: <ClockCircleOutlined />,
+    },
+    {
+      title: 'Total Previews',
+      value: formatNumber(systemAccess?.previewCount),
+      change: 'Trong khoảng đã chọn',
+      tone: 'warning',
+      icon: <EyeOutlined />,
+    },
+    {
+      title: 'Total Downloads',
+      value: formatNumber(systemAccess?.downloadCount),
+      change: 'Trong khoảng đã chọn',
+      tone: 'success',
+      icon: <DownloadOutlined />,
+    },
+  ], [systemAccess, topKeywords]);
+
+  const keywords = useMemo(() => topKeywords.map((item) => ({
+    keyword: item.keyword,
+    count: formatNumber(item.searchCount),
+    avgResults: (item.averageResultCount || 0).toFixed(1),
+    avgTime: formatDuration(item.averageLatencyMs),
+  })), [topKeywords]);
+
+  const documents = useMemo(() => topDocuments.map((item) => ({
+    id: item.id,
+    title: item.title,
+    previews: formatNumber(item.viewCount),
+    downloads: formatNumber(item.downloadCount),
+    lastAccess: formatDate(item.lastAccessedAt),
+    type: getDocumentType(item.title),
+  })), [topDocuments]);
+
   return (
     <main className={styles.page}>
       <section className={styles.headerRow}>
@@ -226,31 +250,29 @@ export default function SearchAccessAnalyticsPage() {
         </div>
         <Space wrap>
           <Select
-            defaultValue="all"
-            options={[
-              { value: 'all', label: 'All Departments' },
-              { value: 'finance', label: 'Finance' },
-              { value: 'hr', label: 'HR' },
-              { value: 'engineering', label: 'Engineering' },
-            ]}
+            value="all"
+            disabled
+            options={[{ value: 'all', label: 'All Departments' }]}
           />
           <Tabs
             className={styles.rangeTabs}
-            defaultActiveKey="30d"
+            activeKey={range}
+            onChange={(key) => setRange(key)}
             items={[
               { key: 'today', label: 'Today' },
               { key: '7d', label: '7D' },
               { key: '30d', label: '30D' },
-              { key: 'custom', label: 'Custom' },
             ]}
           />
         </Space>
       </section>
 
+      {analytics.isError && <Alert type="error" showIcon message={getApiErrorMessage(analytics.error)} />}
+
       <Row gutter={[16, 16]} className={styles.metricsGrid}>
         {metrics.map((metric) => (
           <Col xs={24} sm={12} lg={6} key={metric.title}>
-            <Card className={styles.metricCard}>
+            <Card className={styles.metricCard} loading={analytics.systemAccessQuery.isLoading}>
               <Space className={styles.metricLabel}>{metric.icon}<span>{metric.title}</span></Space>
               <div className={styles.metricValue}>{metric.value}</div>
               <Space className={metric.tone === 'success' ? styles.successText : styles.warningText}>
@@ -264,24 +286,25 @@ export default function SearchAccessAnalyticsPage() {
 
       <Row gutter={[24, 24]} className={styles.chartsGrid}>
         <Col xs={24} lg={16}>
-          <Card className={styles.panel} title="Xu hướng tìm kiếm & truy cập">
-            <TrendChart />
+          <Card className={styles.panel} title="Xu hướng tìm kiếm & truy cập" loading={analytics.systemAccessQuery.isLoading}>
+            <TrendChart data={trendData} />
           </Card>
         </Col>
         <Col xs={24} lg={8}>
-          <Card className={styles.panel} title="Top từ khóa tìm kiếm phổ biến">
-            <KeywordChart />
+          <Card className={styles.panel} title="Top từ khóa tìm kiếm phổ biến" loading={analytics.topSearchKeywordsQuery.isLoading}>
+            <KeywordChart data={keywordData} />
           </Card>
         </Col>
       </Row>
 
       <Row gutter={[24, 24]}>
         <Col xs={24} xl={12}>
-          <Card className={styles.panel} title="Từ khóa tìm kiếm hàng đầu" extra={<a>View All</a>}>
+          <Card className={styles.panel} title="Từ khóa tìm kiếm hàng đầu" extra={<span>Top 5</span>}>
             <Table
               rowKey="keyword"
               columns={keywordColumns}
               dataSource={keywords}
+              loading={analytics.topSearchKeywordsQuery.isLoading || analytics.topSearchKeywordsQuery.isFetching}
               pagination={false}
               size="middle"
               scroll={{ x: true }}
@@ -289,11 +312,12 @@ export default function SearchAccessAnalyticsPage() {
           </Card>
         </Col>
         <Col xs={24} xl={12}>
-          <Card className={styles.panel} title="Tài liệu được truy cập nhiều nhất" extra={<a>View All</a>}>
+          <Card className={styles.panel} title="Tài liệu được truy cập nhiều nhất" extra={<span>Top 5</span>}>
             <Table
-              rowKey="title"
+              rowKey="id"
               columns={documentColumns}
               dataSource={documents}
+              loading={analytics.topDocumentsQuery.isLoading || analytics.topDocumentsQuery.isFetching}
               pagination={false}
               size="middle"
               scroll={{ x: true }}
