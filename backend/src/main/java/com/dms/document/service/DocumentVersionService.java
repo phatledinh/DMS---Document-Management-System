@@ -377,8 +377,17 @@ public class DocumentVersionService {
         log.setAction(action);
         log.setAccessGranted(granted);
         log.setDenialReason(denialReason);
-        log.setIpAddress(request.getRemoteAddr());
-        log.setUserAgent(request.getHeader("User-Agent"));
+        if (request != null) {
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                log.setIpAddress(forwardedFor.split(",")[0].trim());
+            } else {
+                log.setIpAddress(request.getRemoteAddr());
+            }
+            log.setUserAgent(request.getHeader("User-Agent"));
+        } else {
+            populateRequestInfo(log);
+        }
         accessLogRepository.save(log);
     }
 
@@ -388,7 +397,21 @@ public class DocumentVersionService {
         log.setDocumentId(document.getId());
         log.setAction(action);
         log.setAccessGranted(true);
+        populateRequestInfo(log);
         accessLogRepository.save(log);
+    }
+
+    private void populateRequestInfo(AccessLog log) {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() instanceof org.springframework.web.context.request.ServletRequestAttributes attributes) {
+            HttpServletRequest request = attributes.getRequest();
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                log.setIpAddress(forwardedFor.split(",")[0].trim());
+            } else {
+                log.setIpAddress(request.getRemoteAddr());
+            }
+            log.setUserAgent(request.getHeader("User-Agent"));
+        }
     }
 
     private Document findDocument(Long documentId) {

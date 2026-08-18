@@ -44,11 +44,12 @@ public class AdminApprovalRepository {
 
     public ApprovalSummaryResponse summary() {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FILTER (WHERE status IN ('AWAITING_UPLOAD', 'PROCESSING')) AS pending,
+                SELECT count(*) FILTER (WHERE status = 'PENDING_APPROVAL') AS pending,
                        count(*) FILTER (WHERE status = 'INDEXED') AS approved,
                        count(*) FILTER (WHERE status IN ('EXTRACTION_FAILED', 'ARCHIVED', 'DELETED')) AS rejected
                 FROM documents
                 WHERE permanently_deleted_at IS NULL
+                  AND status NOT IN ('AWAITING_UPLOAD', 'PROCESSING')
                 """, new MapSqlParameterSource(), (rs, rowNum) -> new ApprovalSummaryResponse(
                 rs.getLong("pending"),
                 rs.getLong("approved"),
@@ -60,7 +61,7 @@ public class AdminApprovalRepository {
         return """
                 WITH approval_documents AS (
                     SELECT d.id, d.document_code, d.title,
-                           CASE WHEN d.status IN ('AWAITING_UPLOAD', 'PROCESSING') THEN 'PENDING'
+                           CASE WHEN d.status = 'PENDING_APPROVAL' THEN 'PENDING'
                                 WHEN d.status = 'INDEXED' THEN 'APPROVED'
                                 ELSE 'REJECTED' END AS approval_status,
                            d.status,
@@ -80,7 +81,8 @@ public class AdminApprovalRepository {
                     LEFT JOIN document_tags dt ON dt.document_id = d.id
                     LEFT JOIN tags t ON t.id = dt.tag_id
                     WHERE d.permanently_deleted_at IS NULL
-                      AND (:status IS NULL OR CASE WHEN d.status IN ('AWAITING_UPLOAD', 'PROCESSING') THEN 'PENDING'
+                      AND d.status NOT IN ('AWAITING_UPLOAD', 'PROCESSING')
+                      AND (:status IS NULL OR CASE WHEN d.status = 'PENDING_APPROVAL' THEN 'PENDING'
                                                    WHEN d.status = 'INDEXED' THEN 'APPROVED'
                                                    ELSE 'REJECTED' END = :status)
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%') OR lower(d.document_code) LIKE concat('%', lower(:keyword), '%') OR lower(u.name) LIKE concat('%', lower(:keyword), '%'))

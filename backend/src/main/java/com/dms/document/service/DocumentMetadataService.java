@@ -234,7 +234,8 @@ public class DocumentMetadataService {
                 document.getEffectiveDate(),
                 document.getExpiryDate(),
                 document.getCreatedAt(),
-                document.getUpdatedAt()
+                document.getUpdatedAt(),
+                java.util.List.of()
         );
     }
 

@@ -32,12 +32,14 @@ class DocumentPreviewConversionServiceTest {
     private DocumentVersionService versionService;
     @Mock
     private DocumentConverter documentConverter;
+    @Mock
+    private com.dms.identity.repository.UserRepository userRepository;
 
     private DocumentPreviewConversionService service;
 
     @BeforeEach
     void setUp() {
-        service = new DocumentPreviewConversionService(objectStorageService, documentRepository, versionRepository, versionService, documentConverter);
+        service = new DocumentPreviewConversionService(objectStorageService, documentRepository, versionRepository, versionService, documentConverter, userRepository);
     }
 
     @Test

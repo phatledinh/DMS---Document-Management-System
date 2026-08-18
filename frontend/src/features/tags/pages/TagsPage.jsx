@@ -7,6 +7,7 @@ import {
   SearchOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { Button, Form, Input, Modal } from 'antd';
 import { toast } from 'react-toastify';
 import { searchDocuments } from '../../../api/searchApi.js';
@@ -33,6 +34,7 @@ function formatDate(value) {
 }
 
 export default function TagsPage() {
+  const navigate = useNavigate();
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [tags, setTags] = useState([]);
@@ -254,7 +256,12 @@ export default function TagsPage() {
                       {isLoadingDocuments && <div className={styles.emptyState}>Đang tải tài liệu...</div>}
                       {!isLoadingDocuments && relatedDocuments.length === 0 && <div className={styles.emptyState}>Chưa có tài liệu liên quan</div>}
                       {!isLoadingDocuments && relatedDocuments.map((doc) => (
-                        <div className={styles.documentCard} key={doc.id}>
+                        <div
+                          className={styles.documentCard}
+                          key={doc.id}
+                          onClick={() => navigate(`/documents/${doc.slug || doc.id}`)}
+                          style={{ cursor: "pointer" }}
+                        >
                           <FileTextOutlined />
                           <div>
                             <strong>{doc.title || doc.fileName}</strong>

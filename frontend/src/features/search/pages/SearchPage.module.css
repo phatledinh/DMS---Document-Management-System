@@ -624,6 +624,25 @@
   gap: 4px;
 }
 
+.cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tagChip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--primary);
+  background-color: var(--primary-fixed);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
 .metaDot {
   font-size: 10px;
   line-height: 10px;

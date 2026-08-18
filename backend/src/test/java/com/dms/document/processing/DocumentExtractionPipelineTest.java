@@ -42,12 +42,14 @@ class DocumentExtractionPipelineTest {
     private DocumentProcessingPublisher publisher;
     @Mock
     private FileValidationService fileValidationService;
+    @Mock
+    private com.dms.identity.repository.UserRepository userRepository;
 
     private DocumentExtractionPipeline pipeline;
 
     @BeforeEach
     void setUp() {
-        pipeline = new DocumentExtractionPipeline(objectStorageService, textExtractionService, contentService, searchEngine, documentRepository, versionRepository, versionService, publisher, fileValidationService);
+        pipeline = new DocumentExtractionPipeline(objectStorageService, textExtractionService, contentService, searchEngine, documentRepository, versionRepository, versionService, publisher, fileValidationService, userRepository);
     }
 
     @Test

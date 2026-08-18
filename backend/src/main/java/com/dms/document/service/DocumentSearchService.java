@@ -132,7 +132,8 @@ public class DocumentSearchService {
                 row.effectiveDate(),
                 row.expiryDate(),
                 row.createdAt(),
-                row.updatedAt()
+                row.updatedAt(),
+                row.tags()
         );
         return new DocumentSearchResultResponse(
                 document,

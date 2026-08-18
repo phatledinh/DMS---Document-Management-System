@@ -87,6 +87,20 @@ public class DocumentMoveService {
         log.setDocumentId(document.getId());
         log.setAction(AccessLogAction.MOVE);
         log.setAccessGranted(true);
+        populateRequestInfo(log);
         accessLogRepository.save(log);
+    }
+
+    private void populateRequestInfo(AccessLog log) {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() instanceof org.springframework.web.context.request.ServletRequestAttributes attributes) {
+            jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                log.setIpAddress(forwardedFor.split(",")[0].trim());
+            } else {
+                log.setIpAddress(request.getRemoteAddr());
+            }
+            log.setUserAgent(request.getHeader("User-Agent"));
+        }
     }
 }

@@ -11,6 +11,7 @@ import com.dms.document.dto.PageResponse;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.service.DocumentLifecycleService;
 import com.dms.identity.entity.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,11 +29,18 @@ public class AdminApprovalService {
     private final AdminApprovalRepository approvalRepository;
     private final DocumentRepository documentRepository;
     private final AuditLogService auditLogService;
+    private final DocumentLifecycleService lifecycleService;
 
-    public AdminApprovalService(AdminApprovalRepository approvalRepository, DocumentRepository documentRepository, AuditLogService auditLogService) {
+    public AdminApprovalService(
+            AdminApprovalRepository approvalRepository,
+            DocumentRepository documentRepository,
+            AuditLogService auditLogService,
+            DocumentLifecycleService lifecycleService
+    ) {
         this.approvalRepository = approvalRepository;
         this.documentRepository = documentRepository;
         this.auditLogService = auditLogService;
+        this.lifecycleService = lifecycleService;
     }
 
     @Transactional(readOnly = true)
@@ -60,13 +68,9 @@ public class AdminApprovalService {
     public ApprovalDecisionResponse reject(Long documentId, String reason, User admin) {
         Document document = findDocument(documentId);
         DocumentStatus previous = document.getStatus();
-        document.setPreviousStatus(previous.name());
-        document.setStatus(DocumentStatus.ARCHIVED);
-        document.setArchivedAt(OffsetDateTime.now());
-        document.setUpdatedAt(OffsetDateTime.now());
-        Document saved = documentRepository.save(document);
-        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", saved.getId(), Map.of("status", previous.name()), Map.of("status", saved.getStatus().name(), "reason", reason == null ? "" : reason));
-        return new ApprovalDecisionResponse(saved.getId(), saved.getStatus().name());
+        lifecycleService.forcePurgeDocument(documentId, admin);
+        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", documentId, Map.of("status", previous.name()), Map.of("status", "PURGED", "reason", reason == null ? "" : reason));
+        return new ApprovalDecisionResponse(documentId, "PURGED");
     }
 
     private Document findDocument(Long documentId) {

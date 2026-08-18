@@ -169,7 +169,7 @@ public class DocumentSearchRepository {
                 SELECT id, slug, title, document_code, file_type, file_size, status, version_number,
                        view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                        effective_date, expiry_date, created_at, updated_at, relevance_score, match_count,
-                       title_highlight, description_highlight, content_highlight
+                       title_highlight, description_highlight, content_highlight, tag_text AS tags
                 FROM matched
                 ORDER BY %s
                 LIMIT :limit OFFSET :offset
@@ -208,7 +208,7 @@ public class DocumentSearchRepository {
         String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=60, MinWords=30, MaxFragments=3, FragmentDelimiter=\" ... \"')" : "NULL";
         return """
                 WITH %s visible AS (
-                    SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text%s
+                    SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text, si.tag_text%s
                     FROM documents d
                     JOIN document_search_index si ON si.document_id = d.id
                     %s
@@ -223,7 +223,8 @@ public class DocumentSearchRepository {
                            %s AS match_count,
                            %s AS title_highlight,
                            %s AS description_highlight,
-                           %s AS content_highlight
+                           %s AS content_highlight,
+                           tag_text
                     FROM visible d
                 )
                 """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
@@ -326,7 +327,8 @@ public class DocumentSearchRepository {
                 rs.getInt("match_count"),
                 rs.getString("title_highlight"),
                 rs.getString("description_highlight"),
-                rs.getString("content_highlight")
+                rs.getString("content_highlight"),
+                rs.getString("tags") != null ? java.util.Arrays.asList(rs.getString("tags").split(",")) : java.util.List.of()
         );
     }
 

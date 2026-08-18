@@ -13,7 +13,8 @@ public record CategoryResponse(
         int sortOrder,
         boolean isActive,
         OffsetDateTime createdAt,
-        List<DepartmentPermissionResponse> departmentPermissions
+        List<DepartmentPermissionResponse> departmentPermissions,
+        long documentCount
 ) {
     public record DepartmentPermissionResponse(
             Long departmentId,

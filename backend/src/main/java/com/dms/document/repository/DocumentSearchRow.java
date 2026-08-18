@@ -26,6 +26,7 @@ public record DocumentSearchRow(
         int matchCount,
         String titleHighlight,
         String descriptionHighlight,
-        String contentHighlight
+        String contentHighlight,
+        java.util.List<String> tags
 ) {
 }

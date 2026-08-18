@@ -9,12 +9,13 @@ import java.util.List;
 @Component
 public class CategoryMapper {
     public CategoryResponse toResponse(Category category) {
-        return toResponse(category, List.of());
+        return toResponse(category, List.of(), 0L);
     }
 
     public CategoryResponse toResponse(
             Category category,
-            List<CategoryResponse.DepartmentPermissionResponse> departmentPermissions
+            List<CategoryResponse.DepartmentPermissionResponse> departmentPermissions,
+            long documentCount
     ) {
         Long parentId = category.getParent() == null ? null : category.getParent().getId();
         return new CategoryResponse(
@@ -27,7 +28,8 @@ public class CategoryMapper {
                 category.getSortOrder(),
                 category.isActive(),
                 category.getCreatedAt(),
-                departmentPermissions
+                departmentPermissions,
+                documentCount
         );
     }
 }

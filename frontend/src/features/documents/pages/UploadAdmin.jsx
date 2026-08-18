@@ -291,18 +291,20 @@ export default function UploadAdmin() {
                 onItemChange: updateItem,
             });
             const succeeded = result.complete?.succeeded || 0;
-            const failed =
+            const uploadFailed =
                 (result.init?.failed || 0) +
                 (result.uploadFailures?.length || 0) +
                 (result.complete?.failed || 0);
             const processed = result.processingResults?.filter((item) => item.document?.status === "INDEXED").length || 0;
             const processingFailed = result.processingResults?.filter((item) => item.document?.status === "EXTRACTION_FAILED").length || 0;
             const stillProcessing = Math.max(0, succeeded - processed - processingFailed);
-            if (failed || processingFailed)
-                toast.warning(
-                    `Batch hoàn tất một phần: ${processed} sẵn sàng, ${failed + processingFailed} lỗi.`,
-                );
-            else if (succeeded === items.length && stillProcessing === 0)
+            if (uploadFailed || processingFailed) {
+                const parts = [`${processed} sẵn sàng`];
+                if (uploadFailed) parts.push(`${uploadFailed} lỗi upload/kiểm tra định dạng`);
+                if (processingFailed) parts.push(`${processingFailed} lỗi xử lý/OCR/preview`);
+                if (stillProcessing) parts.push(`${stillProcessing} đang xử lý`);
+                toast.warning(`Batch hoàn tất một phần: ${parts.join(", ")}.`);
+            } else if (succeeded === items.length && stillProcessing === 0)
                 toast.success("Upload và xử lý hoàn tất, tài liệu đã sẵn sàng.");
             else if (succeeded > 0)
                 toast.info(

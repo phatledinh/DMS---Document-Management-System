@@ -14,7 +14,7 @@ import styles from './SearchPage.module.css';
 function normalizeSearchResult(result) {
   const doc = normalizeDocument(result?.document || result);
   if (!doc) return null;
-  return { ...doc, highlight: result?.highlight, relevanceScore: result?.relevanceScore, matchCount: Number(result?.matchCount) || 0 };
+  return { ...doc, highlight: result?.highlight, relevanceScore: result?.relevanceScore, matchCount: Number(result?.matchCount) || 0, tags: result?.document?.tags || result?.tags || [] };
 }
 
 function cleanSnippet(raw) {
@@ -185,7 +185,7 @@ export default function SearchPage() {
     fileType: searchParams.get('fileType') || undefined,
     categoryId: searchParams.get('categoryId') || undefined,
     departmentId: searchParams.get('departmentId') || undefined,
-    tagId: searchParams.get('tagId') || undefined,
+    tagIds: searchParams.get('tagId') || undefined,
     dateFrom: searchParams.get('dateFrom') || undefined,
     dateTo: searchParams.get('dateTo') || undefined,
   }), [page, searchParams]);
@@ -360,6 +360,11 @@ export default function SearchPage() {
                             <span className={styles.metaItem}>{r.departmentName}</span>
                           </>}
                         </div>
+                        {r.tags && r.tags.length > 0 && (
+                          <div className={styles.cardTags}>
+                            {r.tags.map(tag => <span key={tag} className={styles.tagChip}><MI name="tag" size={12} /> {tag}</span>)}
+                          </div>
+                        )}
                       </div>
                     </article>
                   );

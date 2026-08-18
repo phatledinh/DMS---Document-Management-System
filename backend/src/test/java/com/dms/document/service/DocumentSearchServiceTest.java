@@ -114,7 +114,8 @@ class DocumentSearchServiceTest {
                 4,
                 "<em>Quy chế</em>",
                 null,
-                "<em>Quy chế</em><script>alert(1)</script>"
+                "<em>Quy chế</em><script>alert(1)</script>",
+                java.util.List.of()
         );
     }
 

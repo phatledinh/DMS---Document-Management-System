@@ -6,6 +6,8 @@ import com.dms.document.entity.DocumentVersion;
 import com.dms.document.repository.DocumentRepository;
 import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.document.service.DocumentVersionService;
+import com.dms.identity.entity.Role;
+import com.dms.identity.repository.UserRepository;
 import com.dms.storage.ObjectStorageService;
 import org.jodconverter.core.DocumentConverter;
 import org.jodconverter.core.office.OfficeException;
@@ -32,19 +34,22 @@ public class DocumentPreviewConversionService {
     private final DocumentVersionRepository versionRepository;
     private final DocumentVersionService versionService;
     private final DocumentConverter documentConverter;
+    private final UserRepository userRepository;
 
     public DocumentPreviewConversionService(
             ObjectStorageService objectStorageService,
             DocumentRepository documentRepository,
             DocumentVersionRepository versionRepository,
             DocumentVersionService versionService,
-            DocumentConverter documentConverter
+            DocumentConverter documentConverter,
+            UserRepository userRepository
     ) {
         this.objectStorageService = objectStorageService;
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
         this.versionService = versionService;
         this.documentConverter = documentConverter;
+        this.userRepository = userRepository;
     }
 
     public boolean requiresConversion(Document document) {
@@ -64,7 +69,10 @@ public class DocumentPreviewConversionService {
         String existingPreviewObjectKey = version == null ? document.getPreviewObjectKey() : version.getPreviewObjectKey();
         if (existingPreviewObjectKey != null && !existingPreviewObjectKey.isBlank() && objectStorageService.objectExists(existingPreviewObjectKey)) {
             if (version == null) {
-                document.setStatus(DocumentStatus.INDEXED);
+                boolean isAdmin = userRepository.findById(document.getUploadedBy())
+                        .map(u -> u.getRole() == Role.ADMIN)
+                        .orElse(false);
+                document.setStatus(isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL);
                 documentRepository.save(document);
             } else {
                 versionService.publishVersionAsCurrent(document, version, existingPreviewObjectKey);
@@ -84,7 +92,10 @@ public class DocumentPreviewConversionService {
             objectStorageService.putObject(previewObjectKey, outputFile, PDF_CONTENT_TYPE);
             if (version == null) {
                 document.setPreviewObjectKey(previewObjectKey);
-                document.setStatus(DocumentStatus.INDEXED);
+                boolean isAdmin = userRepository.findById(document.getUploadedBy())
+                        .map(u -> u.getRole() == Role.ADMIN)
+                        .orElse(false);
+                document.setStatus(isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL);
                 documentRepository.save(document);
             } else {
                 versionService.publishVersionAsCurrent(document, version, previewObjectKey);

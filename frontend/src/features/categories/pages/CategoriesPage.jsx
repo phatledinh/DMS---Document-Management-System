@@ -11,6 +11,7 @@ import {
     SearchOutlined,
     UpOutlined,
 } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
 import { Button, Checkbox, Form, Input, Modal, Select, Switch, TreeSelect } from "antd";
 import { toast } from "react-toastify";
 import {
@@ -185,7 +186,7 @@ function TreeNode({
                 <span className={styles.categoryContent}>
                     <span className={styles.categoryName}>{item.name}</span>
                     <span className={styles.categoryMeta}>
-                        {item.slug} · {item.children?.length || 0} danh mục con
+                        {item.slug} · {item.children?.length || 0} danh mục con · {item.documentCount || 0} tài liệu
                     </span>
                 </span>
                 <span className={styles.cardActions}>
@@ -268,6 +269,7 @@ function TreeNode({
 }
 
 export default function CategoriesPage() {
+    const navigate = useNavigate();
     const [form] = Form.useForm();
     const [editForm] = Form.useForm();
     const [categories, setCategories] = useState([]);
@@ -789,7 +791,7 @@ export default function CategoriesPage() {
                                                         {item.slug} ·{" "}
                                                         {item.children
                                                             ?.length || 0}{" "}
-                                                        danh mục con
+                                                        danh mục con · {item.documentCount || 0} tài liệu
                                                     </span>
                                                 </span>
                                                 <span
@@ -954,6 +956,8 @@ export default function CategoriesPage() {
                                                                 styles.documentCard
                                                             }
                                                             key={doc.id}
+                                                            onClick={() => navigate(`/documents/${doc.slug || doc.id}`)}
+                                                            style={{ cursor: "pointer" }}
                                                         >
                                                             <FileTextOutlined />
                                                             <div>

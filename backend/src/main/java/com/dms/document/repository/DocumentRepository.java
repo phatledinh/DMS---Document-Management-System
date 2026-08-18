@@ -19,4 +19,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long>, JpaSp
     Page<Document> findByStatus(DocumentStatus status, Pageable pageable);
 
     List<Document> findByStatusAndPurgeAfterLessThanEqual(DocumentStatus status, OffsetDateTime purgeAfter);
+
+    @org.springframework.data.jpa.repository.Query("SELECT d.categoryId, COUNT(d) FROM Document d WHERE d.categoryId IN :categoryIds AND d.deletedAt IS NULL GROUP BY d.categoryId")
+    List<Object[]> countDocumentsByCategoryIds(@org.springframework.data.repository.query.Param("categoryIds") List<Long> categoryIds);
 }

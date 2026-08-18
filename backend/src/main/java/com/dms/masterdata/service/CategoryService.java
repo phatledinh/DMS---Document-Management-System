@@ -4,6 +4,7 @@ import com.dms.audit.service.AuditLogService;
 import com.dms.category.entity.CategoryDepartmentPermission;
 import com.dms.category.entity.CategoryPermission;
 import com.dms.category.repository.CategoryDepartmentPermissionRepository;
+import com.dms.document.repository.DocumentRepository;
 import com.dms.common.exception.AppException;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.common.security.CurrentUserProvider;
@@ -37,6 +38,7 @@ public class CategoryService {
     private final CategoryDepartmentPermissionRepository departmentPermissionRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AuditLogService auditLogService;
+    private final DocumentRepository documentRepository;
 
     public CategoryService(
             CategoryRepository categoryRepository,
@@ -44,7 +46,8 @@ public class CategoryService {
             DepartmentRepository departmentRepository,
             CategoryDepartmentPermissionRepository departmentPermissionRepository,
             CurrentUserProvider currentUserProvider,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            DocumentRepository documentRepository
     ) {
         this.categoryRepository = categoryRepository;
         this.categoryMapper = categoryMapper;
@@ -52,6 +55,7 @@ public class CategoryService {
         this.departmentPermissionRepository = departmentPermissionRepository;
         this.currentUserProvider = currentUserProvider;
         this.auditLogService = auditLogService;
+        this.documentRepository = documentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -61,10 +65,12 @@ public class CategoryService {
                 : categoryRepository.findByDeletedAtIsNullOrderBySortOrderAscNameAsc();
         List<Long> categoryIds = categories.stream().map(Category::getId).toList();
         Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> departmentPermissions = departmentPermissionsByCategory(categoryIds);
+        Map<Long, Long> documentCounts = getDocumentCountsByCategoryIds(categoryIds);
         return categories.stream()
                 .map(category -> categoryMapper.toResponse(
                         category,
-                        departmentPermissions.getOrDefault(category.getId(), List.of())
+                        departmentPermissions.getOrDefault(category.getId(), List.of()),
+                        documentCounts.getOrDefault(category.getId(), 0L)
                 ))
                 .toList();
     }
@@ -191,7 +197,17 @@ public class CategoryService {
 
     private CategoryResponse response(Category category) {
         Long categoryId = category.getId();
-        return categoryMapper.toResponse(category, departmentPermissionsForCategory(categoryId));
+        long documentCount = getDocumentCountsByCategoryIds(List.of(categoryId)).getOrDefault(categoryId, 0L);
+        return categoryMapper.toResponse(category, departmentPermissionsForCategory(categoryId), documentCount);
+    }
+
+    private Map<Long, Long> getDocumentCountsByCategoryIds(List<Long> categoryIds) {
+        if (categoryIds.isEmpty()) return Map.of();
+        return documentRepository.countDocumentsByCategoryIds(categoryIds).stream()
+                .collect(Collectors.toMap(
+                        row -> ((Number) row[0]).longValue(),
+                        row -> ((Number) row[1]).longValue()
+                ));
     }
 
     private List<CategoryResponse.DepartmentPermissionResponse> departmentPermissionsForCategory(Long categoryId) {

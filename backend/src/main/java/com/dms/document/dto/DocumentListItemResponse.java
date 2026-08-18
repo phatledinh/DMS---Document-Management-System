@@ -24,6 +24,7 @@ public record DocumentListItemResponse(
         LocalDate effectiveDate,
         LocalDate expiryDate,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        java.util.List<String> tags
 ) {
 }

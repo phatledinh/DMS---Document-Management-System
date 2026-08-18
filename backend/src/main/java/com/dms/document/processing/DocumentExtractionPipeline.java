@@ -6,6 +6,8 @@ import com.dms.document.entity.DocumentVersion;
 import com.dms.document.repository.DocumentRepository;
 import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.document.service.DocumentVersionService;
+import com.dms.identity.entity.Role;
+import com.dms.identity.repository.UserRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.ObjectStorageService;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ public class DocumentExtractionPipeline {
     private final DocumentVersionService versionService;
     private final DocumentProcessingPublisher publisher;
     private final FileValidationService fileValidationService;
+    private final UserRepository userRepository;
 
     public DocumentExtractionPipeline(
             ObjectStorageService objectStorageService,
@@ -31,7 +34,8 @@ public class DocumentExtractionPipeline {
             DocumentVersionRepository versionRepository,
             DocumentVersionService versionService,
             DocumentProcessingPublisher publisher,
-            FileValidationService fileValidationService
+            FileValidationService fileValidationService,
+            UserRepository userRepository
     ) {
         this.objectStorageService = objectStorageService;
         this.textExtractionService = textExtractionService;
@@ -42,6 +46,7 @@ public class DocumentExtractionPipeline {
         this.versionService = versionService;
         this.publisher = publisher;
         this.fileValidationService = fileValidationService;
+        this.userRepository = userRepository;
     }
 
     public void process(Document document, DocumentProcessingMessage message) {
@@ -55,7 +60,10 @@ public class DocumentExtractionPipeline {
                 contentService.saveSuccess(document.getId(), extractedText, message.attempt());
                 searchEngine.refreshIndex(document, extractedText.text());
                 if (!requiresPreviewConversion) {
-                    document.setStatus(DocumentStatus.INDEXED);
+                    boolean isAdmin = userRepository.findById(document.getUploadedBy())
+                            .map(u -> u.getRole() == Role.ADMIN)
+                            .orElse(false);
+                    document.setStatus(isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL);
                 }
                 documentRepository.save(document);
                 if (requiresPreviewConversion) {

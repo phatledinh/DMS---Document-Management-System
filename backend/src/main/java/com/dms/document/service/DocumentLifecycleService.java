@@ -258,6 +258,18 @@ public class DocumentLifecycleService {
         return new BatchDocumentLifecycleResponse(successes.size(), failures.size(), successes, failures);
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public DocumentLifecycleResponse forcePurgeDocument(Long documentId, User admin) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND));
+        if (document.getPermanentlyDeletedAt() != null) {
+            return new DocumentLifecycleResponse(documentId, "PURGED", null, null, null, null);
+        }
+        purgeDocument(document);
+        logAction(admin, document, AccessLogAction.PURGE);
+        return response(documentRepository.save(document), null);
+    }
+
     private void purgeDocument(Document document) {
         deleteObjectIfPresent(document.getStoragePath());
         deleteObjectIfPresent(document.getPreviewObjectKey());
@@ -423,6 +435,7 @@ public class DocumentLifecycleService {
         log.setDocumentId(document.getId());
         log.setAction(action);
         log.setAccessGranted(true);
+        populateRequestInfo(log);
         accessLogRepository.save(log);
     }
 
@@ -435,6 +448,20 @@ public class DocumentLifecycleService {
         log.setDocumentId(document.getId());
         log.setAction(action);
         log.setAccessGranted(true);
+        populateRequestInfo(log);
         accessLogRepository.save(log);
+    }
+
+    private void populateRequestInfo(AccessLog log) {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() instanceof org.springframework.web.context.request.ServletRequestAttributes attributes) {
+            jakarta.servlet.http.HttpServletRequest request = attributes.getRequest();
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                log.setIpAddress(forwardedFor.split(",")[0].trim());
+            } else {
+                log.setIpAddress(request.getRemoteAddr());
+            }
+            log.setUserAgent(request.getHeader("User-Agent"));
+        }
     }
 }
