@@ -141,19 +141,24 @@ Done criteria:
 
 ## 4. Quyền truy cập tài liệu/danh mục
 
-DMS dùng quyền truy cập theo từng tài nguyên, không dùng RBAC để quyết định ai được xem tài liệu. Role nếu có chỉ phục vụ thao tác quản trị hệ thống; quyền xem trả lời câu hỏi user có nằm trong audience của tài liệu hoặc danh mục này không.
+DMS phân quyền theo danh mục, không dùng RBAC để quyết định ai được xem tài liệu. Role chỉ phục vụ thao tác quản trị hệ thống; quyền xem/preview/download/upload được cấu hình trên category và tài liệu kế thừa từ category chứa nó.
 
-| Visibility | Mô tả | Ai có quyền xem khi enforcement bật |
-| ---------- | ----- | ----------------------------------- |
-| `PUBLIC` | Tài liệu/danh mục công khai nội bộ | Tất cả user đã đăng nhập |
-| `RESTRICTED` | Tài liệu/danh mục giới hạn audience | Owner, user được chia sẻ trực tiếp, hoặc user thuộc department/group được cấp quyền |
+| Permission | Ý nghĩa |
+| ---------- | ------- |
+| `VIEW` | Được thấy danh mục/tài liệu trong list, detail, search/suggestion |
+| `UPLOAD` | Được upload tài liệu vào danh mục |
+| `DOWNLOAD` | Được lấy presigned download URL |
+| `EDIT` | Được sửa metadata/danh mục nếu UI nghiệp vụ cho phép |
+| `DELETE` | Được xóa/di chuyển/lifecycle nếu UI nghiệp vụ cho phép |
 
 Business rules:
 
-- Giai đoạn hiện tại chạy permissive: mặc định `PUBLIC`, chưa chặn theo audience.
-- Search, preview và download vẫn phải đi qua cùng resource access policy để sau này bật enforcement không cần đổi API/read-path.
-- PostgreSQL FTS query phải áp resource access policy trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
-- Khi enforcement bật, user không thuộc audience không được nhìn thấy title, snippet, metadata hoặc download URL của tài liệu.
+- Quyền tài liệu của user thường được cấp theo phòng ban qua `category_department_permissions`.
+- User thuộc nhiều phòng ban được gộp union quyền trên cùng một category; quyền chỉ áp dụng cho tài liệu thuộc category đó.
+- `category_user_permissions` không được dùng để quyết định quyền tài liệu trong luồng list/search/preview/download/upload.
+- Tài liệu không có `PUBLIC`/`RESTRICTED`, `visibility`, hoặc audience riêng; `owner_id` là metadata người chịu trách nhiệm, không phải nguồn cấp quyền đọc.
+- Search, preview và download phải đi qua cùng category access policy; user không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL.
+- PostgreSQL FTS query phải áp category access policy trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
 
 ### PostgreSQL Resource Access Query Model
 
@@ -162,33 +167,23 @@ Search query phải JOIN về bảng nguồn để áp quyền bằng SQL, khôn
 | Source | Mục đích |
 | ----- | -------- |
 | `documents.status` | Lọc lifecycle; User mặc định chỉ thấy `INDEXED` |
-| `documents.visibility` | `PUBLIC`, `RESTRICTED` |
-| `documents.owner_id` | Chủ sở hữu/người chịu trách nhiệm tài liệu |
-| `document_department_accesses` | Department audience của tài liệu |
-| `document_user_accesses` | User audience của tài liệu |
-| `category_department_accesses` | Department audience của danh mục |
-| `category_user_accesses` | User audience của danh mục |
+| `documents.category_id` | Khóa kế thừa quyền từ danh mục |
+| `category_department_permissions` | Quyền category theo phòng ban |
+| `user_departments` | Các phòng ban mà user thuộc về |
 
-Query khi bật enforcement:
+Query cho User:
 
 ```text
 d.status = 'INDEXED'
-AND (
-  d.visibility = 'PUBLIC'
-  OR d.owner_id = current_user.id
-  OR EXISTS (document department audience match any current_user.department_ids)
-  OR EXISTS (document user audience match current_user.id)
-  OR EXISTS (category department audience match any current_user.department_ids)
-  OR EXISTS (category user audience match current_user.id)
-)
+AND EXISTS (user_departments join category_department_permissions match d.category_id, 'VIEW')
 ```
 
 Query cho Admin:
 
 ```text
 Nếu current_user có quyền quản trị metadata/lifecycle:
-  - Hiện tại resource access policy permissive nên chưa bắt buộc lọc theo audience.
-  - Vẫn áp filter status/visibility/department/category/tag/date nếu người dùng truyền filter trên màn hình.
+  - Admin không bị giới hạn bởi category-department permission.
+  - Vẫn áp filter status/department/category/tag/date nếu người dùng truyền filter trên màn hình.
   - Mặc định không trả `DELETED` cho danh sách/search thông thường, trừ khi filter rõ `status = DELETED`.
 ```
 
@@ -221,7 +216,7 @@ Business decisions:
 | ---------------------- | -------------------------------------------------------------------- |
 | Kích thước file tối đa | 50 MB                                                                |
 | Số file mỗi request    | `upload-init` nhận 1 file; `batch-upload-init` nhận nhiều file và trả presigned PUT URL theo item, mỗi file tối đa 50 MB |
-| Metadata bắt buộc      | File, title, category, visibility; audience tùy chọn; `document_code` do backend tự sinh |
+| Metadata bắt buộc      | File, title, category; `document_code` do backend tự sinh |
 | Đặt tên file lưu trữ   | UUID-based, không dùng tên file user nhập làm storage path trực tiếp |
 | Kiểm tra định dạng     | Validate MIME type thực tế và extension                              |
 | File bị chặn           | Không cho phép upload `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`  |

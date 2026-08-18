@@ -10,14 +10,16 @@ import com.dms.document.dto.DocumentListItemResponse;
 import com.dms.document.dto.DocumentSearchRequest;
 import com.dms.document.dto.PageResponse;
 import com.dms.document.entity.Document;
-import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.repository.DocumentRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
+import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.entity.Category;
 import com.dms.masterdata.entity.Department;
+import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.masterdata.repository.DepartmentRepository;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
@@ -34,6 +36,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -46,6 +50,8 @@ public class DocumentMetadataService {
     private final DocumentRepository documentRepository;
     private final CategoryDepartmentPermissionRepository categoryPermissionRepository;
     private final DepartmentRepository departmentRepository;
+    private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAccessPolicyService accessPolicyService;
 
@@ -53,12 +59,16 @@ public class DocumentMetadataService {
             DocumentRepository documentRepository,
             CategoryDepartmentPermissionRepository categoryPermissionRepository,
             DepartmentRepository departmentRepository,
+            CategoryRepository categoryRepository,
+            UserRepository userRepository,
             CurrentUserProvider currentUserProvider,
             DocumentAccessPolicyService accessPolicyService
     ) {
         this.documentRepository = documentRepository;
         this.categoryPermissionRepository = categoryPermissionRepository;
         this.departmentRepository = departmentRepository;
+        this.categoryRepository = categoryRepository;
+        this.userRepository = userRepository;
         this.currentUserProvider = currentUserProvider;
         this.accessPolicyService = accessPolicyService;
     }
@@ -67,9 +77,21 @@ public class DocumentMetadataService {
     public PageResponse<DocumentListItemResponse> listDocuments(DocumentSearchRequest request) {
         User user = currentUserProvider.getRequiredUser();
         Pageable pageable = pageable(request);
-        Page<DocumentListItemResponse> page = documentRepository.findAll(listSpecification(user, request), pageable)
-                .map(this::toListItem);
-        return PageResponse.from(page);
+        Page<Document> documentPage = documentRepository.findAll(listSpecification(user, request), pageable);
+
+        Set<Long> categoryIds = documentPage.stream().map(Document::getCategoryId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> departmentIds = documentPage.stream().map(Document::getDepartmentId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> userIds = documentPage.stream().map(Document::getUploadedBy).filter(Objects::nonNull).collect(Collectors.toSet());
+
+        Map<Long, String> categoryNames = categoryRepository.findAllById(categoryIds).stream().collect(Collectors.toMap(Category::getId, Category::getName));
+        Map<Long, String> departmentNames = departmentRepository.findAllById(departmentIds).stream().collect(Collectors.toMap(Department::getId, Department::getName));
+        Map<Long, String> userNames = userRepository.findAllById(userIds).stream().collect(Collectors.toMap(User::getId, User::getName));
+
+        List<DocumentListItemResponse> items = documentPage.stream()
+                .map(doc -> toListItem(doc, categoryNames.get(doc.getCategoryId()), departmentNames.get(doc.getDepartmentId()), userNames.get(doc.getUploadedBy())))
+                .toList();
+
+        return new PageResponse<>(items, documentPage.getNumber(), documentPage.getSize(), documentPage.getTotalElements(), documentPage.getTotalPages());
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +106,12 @@ public class DocumentMetadataService {
         if (!decision.granted()) {
             throw detailDenied(decision);
         }
-        return toDetail(document);
+        
+        String categoryName = document.getCategoryId() != null ? categoryRepository.findById(document.getCategoryId()).map(Category::getName).orElse(null) : null;
+        String departmentName = document.getDepartmentId() != null ? departmentRepository.findById(document.getDepartmentId()).map(Department::getName).orElse(null) : null;
+        String uploadedByName = document.getUploadedBy() != null ? userRepository.findById(document.getUploadedBy()).map(User::getName).orElse(null) : null;
+
+        return toDetail(document, categoryName, departmentName, uploadedByName);
     }
 
     @Transactional(readOnly = true)
@@ -105,36 +132,31 @@ public class DocumentMetadataService {
                 predicates.add(builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED)));
             } else {
                 predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
-            }
-            if (!admin) {
-                List<Predicate> aclPredicates = new ArrayList<>();
-                aclPredicates.add(builder.equal(root.get("accessLevel"), DocumentAccessLevel.PUBLIC));
-                aclPredicates.add(builder.equal(root.get("ownerId"), user.getId()));
-                if (user.getId() != null) {
-                    Subquery<Long> userAccess = query.subquery(Long.class);
-                    var userAccessRoot = userAccess.from(com.dms.document.entity.DocumentUserAccess.class);
-                    userAccess.select(userAccessRoot.get("documentId"));
-                    userAccess.where(
-                            builder.equal(userAccessRoot.get("documentId"), root.get("id")),
-                            builder.equal(userAccessRoot.get("userId"), user.getId())
-                    );
-                    aclPredicates.add(builder.exists(userAccess));
-                }
-                if (user.getDepartmentId() != null) {
-                    Subquery<Long> departmentAccess = query.subquery(Long.class);
-                    var departmentAccessRoot = departmentAccess.from(com.dms.document.entity.DocumentDepartmentAccess.class);
-                    departmentAccess.select(departmentAccessRoot.get("documentId"));
-                    departmentAccess.where(
-                            builder.equal(departmentAccessRoot.get("documentId"), root.get("id")),
-                            builder.equal(departmentAccessRoot.get("departmentId"), user.getDepartmentId())
-                    );
-                    aclPredicates.add(builder.exists(departmentAccess));
-                }
-                predicates.add(builder.or(aclPredicates.toArray(Predicate[]::new)));
+                predicates.add(categoryViewPermissionPredicate(user, root, query, builder));
             }
             applyFilters(request, root, builder, predicates, admin);
             return builder.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    private Predicate categoryViewPermissionPredicate(
+            User user,
+            jakarta.persistence.criteria.Root<Document> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder builder
+    ) {
+        Subquery<Long> departmentPermission = query.subquery(Long.class);
+        var userDepartmentRoot = departmentPermission.from(com.dms.identity.entity.UserDepartment.class);
+        var departmentPermissionRoot = departmentPermission.from(com.dms.category.entity.CategoryDepartmentPermission.class);
+        departmentPermission.select(departmentPermissionRoot.get("categoryId"));
+        departmentPermission.where(
+                builder.equal(userDepartmentRoot.get("userId"), user.getId()),
+                builder.equal(departmentPermissionRoot.get("departmentId"), userDepartmentRoot.get("departmentId")),
+                builder.equal(departmentPermissionRoot.get("categoryId"), root.get("categoryId")),
+                builder.equal(departmentPermissionRoot.get("permission"), CategoryPermission.VIEW)
+        );
+
+        return builder.exists(departmentPermission);
     }
 
     private void applyFilters(DocumentSearchRequest request, jakarta.persistence.criteria.Root<Document> root, jakarta.persistence.criteria.CriteriaBuilder builder, List<Predicate> predicates, boolean admin) {
@@ -146,9 +168,6 @@ public class DocumentMetadataService {
         }
         if (request.fileType() != null && !request.fileType().isBlank()) {
             predicates.add(builder.equal(builder.upper(root.get("fileType")), request.fileType().trim().toUpperCase()));
-        }
-        if (request.resolvedAccessLevel() != null) {
-            predicates.add(builder.equal(root.get("accessLevel"), request.resolvedAccessLevel()));
         }
         if (request.ownerId() != null) {
             predicates.add(builder.equal(root.get("ownerId"), request.ownerId()));
@@ -193,7 +212,7 @@ public class DocumentMetadataService {
         return new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND);
     }
 
-    private DocumentListItemResponse toListItem(Document document) {
+    private DocumentListItemResponse toListItem(Document document, String categoryName, String departmentName, String uploadedByName) {
         return new DocumentListItemResponse(
                 document.getId(),
                 document.getSlug(),
@@ -202,7 +221,6 @@ public class DocumentMetadataService {
                 document.getFileType(),
                 document.getFileSize(),
                 document.getStatus().name(),
-                document.getAccessLevel().name(),
                 document.getVersionNumber(),
                 document.getViewCount(),
                 document.getDownloadCount(),
@@ -210,6 +228,9 @@ public class DocumentMetadataService {
                 document.getDepartmentId(),
                 document.getOwnerId(),
                 document.getUploadedBy(),
+                categoryName,
+                departmentName,
+                uploadedByName,
                 document.getEffectiveDate(),
                 document.getExpiryDate(),
                 document.getCreatedAt(),
@@ -243,7 +264,7 @@ public class DocumentMetadataService {
                 .toList();
     }
 
-    private DocumentDetailResponse toDetail(Document document) {
+    private DocumentDetailResponse toDetail(Document document, String categoryName, String departmentName, String uploadedByName) {
         String baseEndpoint = "/documents/" + document.getId();
         return new DocumentDetailResponse(
                 document.getId(),
@@ -257,7 +278,6 @@ public class DocumentMetadataService {
                 document.getFileSize(),
                 document.getPageCount(),
                 document.getStatus().name(),
-                document.getAccessLevel().name(),
                 document.getVersionNumber(),
                 document.getViewCount(),
                 document.getDownloadCount(),
@@ -265,6 +285,9 @@ public class DocumentMetadataService {
                 document.getDepartmentId(),
                 document.getOwnerId(),
                 document.getUploadedBy(),
+                categoryName,
+                departmentName,
+                uploadedByName,
                 document.getEffectiveDate(),
                 document.getExpiryDate(),
                 baseEndpoint + "/preview-url",

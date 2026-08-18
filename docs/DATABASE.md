@@ -66,19 +66,17 @@ Tất cả entity chính có:
 
 ### Resource Access Model
 
-Bài toán phân quyền của DMS là **quyền truy cập theo từng tài nguyên**, không phải RBAC theo vai trò. Role nếu còn dùng chỉ phục vụ thao tác quản trị hệ thống; quyền xem tài liệu/danh mục phải trả lời câu hỏi: user này có nằm trong audience của tài liệu hoặc danh mục này không?
+Bài toán phân quyền của DMS là **quyền truy cập theo danh mục cho phòng ban**, không phải RBAC theo vai trò và không phải audience riêng theo từng tài liệu. Role nếu còn dùng chỉ phục vụ thao tác quản trị hệ thống; quyền của user thường với tài liệu phải trả lời câu hỏi: category chứa tài liệu có cấp quyền cần dùng cho một trong các phòng ban mà user thuộc về không?
 
-| Visibility | Quyền truy cập dự kiến |
-|------------|------------------------|
-| `PUBLIC` | Tất cả user đã đăng nhập có thể xem, search, preview và download. |
-| `RESTRICTED` | Chỉ owner, user được cấp trực tiếp, hoặc user thuộc department/group được cấp quyền mới xem được. |
+| Permission | Ảnh hưởng trên tài liệu thuộc category |
+|------------|----------------------------------------|
+| `VIEW` | Xem metadata, xuất hiện trong list/search/suggestion/facet và được preview nếu lifecycle hợp lệ. |
+| `UPLOAD` | Khởi tạo upload tài liệu mới vào category. |
+| `DOWNLOAD` | Nhận presigned download URL cho tài liệu/version. |
+| `EDIT` | Sửa metadata hoặc thao tác chỉnh sửa tài liệu nếu API mở cho user. |
+| `DELETE` | Xóa/archive/restore nếu API mở cho user. |
 
-Giai đoạn hiện tại chạy ở chế độ permissive: mặc định tài liệu/danh mục là `PUBLIC`, các bảng access có thể chưa có dữ liệu và `DocumentAccessPolicyService`/`CategoryAccessPolicyService` cho phép truy cập. Tuy vậy, mọi read-path phải đi qua cùng điểm kiểm tra để sau này bật enforcement mà không phải sửa lại list, detail, search, preview, download, version download và dashboard drill-down.
-
-Access policy áp dụng được ở 2 cấp:
-
-- **Category audience:** quy định ai thấy được danh mục và các tài liệu thừa hưởng từ danh mục nếu tài liệu không override.
-- **Document audience:** override hoặc bổ sung audience riêng cho một tài liệu cụ thể.
+`category_department_permissions` là source of truth cho quyền tài liệu của user thường. User thuộc nhiều phòng ban được gộp union quyền trên cùng một category; quyền đó chỉ áp dụng cho tài liệu thuộc chính category được cấp. `owner_id`, `uploaded_by` và direct user grants không phải nguồn cấp quyền đọc/tải tài liệu.
 
 ### Document Lifecycle
 

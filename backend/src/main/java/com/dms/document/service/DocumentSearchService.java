@@ -11,6 +11,11 @@ import com.dms.document.dto.SearchSuggestionResponse;
 import com.dms.document.repository.DocumentSearchRepository;
 import com.dms.document.repository.DocumentSearchRow;
 import com.dms.identity.entity.User;
+import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.entity.Category;
+import com.dms.masterdata.entity.Department;
+import com.dms.masterdata.repository.CategoryRepository;
+import com.dms.masterdata.repository.DepartmentRepository;
 import org.owasp.html.HtmlPolicyBuilder;
 import org.owasp.html.PolicyFactory;
 import org.springframework.stereotype.Service;
@@ -21,6 +26,9 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class DocumentSearchService {
@@ -33,10 +41,22 @@ public class DocumentSearchService {
 
     private final CurrentUserProvider currentUserProvider;
     private final DocumentSearchRepository searchRepository;
+    private final CategoryRepository categoryRepository;
+    private final DepartmentRepository departmentRepository;
+    private final UserRepository userRepository;
 
-    public DocumentSearchService(CurrentUserProvider currentUserProvider, DocumentSearchRepository searchRepository) {
+    public DocumentSearchService(
+            CurrentUserProvider currentUserProvider, 
+            DocumentSearchRepository searchRepository,
+            CategoryRepository categoryRepository,
+            DepartmentRepository departmentRepository,
+            UserRepository userRepository
+    ) {
         this.currentUserProvider = currentUserProvider;
         this.searchRepository = searchRepository;
+        this.categoryRepository = categoryRepository;
+        this.departmentRepository = departmentRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -50,8 +70,17 @@ public class DocumentSearchService {
         if (request.hasSearchCriteria()) {
             searchRepository.logSearch(user, request, total, latencyMs);
         }
+
+        Set<Long> categoryIds = rows.stream().map(DocumentSearchRow::categoryId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> departmentIds = rows.stream().map(DocumentSearchRow::departmentId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Set<Long> userIds = rows.stream().map(DocumentSearchRow::uploadedBy).filter(Objects::nonNull).collect(Collectors.toSet());
+
+        Map<Long, String> categoryNames = categoryRepository.findAllById(categoryIds).stream().collect(Collectors.toMap(Category::getId, Category::getName));
+        Map<Long, String> departmentNames = departmentRepository.findAllById(departmentIds).stream().collect(Collectors.toMap(Department::getId, Department::getName));
+        Map<Long, String> userNames = userRepository.findAllById(userIds).stream().collect(Collectors.toMap(User::getId, User::getName));
+
         return new DocumentSearchResponse(
-                rows.stream().map(this::toResult).toList(),
+                rows.stream().map(row -> toResult(row, categoryNames.get(row.categoryId()), departmentNames.get(row.departmentId()), userNames.get(row.uploadedBy()))).toList(),
                 page(request),
                 size(request),
                 total,
@@ -77,12 +106,11 @@ public class DocumentSearchService {
         facets.put("categories", searchRepository.facets(user, request, "categories"));
         facets.put("departments", searchRepository.facets(user, request, "departments"));
         facets.put("fileTypes", searchRepository.facets(user, request, "fileTypes"));
-        facets.put("accessLevels", searchRepository.facets(user, request, "accessLevels"));
         facets.put("tags", searchRepository.tagFacets(user, request));
         return facets;
     }
 
-    private DocumentSearchResultResponse toResult(DocumentSearchRow row) {
+    private DocumentSearchResultResponse toResult(DocumentSearchRow row, String categoryName, String departmentName, String uploadedByName) {
         DocumentListItemResponse document = new DocumentListItemResponse(
                 row.id(),
                 row.slug(),
@@ -91,7 +119,6 @@ public class DocumentSearchService {
                 row.fileType(),
                 row.fileSize(),
                 row.status(),
-                row.accessLevel(),
                 row.versionNumber(),
                 row.viewCount(),
                 row.downloadCount(),
@@ -99,6 +126,9 @@ public class DocumentSearchService {
                 row.departmentId(),
                 row.ownerId(),
                 row.uploadedBy(),
+                categoryName,
+                departmentName,
+                uploadedByName,
                 row.effectiveDate(),
                 row.expiryDate(),
                 row.createdAt(),
@@ -107,6 +137,7 @@ public class DocumentSearchService {
         return new DocumentSearchResultResponse(
                 document,
                 row.relevanceScore(),
+                row.matchCount(),
                 new DocumentSearchHighlightResponse(
                         sanitize(row.titleHighlight()),
                         sanitize(row.descriptionHighlight()),

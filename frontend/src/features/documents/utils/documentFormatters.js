@@ -9,12 +9,6 @@ const STATUS_META = {
   DELETED: { label: 'Đã xóa', color: 'default' },
 };
 
-const ACCESS_LEVEL_META = {
-  PUBLIC: 'Công khai',
-  DEPARTMENT: 'Theo phòng ban',
-  RESTRICTED: 'Giới hạn',
-};
-
 export function formatFileSize(bytes) {
   if (bytes === null || bytes === undefined || bytes === '') return '—';
   const size = Number(bytes);
@@ -34,10 +28,6 @@ export function formatDateTime(value) {
 
 export function getDocumentStatusMeta(status) {
   return STATUS_META[status] || { label: status || 'Không rõ', color: 'default' };
-}
-
-export function getAccessLevelLabel(accessLevel) {
-  return ACCESS_LEVEL_META[accessLevel] || accessLevel || '—';
 }
 
 export function normalizeDocument(document) {

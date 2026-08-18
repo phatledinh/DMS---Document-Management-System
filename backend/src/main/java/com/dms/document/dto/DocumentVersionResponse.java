@@ -13,6 +13,7 @@ public record DocumentVersionResponse(
         String changelog,
         boolean current,
         Long uploadedBy,
+        String uploadedByName,
         OffsetDateTime createdAt
 ) {
 }

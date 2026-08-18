@@ -10,10 +10,10 @@ import java.util.Set;
 
 @Service
 public class CategoryAccessPolicyService {
-    private final CategoryDepartmentPermissionRepository permissionRepository;
+    private final CategoryDepartmentPermissionRepository departmentPermissionRepository;
 
-    public CategoryAccessPolicyService(CategoryDepartmentPermissionRepository permissionRepository) {
-        this.permissionRepository = permissionRepository;
+    public CategoryAccessPolicyService(CategoryDepartmentPermissionRepository departmentPermissionRepository) {
+        this.departmentPermissionRepository = departmentPermissionRepository;
     }
 
     public boolean canAccessCategory(User user, Long categoryId) {
@@ -27,7 +27,7 @@ public class CategoryAccessPolicyService {
         if (user.getRole() == Role.ADMIN) {
             return true;
         }
-        return permissionRepository.existsForUserDepartment(user.getId(), categoryId, permission);
+        return departmentPermissionRepository.existsForUserDepartment(user.getId(), categoryId, permission);
     }
 
     public Set<CategoryPermission> getPermissions(User user, Long categoryId) {
@@ -37,7 +37,7 @@ public class CategoryAccessPolicyService {
         if (user.getRole() == Role.ADMIN) {
             return Set.of(CategoryPermission.VIEW, CategoryPermission.UPLOAD, CategoryPermission.DOWNLOAD, CategoryPermission.EDIT, CategoryPermission.DELETE);
         }
-        return permissionRepository.findPermissionsForUser(user.getId(), categoryId);
+        return departmentPermissionRepository.findPermissionsForUser(user.getId(), categoryId);
     }
 
     private boolean isActive(User user) {

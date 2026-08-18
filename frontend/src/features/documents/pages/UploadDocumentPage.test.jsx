@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import UploadDocumentPage from './UploadDocumentPage.jsx';
@@ -26,6 +26,25 @@ vi.mock('react-toastify', () => ({
 
 vi.mock('../hooks/useBatchUploadDocuments.js', () => ({
   useBatchUploadDocuments: () => uploadMutation,
+}));
+
+vi.mock('../../dashboard/hooks/useUserDashboard.js', () => ({
+  useUserDashboard: () => ({
+    isSuccess: true,
+    data: { permissionGroups: [{ categoryId: 10, permissions: ['UPLOAD'] }] },
+  }),
+}));
+
+vi.mock('../../../store/authStore.js', () => ({
+  useAuthStore: (selector) => selector({ user: { id: 1, role: 'USER' } }),
+}));
+
+vi.mock('../../../api/categoryApi.js', () => ({
+  getCategories: vi.fn().mockResolvedValue([{ id: 10, name: 'Chính sách', parentId: null }]),
+}));
+
+vi.mock('../../../api/tagApi.js', () => ({
+  getTags: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('../../../utils/response.js', () => ({
@@ -76,9 +95,9 @@ describe('UploadDocumentPage', () => {
 
     const file = new File(['pdf'], 'policy.pdf', { type: 'application/pdf' });
     await user.upload(getFileInput(container), file);
-    await user.type(screen.getByLabelText('Danh mục'), '10');
-    await user.click(screen.getByLabelText('Phòng ban'));
-    await user.keyboard('20{Enter}');
+    const categoryInput = container.querySelector('.ant-select-selection-search-input');
+    fireEvent.mouseDown(categoryInput);
+    await user.click(await screen.findByText('Chính sách'));
     await user.click(screen.getByRole('button', { name: /upload/i }));
 
     await waitFor(() => expect(uploadMutation.mutateAsync).toHaveBeenCalled());
@@ -92,9 +111,9 @@ describe('UploadDocumentPage', () => {
     });
     expect(call.payload).toMatchObject({
       categoryId: 10,
-      accessLevel: 'DEPARTMENT',
-      visibility: 'DEPARTMENT',
     });
-    expect(call.payload.departmentIds).toEqual([20]);
+    expect(call.payload).not.toHaveProperty('accessLevel');
+    expect(call.payload).not.toHaveProperty('visibility');
+    expect(call.payload).not.toHaveProperty('departmentIds');
   });
 });

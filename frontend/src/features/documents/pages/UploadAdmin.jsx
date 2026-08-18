@@ -80,8 +80,10 @@ function statusTag(status) {
         upload_failed: ["error", "Lỗi upload"],
         completing: ["processing", "Đang xác nhận"],
         complete_failed: ["error", "Lỗi xác nhận"],
-        processing: ["success", "Đang xử lý"],
-    }[status || "queued"];
+        processing: ["processing", "Đang xử lý/OCR/preview"],
+        indexed: ["success", "Sẵn sàng"],
+        extraction_failed: ["error", "Lỗi xử lý/OCR/preview"],
+    }[status || "queued"] || ["default", status || "Không rõ"];
     return <Tag color={meta[0]}>{meta[1]}</Tag>;
 }
 
@@ -293,12 +295,19 @@ export default function UploadAdmin() {
                 (result.init?.failed || 0) +
                 (result.uploadFailures?.length || 0) +
                 (result.complete?.failed || 0);
-            if (failed)
+            const processed = result.processingResults?.filter((item) => item.document?.status === "INDEXED").length || 0;
+            const processingFailed = result.processingResults?.filter((item) => item.document?.status === "EXTRACTION_FAILED").length || 0;
+            const stillProcessing = Math.max(0, succeeded - processed - processingFailed);
+            if (failed || processingFailed)
                 toast.warning(
-                    `Batch hoàn tất một phần: ${succeeded} thành công, ${failed} lỗi.`,
+                    `Batch hoàn tất một phần: ${processed} sẵn sàng, ${failed + processingFailed} lỗi.`,
                 );
-            else if (succeeded === items.length)
-                toast.success("Upload hoàn tất, tài liệu đang được xử lý.");
+            else if (succeeded === items.length && stillProcessing === 0)
+                toast.success("Upload và xử lý hoàn tất, tài liệu đã sẵn sàng.");
+            else if (succeeded > 0)
+                toast.info(
+                    `${stillProcessing} tài liệu vẫn đang xử lý, vui lòng kiểm tra lại trong danh sách tài liệu.`,
+                );
             else
                 toast.warning(
                     "Upload chưa hoàn tất, vui lòng kiểm tra trạng thái từng file.",

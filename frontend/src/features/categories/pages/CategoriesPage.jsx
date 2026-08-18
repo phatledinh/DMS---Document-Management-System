@@ -57,6 +57,17 @@ function normalizeDepartmentPermissions(value) {
         .filter((item) => item.permissions.length > 0);
 }
 
+function normalizeUserPermissions(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((item) => item?.userId && Array.isArray(item.permissions))
+        .map((item) => ({
+            userId: item.userId,
+            permissions: [...new Set(item.permissions)].filter(Boolean),
+        }))
+        .filter((item) => item.permissions.length > 0);
+}
+
 function buildCategoryTree(categories) {
     const byId = new Map(
         categories.map((category) => [
@@ -360,7 +371,7 @@ export default function CategoriesPage() {
                     return currentId;
                 return list[0]?.id || null;
             });
-            setExpandedIds(collectAllIds(buildCategoryTree(list)));
+            setExpandedIds(new Set());
         } catch (error) {
             toast.error(getApiErrorMessage(error));
             setCategories([]);
@@ -434,7 +445,7 @@ export default function CategoriesPage() {
     }
 
     function openCreateModal(parentId = null) {
-        form.setFieldsValue({ parentId, isActive: true, sortOrder: 0, departmentPermissions: [] });
+        form.setFieldsValue({ parentId, isActive: true, sortOrder: 0, departmentPermissions: [], userPermissions: [] });
         setCreateModalOpen(true);
     }
 
@@ -448,6 +459,7 @@ export default function CategoriesPage() {
             sortOrder: category.sortOrder,
             isActive: category.isActive,
             departmentPermissions: normalizeDepartmentPermissions(category.departmentPermissions),
+            userPermissions: normalizeUserPermissions(category.userPermissions),
         });
         setEditModalOpen(true);
     }
@@ -461,6 +473,7 @@ export default function CategoriesPage() {
             sortOrder: Number(values.sortOrder || 0),
             isActive: values.isActive ?? true,
             departmentPermissions: normalizeDepartmentPermissions(values.departmentPermissions),
+            userPermissions: normalizeUserPermissions(values.userPermissions),
         };
     }
 

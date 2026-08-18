@@ -1,7 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { batchUploadComplete, batchUploadInit, uploadToPresignedUrl } from '../../../api/documentApi.js';
+import { batchUploadComplete, batchUploadInit, getDocumentById, uploadToPresignedUrl } from '../../../api/documentApi.js';
 
 const UPLOAD_CONCURRENCY = 3;
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 120000;
+const PROCESSING_STATUS = 'PROCESSING';
+const READY_STATUS = 'INDEXED';
+const FAILED_STATUS = 'EXTRACTION_FAILED';
+const TERMINAL_PROCESSING_STATUSES = new Set([READY_STATUS, FAILED_STATUS]);
 
 async function runWithConcurrency(items, worker) {
   const results = [];
@@ -17,6 +23,41 @@ async function runWithConcurrency(items, worker) {
 
   await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, items.length) }, runNext));
   return results;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function normalizeProcessingStatus(status) {
+  if (status === READY_STATUS) return 'indexed';
+  if (status === FAILED_STATUS) return 'extraction_failed';
+  if (status === PROCESSING_STATUS) return 'processing';
+  return status?.toLowerCase() || 'processing';
+}
+
+async function waitForProcessingResult(documentId, onStatusChange) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    try {
+      const document = await getDocumentById(documentId);
+      const status = document?.status;
+      onStatusChange?.(document, status);
+
+      if (TERMINAL_PROCESSING_STATUSES.has(status)) {
+        return document;
+      }
+    } catch {
+      onStatusChange?.(null, PROCESSING_STATUS);
+    }
+
+    await delay(POLL_INTERVAL_MS);
+  }
+
+  return null;
 }
 
 export function useBatchUploadDocuments() {
@@ -58,7 +99,8 @@ export function useBatchUploadDocuments() {
         ? await batchUploadComplete({ items: uploadedItems })
         : { total: 0, succeeded: 0, failed: 0, items: [] };
 
-      (completeResponse.items || []).forEach((item) => {
+      const completedItems = completeResponse.items || [];
+      completedItems.forEach((item) => {
         onItemChange?.(
           item.clientItemId,
           item.success
@@ -67,7 +109,30 @@ export function useBatchUploadDocuments() {
         );
       });
 
-      return { init: initResponse, uploadFailures, complete: completeResponse };
+      const pollableItems = completedItems.filter((item) => item.success && item.documentId);
+      const processingResults = await runWithConcurrency(pollableItems, async (item) => {
+        const document = await waitForProcessingResult(item.documentId, (document, status) => {
+          onItemChange?.(item.clientItemId, {
+            status: normalizeProcessingStatus(status),
+            document,
+            documentCode: document?.documentCode || item.documentCode,
+            error: status === FAILED_STATUS ? 'Lỗi xử lý/OCR/preview' : undefined,
+            progress: TERMINAL_PROCESSING_STATUSES.has(status) ? 100 : 100,
+          });
+        });
+
+        if (!document) {
+          onItemChange?.(item.clientItemId, {
+            status: 'processing',
+            error: 'Tài liệu vẫn đang xử lý, vui lòng kiểm tra lại trong danh sách tài liệu.',
+            progress: 100,
+          });
+        }
+
+        return { clientItemId: item.clientItemId, document };
+      });
+
+      return { init: initResponse, uploadFailures, complete: completeResponse, processingResults };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });

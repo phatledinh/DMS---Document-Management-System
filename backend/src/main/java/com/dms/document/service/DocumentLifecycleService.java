@@ -170,7 +170,7 @@ public class DocumentLifecycleService {
         Document saved = documentRepository.save(document);
         processingPublisher.publish(
                 DocumentProcessingRabbitConfig.EXTRACT_ROUTING_KEY,
-                DocumentProcessingMessage.extract(saved.getId(), null, saved.getStoragePath(), saved.getMimeType())
+                DocumentProcessingMessage.extract(saved.getId(), saved.getCurrentVersionId(), saved.getStoragePath(), saved.getMimeType())
         );
         logAction(admin, saved, AccessLogAction.RETRY);
         return response(saved, null);

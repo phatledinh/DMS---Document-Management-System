@@ -17,4 +17,8 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
     Optional<DocumentVersion> findFirstByDocumentIdAndVersionNumberAndStatus(Long documentId, String versionNumber, DocumentStatus status);
 
     List<DocumentVersion> findByDocumentId(Long documentId);
+
+    List<DocumentVersion> findByStatusAndUploadExpiresAtBefore(DocumentStatus status, java.time.OffsetDateTime timestamp);
+
+    List<DocumentVersion> findByStatusAndCreatedAtBefore(DocumentStatus status, java.time.OffsetDateTime timestamp);
 }

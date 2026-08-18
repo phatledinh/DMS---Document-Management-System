@@ -24,7 +24,8 @@ Không thay đổi breaking changes trong `v1`. Mọi thay đổi lớn phải t
 - Access Token gửi qua header `Authorization: Bearer <token>`.
 - Refresh Token lưu trong HttpOnly Cookie, không trả cho JavaScript đọc trực tiếp.
 - Endpoint 👑 yêu cầu user có role `ADMIN`.
-- Endpoint 🔒 đọc tài liệu/danh mục vẫn phải đi qua resource access policy. Hiện tại policy permissive, sau này bật enforcement theo audience của tài liệu/danh mục.
+- Endpoint 🔒 đọc tài liệu/danh mục phải đi qua resource access policy theo danh mục: user thường có quyền trên tài liệu khi category của tài liệu cấp quyền đó cho một trong các phòng ban user thuộc về.
+- Nếu user thuộc nhiều phòng ban, quyền trên cùng category được gộp union từ tất cả phòng ban đó. Quyền category này chỉ áp dụng cho tài liệu thuộc chính category đó.
 
 ### HTTP Status Codes
 
@@ -99,7 +100,6 @@ Tất cả JSON endpoint trả về format thống nhất.
 | `INVALID_CREDENTIALS` | Email hoặc mật khẩu sai |
 | `TOKEN_EXPIRED` | JWT đã hết hạn |
 | `ACCESS_DENIED` | Không có quyền truy cập |
-| `INVALID_VISIBILITY` | `visibility` không hợp lệ |
 | `INVALID_AUDIENCE_RULE` | Audience user/department không hợp lệ |
 | `VERSION_NOT_FOUND` | Phiên bản tài liệu không tồn tại |
 | `VERSION_DUPLICATE` | Số phiên bản đã tồn tại |
@@ -141,7 +141,7 @@ Upload rules:
 | `Role` | `ADMIN`, `USER` |
 | `UserStatus` | `ACTIVE`, `INACTIVE`, `BANNED` |
 | `DocumentStatus` | `AWAITING_UPLOAD`, `PROCESSING`, `INDEXED`, `EXTRACTION_FAILED`, `ARCHIVED`, `DELETED` |
-| `AccessLevel` | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
+| `CategoryPermission` | `VIEW`, `UPLOAD`, `DOWNLOAD`, `EDIT`, `DELETE` |
 | `AccessLogAction` | `VIEW`, `PREVIEW`, `DOWNLOAD`, `VERSION_DOWNLOAD` |
 | `AuditTargetType` | `DOCUMENT`, `USER`, `CATEGORY`, `DEPARTMENT`, `TAG` |
 
@@ -372,7 +372,6 @@ Rules:
   "fileSize": 2048576,
   "pageCount": 25,
   "status": "INDEXED",
-  "visibility": "PUBLIC",
   "versionNumber": "1.0",
   "viewCount": 150,
   "downloadCount": 45,
@@ -388,9 +387,9 @@ Rules:
 }
 ```
 
-### `POST /documents/upload-init` 👑
+### `POST /documents/upload-init` 🔒
 
-Admin khởi tạo upload tài liệu mới. Backend validate metadata và thông tin file khai báo, tạo row `documents` với `status = AWAITING_UPLOAD`, sinh `storage_path` UUID/generated key và trả presigned PUT URL để client upload byte trực tiếp lên object storage.
+Admin hoặc user có quyền `UPLOAD` trên `categoryId` khởi tạo upload tài liệu mới. Backend validate metadata và thông tin file khai báo, kiểm tra quyền category-department, tạo row `documents` với `status = AWAITING_UPLOAD`, sinh `storage_path` UUID/generated key và trả presigned PUT URL để client upload byte trực tiếp lên object storage.
 
 **Request Body:**
 ```json
@@ -403,20 +402,18 @@ Admin khởi tạo upload tài liệu mới. Backend validate metadata và thôn
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5],
-  "visibility": "PUBLIC",
-  "departmentIds": [3],
   "ownerId": 10,
-  "sharedUserIds": [],
   "effectiveDate": "2026-01-01",
   "expiryDate": null
 }
 ```
 
-**Audience Rules:**
+**Access Rules:**
 
-- `PUBLIC`: bỏ qua audience; mọi user đăng nhập được xem sau khi tài liệu `INDEXED`.
-- `RESTRICTED`: dùng `ownerId`, `sharedUserIds` hoặc `departmentIds` làm audience khi enforcement bật.
-- Hiện tại policy permissive nên audience có thể để trống; request vẫn giữ field để sau này không đổi API contract.
+- Tài liệu kế thừa quyền từ danh mục (`categoryId`); upload request không nhận `visibility` hoặc audience riêng theo tài liệu.
+- User thường chỉ được upload khi một trong các phòng ban user thuộc về được cấp `UPLOAD` trên category đó; Admin luôn được phép.
+- User chỉ thấy/search/preview/download tài liệu khi có quyền tương ứng trên category qua `category_department_permissions` + `user_departments`; nếu user thuộc nhiều phòng ban thì quyền được gộp union trên cùng category.
+- `ownerId` là metadata nghiệp vụ/người chịu trách nhiệm, không phải nguồn cấp quyền đọc tài liệu.
 
 **Success Response (201):**
 ```json
@@ -439,9 +436,9 @@ Admin khởi tạo upload tài liệu mới. Backend validate metadata và thôn
 
 Client phải PUT đúng file lên `uploadUrl` trong vòng 5 phút với `Content-Type` và `Content-Length` khớp thông tin đã khai báo. Bucket object storage là private; credential ký URL chỉ nằm ở backend.
 
-### `POST /documents/{id}/upload-complete` 👑
+### `POST /documents/{id}/upload-complete` 🔒
 
-Admin xác nhận client đã PUT file xong. Backend HEAD object để xác nhận tồn tại và đúng size, đọc object để Tika detect MIME thực tế, validate extension/MIME/dangerous type, rồi chuyển document sang `PROCESSING`. Sau transaction commit, backend publish message `EXTRACT` vào RabbitMQ queue `dms.extract`; API không chờ extraction/index hoàn tất.
+Uploader, owner hoặc Admin xác nhận client đã PUT file xong. Backend HEAD object để xác nhận tồn tại và đúng size, đọc object để Tika detect MIME thực tế, validate extension/MIME/dangerous type, rồi chuyển document sang `PROCESSING`. Sau transaction commit, backend publish message `EXTRACT` vào RabbitMQ queue `dms.extract`; API không chờ extraction/index hoàn tất.
 
 **Success Response (200):**
 ```json
@@ -465,7 +462,7 @@ Sau khi complete thành công, extraction, preview artifact generation và refre
 
 ### `GET /documents` 🔒
 
-Danh sách tài liệu theo resource access policy hiện tại. Giai đoạn permissive chưa chặn theo audience; mặc định chỉ trả tài liệu phù hợp lifecycle/status.
+Danh sách tài liệu theo resource access policy category-department. User thường chỉ thấy tài liệu `INDEXED` thuộc category mà một trong các phòng ban của user có `VIEW`; Admin thấy theo lifecycle/status quản trị.
 
 **Query Params:**
 
@@ -475,7 +472,6 @@ Danh sách tài liệu theo resource access policy hiện tại. Giai đoạn pe
 | `departmentId` | Long | Lọc theo phòng ban sở hữu/chủ quản |
 | `fileType` | String | `PDF`, `DOC`, `DOCX`, `XLS`, `XLSX`, `JPG`, `PNG`, `TIFF` |
 | `status` | String | Admin dùng để lọc status; User chỉ được `INDEXED` mặc định |
-| `visibility` | String | `PUBLIC`, `RESTRICTED` |
 | `tagIds` | Long[] | Lọc theo tags |
 | `ownerId` | Long | Lọc theo owner |
 | `uploadedBy` | Long | Lọc theo uploader |
@@ -498,7 +494,6 @@ Danh sách tài liệu theo resource access policy hiện tại. Giai đoạn pe
         "fileType": "PDF",
         "fileSize": 2048576,
         "status": "INDEXED",
-        "visibility": "PUBLIC",
         "versionNumber": "1.0",
         "viewCount": 150,
         "downloadCount": 45,
@@ -537,7 +532,6 @@ Chi tiết tài liệu. Đi qua resource access policy trước khi trả metada
     "fileSize": 2048576,
     "pageCount": 25,
     "status": "INDEXED",
-    "visibility": "PUBLIC",
     "versionNumber": "1.0",
     "viewCount": 150,
     "downloadCount": 45,
@@ -573,16 +567,13 @@ Admin cập nhật metadata, tags và audience. Không cập nhật file; dùng 
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5, 8],
-  "visibility": "RESTRICTED",
   "ownerId": 10,
-  "departmentIds": [],
-  "sharedUserIds": [12, 15],
   "effectiveDate": "2026-07-01",
   "expiryDate": "2027-07-01"
 }
 ```
 
-**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata/audience thay đổi phải refresh PostgreSQL search row và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata.
+**Success Response (200):** trả `DocumentDetailDto` đã cập nhật. Metadata thay đổi phải refresh PostgreSQL search row và ghi `audit_logs`. `documentCode` là mã hệ thống tự sinh, không cho sửa qua endpoint metadata. Quyền truy cập được quản lý ở category, không qua endpoint metadata tài liệu.
 
 ### `DELETE /documents/{id}` 👑
 
@@ -641,9 +632,9 @@ Retry extraction hoặc refresh search vector cho tài liệu `EXTRACTION_FAILED
 ```
 
 
-### `POST /documents/batch-upload-init` 👑
+### `POST /documents/batch-upload-init` 🔒
 
-Admin khởi tạo upload nhiều file bằng presigned URL. Backend validate metadata chung và thông tin khai báo của từng file, tạo document/version riêng cho từng item hợp lệ, trả danh sách presigned PUT URL để client upload từng file trực tiếp lên object storage. Không có endpoint multipart upload qua Spring.
+Admin hoặc user có `UPLOAD` trên category của từng item khởi tạo upload nhiều file bằng presigned URL. Backend validate metadata chung và thông tin khai báo của từng file, kiểm tra quyền theo item, tạo document riêng cho từng item hợp lệ, trả danh sách presigned PUT URL để client upload từng file trực tiếp lên object storage. Không có endpoint multipart upload qua Spring.
 
 **Request Body:**
 ```json
@@ -655,10 +646,7 @@ Admin khởi tạo upload nhiều file bằng presigned URL. Backend validate me
   "categoryId": 1,
   "departmentId": 3,
   "tagIds": [1, 5],
-  "visibility": "PUBLIC",
-  "departmentIds": [3],
   "ownerId": 10,
-  "sharedUserIds": [],
   "effectiveDate": "2026-01-01",
   "expiryDate": null
 }
@@ -666,8 +654,8 @@ Admin khởi tạo upload nhiều file bằng presigned URL. Backend validate me
 
 **Business Rules:**
 
-- Validate extension, MIME khai báo và size theo từng item ở init; `batch-upload-complete` validate object thực tế bằng HEAD + Tika.
-- Cho phép partial success; item lỗi không rollback item hợp lệ.
+- Validate extension, MIME khai báo, size và quyền `UPLOAD` theo category resolved của từng item ở init; `batch-upload-complete` validate object thực tế bằng HEAD + Tika.
+- Cho phép partial success; item lỗi hoặc thiếu quyền không rollback item hợp lệ.
 - Mỗi item hợp lệ nhận `documentId`, `documentCode` tự sinh và presigned PUT URL riêng.
 - Client PUT từng file bằng URL tương ứng, rồi gọi `POST /documents/batch-upload-complete` với danh sách item đã upload.
 - Ghi audit log cho từng document upload complete thành công.
@@ -1038,7 +1026,6 @@ Full-text search qua PostgreSQL `tsvector`/`tsquery` trên title, description, e
 | `ownerId` | Long | Không | Lọc owner |
 | `uploadedBy` | Long | Không | Lọc uploader |
 | `status` | String | Không | Admin có thể filter; User mặc định `INDEXED` |
-| `visibility` | String | Không | Admin có thể filter access level |
 | `dateFrom` | Date | Không | Lọc created/effective date từ |
 | `dateTo` | Date | Không | Lọc đến ngày |
 | `sort` | String | Không | `relevance` default, `createdAt`, `updatedAt`, `viewCount`, `downloadCount`, `title` |

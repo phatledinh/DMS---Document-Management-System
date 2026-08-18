@@ -15,20 +15,17 @@ import com.dms.document.dto.UploadInitResponse;
 import com.dms.document.entity.AccessLog;
 import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
-import com.dms.document.entity.DocumentAccessLevel;
-import com.dms.document.entity.DocumentDepartmentAccess;
 import com.dms.document.entity.DocumentStatus;
-import com.dms.document.entity.DocumentUserAccess;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.processing.DocumentExtractionRequestedEvent;
 import com.dms.document.repository.AccessLogRepository;
-import com.dms.document.repository.DocumentDepartmentAccessRepository;
 import com.dms.document.repository.DocumentRepository;
-import com.dms.document.repository.DocumentUserAccessRepository;
+import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
 import com.dms.storage.ObjectMetadata;
@@ -54,10 +51,10 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class DocumentPresignedUrlService {
     private final DocumentRepository documentRepository;
-    private final DocumentDepartmentAccessRepository departmentAccessRepository;
-    private final DocumentUserAccessRepository userAccessRepository;
+    private final DocumentVersionRepository versionRepository;
     private final AccessLogRepository accessLogRepository;
     private final UserRepository userRepository;
+    private final CategoryRepository categoryRepository;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAccessPolicyService accessPolicyService;
     private final ObjectStorageService objectStorageService;
@@ -68,10 +65,10 @@ public class DocumentPresignedUrlService {
 
     public DocumentPresignedUrlService(
             DocumentRepository documentRepository,
-            DocumentDepartmentAccessRepository departmentAccessRepository,
-            DocumentUserAccessRepository userAccessRepository,
+            DocumentVersionRepository versionRepository,
             AccessLogRepository accessLogRepository,
             UserRepository userRepository,
+            CategoryRepository categoryRepository,
             CurrentUserProvider currentUserProvider,
             DocumentAccessPolicyService accessPolicyService,
             ObjectStorageService objectStorageService,
@@ -80,10 +77,10 @@ public class DocumentPresignedUrlService {
             ApplicationEventPublisher eventPublisher
     ) {
         this.documentRepository = documentRepository;
-        this.departmentAccessRepository = departmentAccessRepository;
-        this.userAccessRepository = userAccessRepository;
+        this.versionRepository = versionRepository;
         this.accessLogRepository = accessLogRepository;
         this.userRepository = userRepository;
+        this.categoryRepository = categoryRepository;
         this.currentUserProvider = currentUserProvider;
         this.accessPolicyService = accessPolicyService;
         this.objectStorageService = objectStorageService;
@@ -97,6 +94,11 @@ public class DocumentPresignedUrlService {
         User currentUser = currentUserProvider.getRequiredUser();
         boolean admin = currentUser.getRole() == Role.ADMIN;
         ValidatedFile file = fileValidationService.validateDeclared(request.fileName(), request.fileSize(), request.contentType());
+        ensureCategoryExists(request.categoryId());
+        AccessDecision uploadDecision = accessPolicyService.canUpload(currentUser, request.categoryId());
+        if (!uploadDecision.granted()) {
+            throw denied(uploadDecision);
+        }
         Long ownerId = admin && request.ownerId() != null ? request.ownerId() : currentUser.getId();
         ensureUserExists(ownerId);
 
@@ -117,13 +119,9 @@ public class DocumentPresignedUrlService {
         document.setStoragePath(objectKey);
         document.setUploadExpiresAt(presignedUrl.expiresAt());
         document.setStatus(DocumentStatus.AWAITING_UPLOAD);
-        document.setAccessLevel(admin && request.visibility() != null ? request.visibility() : DocumentAccessLevel.PUBLIC);
         document.setEffectiveDate(request.effectiveDate());
         document.setExpiryDate(request.expiryDate());
         document = documentRepository.save(document);
-        if (admin) {
-            saveAudience(document.getId(), currentUser.getId(), request.departmentIds(), request.sharedUserIds());
-        }
         return new UploadInitResponse(
                 document.getId(),
                 document.getStatus().name(),
@@ -150,6 +148,7 @@ public class DocumentPresignedUrlService {
         ObjectMetadata metadata = objectStorageService.headObject(document.getStoragePath());
         if (metadata.contentLength() != document.getFileSize()) {
             objectStorageService.deleteObject(document.getStoragePath());
+            documentRepository.delete(document);
             throw new AppException(ErrorCodes.UPLOAD_SIZE_MISMATCH, "Uploaded size does not match declared size", HttpStatus.BAD_REQUEST);
         }
         String detectedMimeType = mimeDetectionService.detect(objectStorageService.openStream(document.getStoragePath()), document.getFileName());
@@ -157,6 +156,7 @@ public class DocumentPresignedUrlService {
             fileValidationService.validateDetected(document.getFileType(), detectedMimeType);
         } catch (AppException exception) {
             objectStorageService.deleteObject(document.getStoragePath());
+            documentRepository.delete(document);
             throw exception;
         }
 
@@ -166,7 +166,20 @@ public class DocumentPresignedUrlService {
         if (document.getDocumentCode() == null) {
             document.setDocumentCode(generateDocumentCode());
         }
-        eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), null, document.getStoragePath(), document.getMimeType()));
+        
+        com.dms.document.entity.DocumentVersion version = new com.dms.document.entity.DocumentVersion();
+        version.setDocumentId(document.getId());
+        version.setVersionNumber(document.getVersionNumber());
+        version.setFileName(document.getFileName());
+        version.setFileSize(document.getFileSize());
+        version.setMimeType(detectedMimeType);
+        version.setStoragePath(document.getStoragePath());
+        version.setStatus(DocumentStatus.PROCESSING);
+        version.setChangelog("Tải lên lần đầu");
+        version.setUploadedBy(document.getUploadedBy());
+        version = versionRepository.save(version);
+        
+        eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), version.getId(), document.getStoragePath(), document.getMimeType()));
         logUpload(currentUser, document);
         Document saved = documentRepository.save(document);
         return new UploadCompleteResponse(saved.getId(), saved.getStatus().name(), saved.getDocumentCode(), saved.getVersionNumber(), saved.getCreatedAt());
@@ -191,10 +204,7 @@ public class DocumentPresignedUrlService {
                         file.categoryId() != null ? file.categoryId() : request.categoryId(),
                         request.departmentId(),
                         file.tagIds() != null ? file.tagIds() : request.tagIds(),
-                        request.resolvedAccessLevel(),
-                        request.departmentIds(),
                         request.ownerId(),
-                        request.sharedUserIds(),
                         file.effectiveDate() != null ? file.effectiveDate() : request.effectiveDate(),
                         file.expiryDate() != null ? file.expiryDate() : request.expiryDate()
                 );
@@ -273,28 +283,6 @@ public class DocumentPresignedUrlService {
         return baseName + ".pdf";
     }
 
-    private void saveAudience(Long documentId, Long grantedBy, List<Long> departmentIds, List<Long> sharedUserIds) {
-        if (departmentIds != null) {
-            departmentIds.stream().distinct().forEach(departmentId -> {
-                DocumentDepartmentAccess access = new DocumentDepartmentAccess();
-                access.setDocumentId(documentId);
-                access.setDepartmentId(departmentId);
-                access.setGrantedBy(grantedBy);
-                departmentAccessRepository.save(access);
-            });
-        }
-        if (sharedUserIds != null) {
-            sharedUserIds.stream().distinct().forEach(userId -> {
-                ensureUserExists(userId);
-                DocumentUserAccess access = new DocumentUserAccess();
-                access.setDocumentId(documentId);
-                access.setUserId(userId);
-                access.setGrantedBy(grantedBy);
-                userAccessRepository.save(access);
-            });
-        }
-    }
-
     private void validateBatchUploadRequest(BatchUploadInitRequest request) {
         if (request.files().size() > objectStorageService.batchUploadMaxFiles()) {
             throw new AppException(ErrorCodes.VALIDATION_ERROR, "Batch upload file count exceeds the configured limit", HttpStatus.BAD_REQUEST);
@@ -347,6 +335,12 @@ public class DocumentPresignedUrlService {
     private void ensureUserExists(Long userId) {
         if (!userRepository.existsById(userId)) {
             throw new AppException(ErrorCodes.VALIDATION_ERROR, "User does not exist", HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private void ensureCategoryExists(Long categoryId) {
+        if (categoryRepository.findByIdAndDeletedAtIsNull(categoryId).isEmpty()) {
+            throw new AppException(ErrorCodes.NOT_FOUND, "Category does not exist", HttpStatus.BAD_REQUEST);
         }
     }
 

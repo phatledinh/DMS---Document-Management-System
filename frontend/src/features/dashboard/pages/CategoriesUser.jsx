@@ -283,7 +283,7 @@ export default function CategoriesUser() {
 
   useEffect(() => {
     if (categoryTree.length > 0) {
-      setExpandedIds(collectAllIds(categoryTree));
+      setExpandedIds(new Set());
       setSelectedCategoryId((currentId) => {
         if (currentId && flatCategories.some((c) => c.id === currentId)) return currentId;
         return flatCategories[0]?.id || null;
@@ -389,7 +389,7 @@ export default function CategoriesUser() {
                   {documents.length ? (
                     <div className={styles.documentList}>
                       {documents.map((doc) => (
-                        <DocumentItem doc={doc} key={doc.slug || doc.id || doc.title || doc.fileName} onOpen={(id) => navigate(`/documents/`)} />
+                        <DocumentItem doc={doc} key={doc.slug || doc.id || doc.title || doc.fileName} onOpen={() => navigate(`/documents/${doc.slug}`)} />
                       ))}
                     </div>
                   ) : (

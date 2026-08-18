@@ -11,12 +11,10 @@ import styles from './SearchPage.module.css';
 
 /* ───────── helpers ───────── */
 
-const ACCESS_LABELS = { PUBLIC: 'Công khai', DEPARTMENT: 'Theo phòng ban', RESTRICTED: 'Giới hạn' };
-
 function normalizeSearchResult(result) {
   const doc = normalizeDocument(result?.document || result);
   if (!doc) return null;
-  return { ...doc, highlight: result?.highlight, relevanceScore: result?.relevanceScore, matchCount: result?.matchCount ?? 0 };
+  return { ...doc, highlight: result?.highlight, relevanceScore: result?.relevanceScore, matchCount: Number(result?.matchCount) || 0 };
 }
 
 function cleanSnippet(raw) {
@@ -187,7 +185,6 @@ export default function SearchPage() {
     fileType: searchParams.get('fileType') || undefined,
     categoryId: searchParams.get('categoryId') || undefined,
     departmentId: searchParams.get('departmentId') || undefined,
-    accessLevel: searchParams.get('accessLevel') || undefined,
     tagId: searchParams.get('tagId') || undefined,
     dateFrom: searchParams.get('dateFrom') || undefined,
     dateTo: searchParams.get('dateTo') || undefined,
@@ -207,8 +204,8 @@ export default function SearchPage() {
   }, [searchParams, setSearchParams]);
 
   const handleFilterChange = (key, val) => updateParams({ [key]: val, page: 1 });
-  const clearAll = () => updateParams({ categoryId: undefined, departmentId: undefined, fileType: undefined, accessLevel: undefined, tagId: undefined, dateFrom: undefined, dateTo: undefined, page: 1 });
-  const hasFilters = ['categoryId', 'departmentId', 'fileType', 'accessLevel', 'tagId', 'dateFrom', 'dateTo'].some((k) => searchParams.get(k));
+  const clearAll = () => updateParams({ categoryId: undefined, departmentId: undefined, fileType: undefined, tagId: undefined, dateFrom: undefined, dateTo: undefined, page: 1 });
+  const hasFilters = ['categoryId', 'departmentId', 'fileType', 'tagId', 'dateFrom', 'dateTo'].some((k) => searchParams.get(k));
 
   const activeFilters = useMemo(() => {
     const list = [];
@@ -218,8 +215,6 @@ export default function SearchPage() {
     if (depId) list.push({ key: 'departmentId', label: `Phòng ban: ${getFacetLabel(facets.departments, depId)}` });
     const type = searchParams.get('fileType');
     if (type) list.push({ key: 'fileType', label: `Loại tệp: ${getFacetLabel(facets.fileTypes, type)}` });
-    const acc = searchParams.get('accessLevel');
-    if (acc) list.push({ key: 'accessLevel', label: `Quyền: ${ACCESS_LABELS[acc] || acc}` });
     const tId = searchParams.get('tagId');
     if (tId) list.push({ key: 'tagId', label: `Tag: ${getFacetLabel(facets.tags, tId)}` });
     const dFrom = searchParams.get('dateFrom');
@@ -242,11 +237,10 @@ export default function SearchPage() {
           <FacetGroup title="Danh mục" items={facets.categories} selected={searchParams.get('categoryId')} onToggle={(v) => handleFilterChange('categoryId', v)} />
           <FacetGroup title="Phòng ban" items={facets.departments} selected={searchParams.get('departmentId')} onToggle={(v) => handleFilterChange('departmentId', v)} />
           <FacetGroup title="Loại tệp" items={facets.fileTypes} selected={searchParams.get('fileType')} onToggle={(v) => handleFilterChange('fileType', v)} iconMap={fileTypeFacetIcon} />
-          <FacetGroup title="Quyền truy cập" items={facets.accessLevels} selected={searchParams.get('accessLevel')} onToggle={(v) => handleFilterChange('accessLevel', v)} labelMap={ACCESS_LABELS} />
           <FacetGroup title="Tags" items={facets.tags} selected={searchParams.get('tagId')} onToggle={(v) => handleFilterChange('tagId', v)} maxItems={8} />
 
           <div className={styles.filterGroup}>
-            <h3 className={styles.filterGroupTitle}>Thời gian cập nhật</h3>
+            <h3 className={styles.filterGroupTitle}>Ngày ban hành</h3>
             <div className={styles.dateGrid}>
               <input type="date" className={styles.dateInput} value={searchParams.get('dateFrom') || ''} onChange={(e) => handleFilterChange('dateFrom', e.target.value)} />
               <input type="date" className={styles.dateInput} value={searchParams.get('dateTo') || ''} onChange={(e) => handleFilterChange('dateTo', e.target.value)} />
@@ -319,7 +313,7 @@ export default function SearchPage() {
                   const relevance = relevanceMeta(r.relevanceScore, mc);
 
                   return (
-                    <article key={r.id} className={styles.card} onClick={() => r.slug && navigate(`/documents/`)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && r.slug && navigate(`/documents/`)}>
+                    <article key={r.id} className={styles.card} onClick={() => r.slug && navigate(`/documents/${r.slug}`)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && r.slug && navigate(`/documents/${r.slug}`)}>
                       <div className={styles.cardIconWrap}>
                         <div className={`${styles.cardIcon} ${fi.cls}`}>
                           <MI name={fi.icon} />

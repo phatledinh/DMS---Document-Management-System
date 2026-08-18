@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -72,13 +73,12 @@ public class Document {
     @Column(name = "version_number", nullable = false, length = 20)
     private String versionNumber = "1.0";
 
+    @Column(name = "current_version_id")
+    private Long currentVersionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private DocumentStatus status = DocumentStatus.AWAITING_UPLOAD;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "access_level", nullable = false, length = 20)
-    private DocumentAccessLevel accessLevel = DocumentAccessLevel.PUBLIC;
 
     @Column(name = "view_count", nullable = false)
     private Integer viewCount = 0;
@@ -115,6 +115,10 @@ public class Document {
 
     @Column(name = "updated_at")
     private OffsetDateTime updatedAt;
+
+    @Version
+    @Column(name = "version")
+    private Long entityVersion;
 
     public Long getId() {
         return id;
@@ -268,20 +272,20 @@ public class Document {
         this.versionNumber = versionNumber;
     }
 
+    public Long getCurrentVersionId() {
+        return currentVersionId;
+    }
+
+    public void setCurrentVersionId(Long currentVersionId) {
+        this.currentVersionId = currentVersionId;
+    }
+
     public DocumentStatus getStatus() {
         return status;
     }
 
     public void setStatus(DocumentStatus status) {
         this.status = status;
-    }
-
-    public DocumentAccessLevel getAccessLevel() {
-        return accessLevel;
-    }
-
-    public void setAccessLevel(DocumentAccessLevel accessLevel) {
-        this.accessLevel = accessLevel;
     }
 
     public Integer getViewCount() {
@@ -374,5 +378,13 @@ public class Document {
 
     public void setUpdatedAt(OffsetDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Long getEntityVersion() {
+        return entityVersion;
+    }
+
+    public void setEntityVersion(Long entityVersion) {
+        this.entityVersion = entityVersion;
     }
 }

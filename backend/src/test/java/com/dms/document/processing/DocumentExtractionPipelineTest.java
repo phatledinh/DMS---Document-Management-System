@@ -68,7 +68,7 @@ class DocumentExtractionPipelineTest {
     }
 
     @Test
-    void process_officeDocumentPublishesPreviewBeforeIndexed() {
+    void process_officeDocumentStoresContentRefreshesIndexAndPublishesPreview() {
         Document document = document();
         document.setFileType("DOCX");
         document.setMimeType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -81,9 +81,9 @@ class DocumentExtractionPipelineTest {
 
         pipeline.process(document, message);
 
-        verify(contentService, never()).saveSuccess(42L, text, 1);
-        verify(searchEngine, never()).refreshIndex(document, "hello");
-        assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
+        verify(contentService).saveSuccess(42L, text, 1);
+        verify(searchEngine).refreshIndex(document, "hello");
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.INDEXED);
         verify(documentRepository).save(document);
         verify(publisher).publishPreview(42L, null, "documents/object", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     }

@@ -1,6 +1,5 @@
 package com.dms.document.dto;
 
-import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import org.springframework.format.annotation.DateTimeFormat;
 
@@ -12,8 +11,6 @@ public record DocumentSearchRequest(
         Long departmentId,
         String fileType,
         DocumentStatus status,
-        DocumentAccessLevel visibility,
-        DocumentAccessLevel accessLevel,
         Long ownerId,
         Long uploadedBy,
         java.util.List<Long> tagIds,
@@ -25,10 +22,6 @@ public record DocumentSearchRequest(
         Integer page,
         Integer size
 ) {
-    public DocumentAccessLevel resolvedAccessLevel() {
-        return accessLevel != null ? accessLevel : visibility;
-    }
-
     public LocalDate resolvedDateFrom() {
         return dateFrom != null ? dateFrom : effectiveDateFrom;
     }

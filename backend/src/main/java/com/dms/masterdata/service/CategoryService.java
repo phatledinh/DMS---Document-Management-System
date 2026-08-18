@@ -1,19 +1,19 @@
 package com.dms.masterdata.service;
 
-import com.dms.common.exception.AppException;
+import com.dms.audit.service.AuditLogService;
 import com.dms.category.entity.CategoryDepartmentPermission;
 import com.dms.category.entity.CategoryPermission;
-import com.dms.audit.service.AuditLogService;
 import com.dms.category.repository.CategoryDepartmentPermissionRepository;
-import com.dms.common.security.CurrentUserProvider;
+import com.dms.common.exception.AppException;
 import com.dms.common.exception.ErrorCodes;
+import com.dms.common.security.CurrentUserProvider;
+import com.dms.identity.entity.User;
 import com.dms.masterdata.dto.CategoryRequest;
 import com.dms.masterdata.dto.CategoryResponse;
 import com.dms.masterdata.entity.Category;
 import com.dms.masterdata.mapper.CategoryMapper;
 import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.masterdata.repository.DepartmentRepository;
-import com.dms.identity.entity.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,15 +34,22 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final CategoryMapper categoryMapper;
     private final DepartmentRepository departmentRepository;
-    private final CategoryDepartmentPermissionRepository permissionRepository;
+    private final CategoryDepartmentPermissionRepository departmentPermissionRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AuditLogService auditLogService;
 
-    public CategoryService(CategoryRepository categoryRepository, CategoryMapper categoryMapper, DepartmentRepository departmentRepository, CategoryDepartmentPermissionRepository permissionRepository, CurrentUserProvider currentUserProvider, AuditLogService auditLogService) {
+    public CategoryService(
+            CategoryRepository categoryRepository,
+            CategoryMapper categoryMapper,
+            DepartmentRepository departmentRepository,
+            CategoryDepartmentPermissionRepository departmentPermissionRepository,
+            CurrentUserProvider currentUserProvider,
+            AuditLogService auditLogService
+    ) {
         this.categoryRepository = categoryRepository;
         this.categoryMapper = categoryMapper;
         this.departmentRepository = departmentRepository;
-        this.permissionRepository = permissionRepository;
+        this.departmentPermissionRepository = departmentPermissionRepository;
         this.currentUserProvider = currentUserProvider;
         this.auditLogService = auditLogService;
     }
@@ -52,14 +59,20 @@ public class CategoryService {
         List<Category> categories = activeOnly
                 ? categoryRepository.findByIsActiveTrueAndDeletedAtIsNullOrderBySortOrderAscNameAsc()
                 : categoryRepository.findByDeletedAtIsNullOrderBySortOrderAscNameAsc();
-        Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> permissions = permissionsByCategory(categories.stream().map(Category::getId).toList());
-        return categories.stream().map(category -> categoryMapper.toResponse(category, permissions.getOrDefault(category.getId(), List.of()))).toList();
+        List<Long> categoryIds = categories.stream().map(Category::getId).toList();
+        Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> departmentPermissions = departmentPermissionsByCategory(categoryIds);
+        return categories.stream()
+                .map(category -> categoryMapper.toResponse(
+                        category,
+                        departmentPermissions.getOrDefault(category.getId(), List.of())
+                ))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse getCategoryById(Long id) {
         Category category = getCategoryEntityById(id);
-        return categoryMapper.toResponse(category, permissionsForCategory(id));
+        return response(category);
     }
 
     @Transactional
@@ -74,7 +87,7 @@ public class CategoryService {
         User actor = currentUserProvider.getRequiredUser();
         Category saved = categoryRepository.save(category);
         replacePermissions(saved.getId(), request.departmentPermissions(), actor);
-        CategoryResponse response = categoryMapper.toResponse(saved, permissionsForCategory(saved.getId()));
+        CategoryResponse response = response(saved);
         auditLogService.log(actor, "CATEGORY_CREATE", "CATEGORY", saved.getId(), null, response);
         return response;
     }
@@ -83,7 +96,7 @@ public class CategoryService {
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = getCategoryEntityById(id);
         User actor = currentUserProvider.getRequiredUser();
-        CategoryResponse oldValue = categoryMapper.toResponse(category, permissionsForCategory(id));
+        CategoryResponse oldValue = response(category);
         applyRequest(category, request);
         String slug = resolveSlug(request.slug(), request.name());
         if (categoryRepository.existsBySlugAndIdNotAndDeletedAtIsNull(slug, id)) {
@@ -93,7 +106,7 @@ public class CategoryService {
         category.setUpdatedAt(OffsetDateTime.now());
         Category saved = categoryRepository.save(category);
         replacePermissions(saved.getId(), request.departmentPermissions(), actor);
-        CategoryResponse response = categoryMapper.toResponse(saved, permissionsForCategory(saved.getId()));
+        CategoryResponse response = response(saved);
         auditLogService.log(actor, "CATEGORY_UPDATE", "CATEGORY", saved.getId(), oldValue, response);
         return response;
     }
@@ -102,8 +115,8 @@ public class CategoryService {
     public void deleteCategory(Long id) {
         User actor = currentUserProvider.getRequiredUser();
         Category category = getCategoryEntityById(id);
-        CategoryResponse oldValue = categoryMapper.toResponse(category, permissionsForCategory(id));
-        permissionRepository.deleteByCategoryId(id);
+        CategoryResponse oldValue = response(category);
+        departmentPermissionRepository.deleteByCategoryId(id);
         category.setDeletedAt(OffsetDateTime.now());
         category.setActive(false);
         categoryRepository.save(category);
@@ -127,9 +140,16 @@ public class CategoryService {
         }
     }
 
+    private void replacePermissions(
+            Long categoryId,
+            List<CategoryRequest.DepartmentPermissionRequest> requestedDepartmentPermissions,
+            User actor
+    ) {
+        departmentPermissionRepository.deleteByCategoryId(categoryId);
+        saveDepartmentPermissions(categoryId, requestedDepartmentPermissions, actor);
+    }
 
-    private void replacePermissions(Long categoryId, List<CategoryRequest.DepartmentPermissionRequest> requestedPermissions, User actor) {
-        permissionRepository.deleteByCategoryId(categoryId);
+    private void saveDepartmentPermissions(Long categoryId, List<CategoryRequest.DepartmentPermissionRequest> requestedPermissions, User actor) {
         if (requestedPermissions == null || requestedPermissions.isEmpty()) {
             return;
         }
@@ -157,8 +177,9 @@ public class CategoryService {
                 rows.add(row);
             }
         }
-        permissionRepository.saveAll(rows);
+        departmentPermissionRepository.saveAll(rows);
     }
+
 
     private CategoryPermission parsePermission(String value) {
         try {
@@ -168,22 +189,29 @@ public class CategoryService {
         }
     }
 
-    private List<CategoryResponse.DepartmentPermissionResponse> permissionsForCategory(Long categoryId) {
-        return permissionRowsToResponse(permissionRepository.findByCategoryId(categoryId));
+    private CategoryResponse response(Category category) {
+        Long categoryId = category.getId();
+        return categoryMapper.toResponse(category, departmentPermissionsForCategory(categoryId));
     }
 
-    private Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> permissionsByCategory(List<Long> categoryIds) {
+    private List<CategoryResponse.DepartmentPermissionResponse> departmentPermissionsForCategory(Long categoryId) {
+        return departmentPermissionRowsToResponse(departmentPermissionRepository.findByCategoryId(categoryId));
+    }
+
+
+    private Map<Long, List<CategoryResponse.DepartmentPermissionResponse>> departmentPermissionsByCategory(List<Long> categoryIds) {
         if (categoryIds.isEmpty()) {
             return Map.of();
         }
-        return permissionRepository.findByCategoryIdIn(categoryIds).stream()
+        return departmentPermissionRepository.findByCategoryIdIn(categoryIds).stream()
                 .collect(Collectors.groupingBy(
                         CategoryDepartmentPermission::getCategoryId,
-                        Collectors.collectingAndThen(Collectors.toList(), this::permissionRowsToResponse)
+                        Collectors.collectingAndThen(Collectors.toList(), this::departmentPermissionRowsToResponse)
                 ));
     }
 
-    private List<CategoryResponse.DepartmentPermissionResponse> permissionRowsToResponse(List<CategoryDepartmentPermission> rows) {
+
+    private List<CategoryResponse.DepartmentPermissionResponse> departmentPermissionRowsToResponse(List<CategoryDepartmentPermission> rows) {
         Map<Long, List<String>> byDepartment = rows.stream()
                 .collect(Collectors.groupingBy(
                         CategoryDepartmentPermission::getDepartmentId,
@@ -195,6 +223,7 @@ public class CategoryService {
                 .sorted(Comparator.comparing(CategoryResponse.DepartmentPermissionResponse::departmentId))
                 .toList();
     }
+
 
     private Category getCategoryEntityById(Long id) {
         return categoryRepository.findByIdAndDeletedAtIsNull(id)

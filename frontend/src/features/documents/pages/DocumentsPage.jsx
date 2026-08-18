@@ -28,7 +28,6 @@ import { useDocuments } from '../hooks/useDocuments.js';
 import {
   formatDateTime,
   formatFileSize,
-  getAccessLevelLabel,
   getDocumentStatusMeta,
   getPageContent,
   normalizeDocument,
@@ -216,7 +215,7 @@ export default function DocumentsPage() {
         <Flex gap={12} align="center">
           <FileIcon fileType={record.fileType || record.mimeType || record.fileName} />
           <div>
-            <Button type="link" className={styles.titleLink} onClick={() => navigate(`/documents/`)}>
+            <Button type="link" className={styles.titleLink} onClick={() => navigate(`/documents/${record.slug}`)}>
               {record.title || record.fileName || 'Không có tiêu đề'}
             </Button>
             <div>
@@ -237,11 +236,6 @@ export default function DocumentsPage() {
       render: formatFileSize,
     },
     {
-      title: 'Quyền truy cập',
-      dataIndex: 'accessLevel',
-      render: getAccessLevelLabel,
-    },
-    {
       title: 'Trạng thái',
       dataIndex: 'status',
       render: (value) => <StatusBadge status={value} />,
@@ -256,7 +250,7 @@ export default function DocumentsPage() {
       key: 'actions',
       render: (_, record) => (
         <Space wrap>
-          <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/`)}>
+          <Button icon={<EyeOutlined />} onClick={() => navigate(`/documents/${record.slug}`)}>
             Chi tiết
           </Button>
           {isAdmin && record.status === 'INDEXED' && (

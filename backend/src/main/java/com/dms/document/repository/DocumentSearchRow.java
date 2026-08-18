@@ -11,7 +11,6 @@ public record DocumentSearchRow(
         String fileType,
         Long fileSize,
         String status,
-        String accessLevel,
         String versionNumber,
         Integer viewCount,
         Integer downloadCount,
@@ -24,6 +23,7 @@ public record DocumentSearchRow(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         double relevanceScore,
+        int matchCount,
         String titleHighlight,
         String descriptionHighlight,
         String contentHighlight

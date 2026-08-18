@@ -10,6 +10,9 @@ import com.dms.document.repository.DocumentSearchRow;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.entity.UserStatus;
+import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.repository.CategoryRepository;
+import com.dms.masterdata.repository.DepartmentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,12 +34,18 @@ class DocumentSearchServiceTest {
     private CurrentUserProvider currentUserProvider;
     @Mock
     private DocumentSearchRepository searchRepository;
+    @Mock
+    private CategoryRepository categoryRepository;
+    @Mock
+    private DepartmentRepository departmentRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private DocumentSearchService service;
 
     @BeforeEach
     void setUp() {
-        service = new DocumentSearchService(currentUserProvider, searchRepository);
+        service = new DocumentSearchService(currentUserProvider, searchRepository, categoryRepository, departmentRepository, userRepository);
     }
 
     @Test
@@ -49,15 +58,16 @@ class DocumentSearchServiceTest {
         when(searchRepository.facets(user, request, "categories")).thenReturn(List.of(new SearchFacetValueResponse("1", "Policy", 1)));
         when(searchRepository.facets(user, request, "departments")).thenReturn(List.of());
         when(searchRepository.facets(user, request, "fileTypes")).thenReturn(List.of());
-        when(searchRepository.facets(user, request, "accessLevels")).thenReturn(List.of());
         when(searchRepository.tagFacets(user, request)).thenReturn(List.of(new SearchFacetValueResponse("2", "HR", 1)));
 
         DocumentSearchResponse response = service.search(request);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().getFirst().highlight().title()).isEqualTo("<em>Quy chế</em>");
+        assertThat(response.content().getFirst().matchCount()).isEqualTo(4);
         assertThat(response.content().getFirst().highlight().content()).doesNotContain("script");
-        assertThat(response.facets()).containsKeys("categories", "departments", "fileTypes", "accessLevels", "tags");
+        assertThat(response.facets()).containsKeys("categories", "departments", "fileTypes", "tags");
+        assertThat(response.facets()).doesNotContainKey("accessLevels");
         assertThat(response.totalElements()).isEqualTo(1);
         assertThat(response.query()).isEqualTo("quy chế");
         verify(searchRepository).logSearch(eq(user), eq(request), eq(1L), any(Long.class));
@@ -77,7 +87,7 @@ class DocumentSearchServiceTest {
     }
 
     private DocumentSearchRequest request(String query) {
-        return new DocumentSearchRequest(query, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new DocumentSearchRequest(query, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private DocumentSearchRow row() {
@@ -89,7 +99,6 @@ class DocumentSearchServiceTest {
                 "PDF",
                 1024L,
                 "INDEXED",
-                "PUBLIC",
                 "1.0",
                 3,
                 2,
@@ -102,6 +111,7 @@ class DocumentSearchServiceTest {
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
                 1.5,
+                4,
                 "<em>Quy chế</em>",
                 null,
                 "<em>Quy chế</em><script>alert(1)</script>"

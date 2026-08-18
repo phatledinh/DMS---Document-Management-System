@@ -590,7 +590,7 @@
 }
 
 .highlightList .snippetText {
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 3;
 }
 
 .snippetLabel {
@@ -601,11 +601,9 @@
 }
 
 .snippetText em, .snippetText mark {
-  background-color: var(--primary-fixed);
-  color: var(--on-primary-fixed);
-  font-weight: 600;
-  padding: 0 2px;
-  border-radius: 2px;
+  background-color: transparent;
+  color: var(--primary);
+  font-weight: 700;
   font-style: normal;
 }
 

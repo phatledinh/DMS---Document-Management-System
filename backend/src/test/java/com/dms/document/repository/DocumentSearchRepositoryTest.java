@@ -36,7 +36,7 @@ class DocumentSearchRepositoryTest {
     @Test
     void search_buildsPostgresFtsSqlWithAclBeforeResults() {
         User user = user(Role.USER);
-        DocumentSearchRequest request = new DocumentSearchRequest("quy che", null, null, null, null, null, null, null, null, null, null, null, null, null, "relevance", 0, 10);
+        DocumentSearchRequest request = new DocumentSearchRequest("quy che", null, null, null, null, null, null, null, null, null, null, null, "relevance", 0, 10);
         when(jdbcTemplate.query(any(String.class), any(MapSqlParameterSource.class), any(RowMapper.class))).thenReturn(java.util.List.of());
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
 
@@ -48,7 +48,12 @@ class DocumentSearchRepositoryTest {
         assertThat(sql).contains("websearch_to_tsquery('simple', :query) AS highlight_value");
         assertThat(sql).contains("si.search_vector @@ q.search_value");
         assertThat(sql).contains("d.highlight_query_value");
+        assertThat(sql).contains("AS match_count");
+        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.title_text, '')))");
+        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.description_text, '')))");
+        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.content_text, '')))");
         assertThat(sql).contains("d.status = 'INDEXED'");
+        assertThat(sql).doesNotContain("category_user_permissions");
         assertThat(sql).contains("category_department_permissions");
         assertThat(sql).contains("user_departments");
         assertThat(sql).contains("cdp.category_id = d.category_id");
@@ -59,7 +64,7 @@ class DocumentSearchRepositoryTest {
     @Test
     void logSearch_serializesNullFilters() {
         User user = user(Role.USER);
-        DocumentSearchRequest request = new DocumentSearchRequest("doc", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        DocumentSearchRequest request = new DocumentSearchRequest("doc", null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         ArgumentCaptor<MapSqlParameterSource> parametersCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
 
         repository.logSearch(user, request, 0, 12);

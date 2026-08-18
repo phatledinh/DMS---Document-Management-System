@@ -8,19 +8,19 @@ import com.dms.document.dto.UploadInitResponse;
 import com.dms.document.entity.AccessLog;
 import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
-import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.processing.DocumentExtractionRequestedEvent;
 import com.dms.document.repository.AccessLogRepository;
-import com.dms.document.repository.DocumentDepartmentAccessRepository;
 import com.dms.document.repository.DocumentRepository;
-import com.dms.document.repository.DocumentUserAccessRepository;
+import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.entity.UserStatus;
 import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.entity.Category;
+import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
 import com.dms.storage.ObjectMetadata;
@@ -53,13 +53,13 @@ class DocumentPresignedUrlServiceTest {
     @Mock
     private DocumentRepository documentRepository;
     @Mock
-    private DocumentDepartmentAccessRepository departmentAccessRepository;
-    @Mock
-    private DocumentUserAccessRepository userAccessRepository;
+    private DocumentVersionRepository versionRepository;
     @Mock
     private AccessLogRepository accessLogRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private CategoryRepository categoryRepository;
     @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
@@ -81,10 +81,10 @@ class DocumentPresignedUrlServiceTest {
     void setUp() {
         service = new DocumentPresignedUrlService(
                 documentRepository,
-                departmentAccessRepository,
-                userAccessRepository,
+                versionRepository,
                 accessLogRepository,
                 userRepository,
+                categoryRepository,
                 currentUserProvider,
                 accessPolicyService,
                 objectStorageService,
@@ -106,15 +106,14 @@ class DocumentPresignedUrlServiceTest {
                 10L,
                 20L,
                 null,
-                DocumentAccessLevel.PUBLIC,
-                null,
                 30L,
-                null,
                 null,
                 null
         );
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(5);
         when(currentUserProvider.getRequiredUser()).thenReturn(admin);
+        when(categoryRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(java.util.Optional.of(new Category()));
+        when(accessPolicyService.canUpload(admin, 10L)).thenReturn(AccessDecision.allow());
         when(userRepository.existsById(30L)).thenReturn(true);
         when(fileValidationService.validateDeclared("Policy.pdf", 1024, "application/pdf"))
                 .thenReturn(new ValidatedFile("Policy.pdf", "PDF", "application/pdf"));
@@ -136,6 +135,37 @@ class DocumentPresignedUrlServiceTest {
         verify(documentRepository).save(documentCaptor.capture());
         assertThat(documentCaptor.getValue().getStoragePath()).isEqualTo("documents/object-id");
         assertThat(documentCaptor.getValue().getUploadExpiresAt()).isEqualTo(expiresAt);
+    }
+
+    @Test
+    void initiateUpload_withoutUploadPermissionDoesNotCreateDocument() {
+        User user = user();
+        UploadInitRequest request = new UploadInitRequest(
+                "Policy.pdf",
+                1024,
+                "application/pdf",
+                "QA Policy",
+                "desc",
+                10L,
+                20L,
+                null,
+                null,
+                null,
+                null
+        );
+        when(currentUserProvider.getRequiredUser()).thenReturn(user);
+        when(fileValidationService.validateDeclared("Policy.pdf", 1024, "application/pdf"))
+                .thenReturn(new ValidatedFile("Policy.pdf", "PDF", "application/pdf"));
+        when(categoryRepository.findByIdAndDeletedAtIsNull(10L)).thenReturn(java.util.Optional.of(new Category()));
+        when(accessPolicyService.canUpload(user, 10L)).thenReturn(AccessDecision.denied("ACCESS_DENIED"));
+
+        assertThatThrownBy(() -> service.initiateUpload(request))
+                .isInstanceOf(AppException.class)
+                .hasMessage("Access denied");
+
+        verify(objectStorageService, never()).generateDocumentObjectKey();
+        verify(objectStorageService, never()).presignPut(any(), any());
+        verify(documentRepository, never()).save(any(Document.class));
     }
 
     @Test
@@ -258,6 +288,11 @@ class DocumentPresignedUrlServiceTest {
                 .thenReturn(new ByteArrayInputStream("pdf".getBytes()));
         when(mimeDetectionService.detect(any(), any())).thenReturn("application/pdf");
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(versionRepository.save(any(com.dms.document.entity.DocumentVersion.class))).thenAnswer(invocation -> {
+            com.dms.document.entity.DocumentVersion v = invocation.getArgument(0);
+            v.setId(100L);
+            return v;
+        });
 
         var response = service.completeUpload(1L);
 
@@ -266,6 +301,9 @@ class DocumentPresignedUrlServiceTest {
         assertThat(document.getUploadExpiresAt()).isNull();
         assertThat(document.getDocumentCode()).isNotBlank();
         verify(fileValidationService).validateDetected("PDF", "application/pdf");
+        ArgumentCaptor<com.dms.document.entity.DocumentVersion> versionCaptor = ArgumentCaptor.forClass(com.dms.document.entity.DocumentVersion.class);
+        verify(versionRepository).save(versionCaptor.capture());
+        assertThat(versionCaptor.getValue().getDocumentId()).isEqualTo(1L);
         ArgumentCaptor<DocumentExtractionRequestedEvent> eventCaptor = ArgumentCaptor.forClass(DocumentExtractionRequestedEvent.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue().documentId()).isEqualTo(1L);
@@ -290,12 +328,19 @@ class DocumentPresignedUrlServiceTest {
         when(mimeDetectionService.detect(any(), any()))
                 .thenReturn("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(versionRepository.save(any(com.dms.document.entity.DocumentVersion.class))).thenAnswer(invocation -> {
+            com.dms.document.entity.DocumentVersion v = invocation.getArgument(0);
+            v.setId(100L);
+            return v;
+        });
 
         var response = service.completeUpload(1L);
 
         assertThat(response.status()).isEqualTo(DocumentStatus.PROCESSING.name());
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.PROCESSING);
         verify(fileValidationService).validateDetected("DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        ArgumentCaptor<com.dms.document.entity.DocumentVersion> versionCaptor = ArgumentCaptor.forClass(com.dms.document.entity.DocumentVersion.class);
+        verify(versionRepository).save(versionCaptor.capture());
         ArgumentCaptor<DocumentExtractionRequestedEvent> eventCaptor = ArgumentCaptor.forClass(DocumentExtractionRequestedEvent.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue().mimeType()).isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -370,7 +415,6 @@ class DocumentPresignedUrlServiceTest {
         document.setMimeType("application/pdf");
         document.setFileSize(1024L);
         document.setStoragePath("documents/object-id");
-        document.setAccessLevel(DocumentAccessLevel.PUBLIC);
         document.setStatus(DocumentStatus.INDEXED);
         document.setViewCount(7);
         document.setDownloadCount(3);

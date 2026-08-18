@@ -87,12 +87,12 @@
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
-| Actor | Admin |
+| Actor | Admin, User có `UPLOAD` trên category qua phòng ban |
 | Mô tả | Khởi tạo upload bằng presigned URL, client PUT file trực tiếp lên object storage, complete để validate và tạo version đầu tiên |
-| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `tagIds`, `visibility`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
+| Input | `fileName`, `fileSize`, `contentType`, `title`, `description`, `categoryId`, `tagIds`, `ownerId`, `effectiveDate`, `expiryDate`; byte file gửi trực tiếp tới object storage bằng presigned PUT |
 | Output | `upload-init` trả document `AWAITING_UPLOAD` + presigned PUT URL; `upload-complete` chuyển document sang `PROCESSING` |
-| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB; `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` do backend tự sinh, request không nhận/sửa field này<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- `visibility` gồm `PUBLIC`, `RESTRICTED`; mặc định `PUBLIC`<br>- Hiện tại resource access policy permissive nên audience có thể để trống<br>- Nếu sau này bật enforcement, `RESTRICTED` dùng owner/shared users/departments làm audience |
-| API | `POST /documents/upload-init` 👑, `POST /documents/{id}/upload-complete` 👑 |
+| Business Rules | - Mỗi request chỉ upload 1 file<br>- `upload-init` validate sơ bộ extension/MIME khai báo/size ≤ 50MB và kiểm tra user có `UPLOAD` trên category qua một trong các phòng ban của user; Admin luôn được phép<br>- `upload-complete` validate MIME thực tế bằng Tika<br>- Cho phép pdf, doc, docx, xls, xlsx, jpg, png, tiff<br>- Chặn `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`<br>- Tên file lưu trữ dùng UUID-based path, không dùng trực tiếp tên file user nhập<br>- `documentCode` do backend tự sinh, request không nhận/sửa field này<br>- `title` tự động tạo `slug`<br>- Tự động tạo version 1.0<br>- Tài liệu kế thừa quyền từ danh mục; upload không nhận visibility/audience riêng theo tài liệu |
+| API | `POST /documents/upload-init` 🔒, `POST /documents/{id}/upload-complete` 🔒 |
 
 ### F2.2: Trích xuất nội dung file (Content Extraction)
 
@@ -102,7 +102,7 @@
 | Mô tả | Tự động trích xuất text từ file sau khi upload |
 | Processing | - PDF text → PDFBox<br>- DOCX → POI (XWPF)<br>- DOC → POI (HWPF)<br>- XLS/XLSX → POI<br>- Image/PDF scan → VietOCR |
 | Output | `extracted_content` lưu trong `document_contents` |
-| Business Rules | - Chạy trong RabbitMQ worker, không chạy in-process trong API server<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan publish task `dms.ocr` để tạo `extracted_content` khi có thể<br>- Retry qua RabbitMQ delay queues `30s -> 5m -> 30m`, vượt `maxAttempts = 3` thì vào DLQ và alert |
+| Business Rules | - Chạy trong RabbitMQ worker, không chạy in-process trong API server<br>- Cập nhật status: `PROCESSING` → `INDEXED` / `EXTRACTION_FAILED`<br>- Tài liệu ảnh/PDF scan gọi OCR service trong extract worker hiện tại; `dms.ocr` là queue planned khi cần scale OCR riêng<br>- Retry qua RabbitMQ delay queues `30s -> 5m -> 30m`, vượt `maxAttempts = 3` thì vào DLQ và alert |
 
 ### F2.3: Danh sách tài liệu
 
@@ -110,10 +110,10 @@
 |------------|----------|
 | Actor | Admin, User |
 | Mô tả | Xem danh sách tài liệu với pagination và filters |
-| Filters | `categoryId`, `departmentId`, `fileType`, `status`, `tagIds`, `visibility`, `ownerId`, `effectiveDateFrom/To` |
+| Filters | `categoryId`, `departmentId`, `fileType`, `status`, `tagIds`, `ownerId`, `effectiveDateFrom/To` |
 | Sort | `created_at_desc` (default), `created_at_asc`, `updated_at_desc`, `title_asc`, `view_count_desc`, `download_count_desc` |
 | Pagination | `page` (default: 0), `size` (default: 20, max: 100) |
-| Business Rules | - Danh sách đi qua resource access policy; hiện tại permissive chưa chặn theo audience<br>- Mặc định chỉ hiển thị tài liệu theo lifecycle/status phù hợp, User thường chỉ thấy `INDEXED` |
+| Business Rules | - Danh sách đi qua resource access policy theo category-department; User thường chỉ thấy tài liệu `INDEXED` thuộc category mà một trong các phòng ban của user có `VIEW`<br>- Admin có thể lọc theo lifecycle/status phù hợp |
 | API | `GET /documents` 🔒 |
 
 ### F2.4: Chi tiết tài liệu
@@ -125,14 +125,14 @@
 | Business Rules | - Kiểm tra quyền trước khi trả metadata và endpoint lấy `preview-url`/`download-url`; không trả object key thô<br>- User không có quyền không được thấy title, snippet, metadata hoặc URL tải file<br>- Tài liệu `DELETED` không được trả cho User<br>- Chỉ tăng `view_count` khi người dùng preview, không tăng khi chỉ xem metadata |
 | API | `GET /documents/{id}` 🔒 |
 
-### F2.5: Cập nhật metadata và audience tài liệu
+### F2.5: Cập nhật metadata tài liệu
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
 | Actor | Admin |
-| Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags, ngày hiệu lực và audience |
-| Input | `title`, `description`, `categoryId`, `tagIds`, `visibility`, `departmentIds`, `ownerId`, `sharedUserIds`, `effectiveDate`, `expiryDate` |
-| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` qua metadata endpoint<br>- Cập nhật metadata/audience phải refresh PostgreSQL search row nếu field search thay đổi<br>- Ghi audit log các field thay đổi |
+| Mô tả | Cập nhật tiêu đề, mô tả, danh mục, tags và ngày hiệu lực |
+| Input | `title`, `description`, `categoryId`, `tagIds`, `ownerId`, `effectiveDate`, `expiryDate` |
+| Business Rules | - Không cập nhật file, dùng F2.9 để upload version mới<br>- Không cho sửa `documentCode` qua metadata endpoint<br>- Cập nhật metadata phải refresh PostgreSQL search row nếu field search thay đổi<br>- Quyền truy cập được quản lý ở danh mục, không qua metadata tài liệu<br>- Ghi audit log các field thay đổi |
 | API | `PUT /documents/{id}` 👑 |
 
 ### F2.6: Xóa tài liệu

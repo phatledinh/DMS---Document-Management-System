@@ -18,9 +18,11 @@ import {
   TagsOutlined,
   TeamOutlined,
   UploadOutlined,
+  DeleteOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import { Alert, Modal, Spin } from 'antd';
+import { Alert, Modal, Spin, Form, Input } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -28,6 +30,8 @@ import {
   completeDocumentVersionUpload,
   getDocumentById,
   getDocumentVersionDownloadUrl,
+  getDocumentVersionPreviewUrl,
+  deleteDocumentVersion,
   getDocumentVersions,
   initDocumentVersionUpload,
   restoreDocumentVersion,
@@ -42,6 +46,26 @@ function getPresignedUrl(payload) {
   return payload?.url || payload?.downloadUrl || payload?.uploadUrl;
 }
 
+function getNextVersionNumber(versionsData) {
+  if (!versionsData || versionsData.length === 0) return '1.1';
+  let maxMajor = 0;
+  let maxMinor = 0;
+  for (const v of versionsData) {
+    if (!v.versionNumber) continue;
+    const parts = v.versionNumber.split('.');
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const major = parseInt(parts[0], 10);
+      const minor = parseInt(parts[1], 10);
+      if (major > maxMajor || (major === maxMajor && minor > maxMinor)) {
+        maxMajor = major;
+        maxMinor = minor;
+      }
+    }
+  }
+  if (maxMajor === 0 && maxMinor === 0) return '1.1';
+  return `${maxMajor}.${maxMinor + 1}`;
+}
+
 function initials(value) {
   const text = String(value || 'U').trim();
   return text.slice(0, 2).toUpperCase();
@@ -49,28 +73,39 @@ function initials(value) {
 
 export default function DocumentHistoryPage() {
   const { slug } = useParams();
+  const id = slug;
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isUploadModalVisible, setIsUploadModalVisible] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadForm] = Form.useForm();
 
   const documentQuery = useQuery({
     queryKey: ['documents', slug],
     queryFn: () => getDocumentById(id),
     enabled: Boolean(id),
+    refetchInterval: (query) => query.state?.data?.status === 'PROCESSING' ? 2000 : false,
   });
   const versionsQuery = useQuery({
     queryKey: ['documentVersions', id],
     queryFn: () => getDocumentVersions(id),
     enabled: Boolean(id),
+    refetchInterval: (query) => {
+      const data = query.state?.data;
+      if (Array.isArray(data) && data.some(v => v.status === 'PROCESSING')) return 2000;
+      return false;
+    },
   });
 
   const document = normalizeDocument(documentQuery.data);
   const versions = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const rows = Array.isArray(versionsQuery.data) ? versionsQuery.data : [];
-    if (!term) return rows;
-    return rows.filter((item) => [item.versionNumber, item.fileName, item.changelog, item.uploadedBy]
+    const validRows = rows.filter(item => item.status !== 'AWAITING_UPLOAD');
+    if (!term) return validRows;
+    return validRows.filter((item) => [item.versionNumber, item.fileName, item.changelog, item.uploadedBy]
       .some((value) => String(value || '').toLowerCase().includes(term)));
   }, [searchTerm, versionsQuery.data]);
 
@@ -78,6 +113,7 @@ export default function DocumentHistoryPage() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['documents', slug] }),
       queryClient.invalidateQueries({ queryKey: ['documentVersions', id] }),
+      documentQuery.refetch()
     ]);
   }
 
@@ -116,32 +152,69 @@ export default function DocumentHistoryPage() {
     });
   }
 
-  async function handleUploadFile(event) {
+  function handleUploadFile(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
-    const versionNumber = window.prompt('Nhập version number mới, ví dụ 1.3');
-    if (!versionNumber?.trim()) return;
-    const changelog = window.prompt('Nhập ghi chú thay đổi cho version này');
-    if (!changelog?.trim()) return;
+    setUploadFile(file);
+    const versions = versionsQuery.data || [];
+    const nextVersion = getNextVersionNumber(versions);
+    uploadForm.resetFields();
+    uploadForm.setFieldsValue({ versionNumber: nextVersion });
+    setIsUploadModalVisible(true);
+  }
+
+  async function handlePreview(version) {
+    try {
+      const { url } = await getDocumentVersionPreviewUrl(id, version.id);
+      window.open(url, '_blank');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    }
+  }
+
+  async function handleDelete(version) {
+    Modal.confirm({
+      title: `Xóa phiên bản ${version.versionNumber}?`,
+      content: 'Bạn có chắc chắn muốn xóa vĩnh viễn phiên bản này? Hành động này không thể hoàn tác.',
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          await deleteDocumentVersion(id, version.id);
+          toast.success('Đã xóa phiên bản thành công.');
+          await refreshVersions();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+        }
+      },
+    });
+  }
+
+  async function submitUploadVersion(values) {
+    if (!uploadFile) return;
+    const { versionNumber, changelog } = values;
 
     setIsUploading(true);
     try {
       const initData = await initDocumentVersionUpload(id, {
-        fileName: file.name,
-        fileSize: file.size,
-        contentType: file.type || 'application/octet-stream',
+        fileName: uploadFile.name,
+        fileSize: uploadFile.size,
+        contentType: uploadFile.type || 'application/octet-stream',
         versionNumber: versionNumber.trim(),
         changelog: changelog.trim(),
       });
       await uploadToPresignedUrl({
         uploadUrl: initData.uploadUrl,
-        file,
+        file: uploadFile,
         requiredHeaders: initData.requiredHeaders,
       });
       await completeDocumentVersionUpload(id, initData.versionId);
       toast.success('Version upload accepted và đang processing.');
+      setIsUploadModalVisible(false);
+      setUploadFile(null);
       await refreshVersions();
     } catch (error) {
       toast.error(getApiErrorMessage(error));
@@ -216,8 +289,8 @@ export default function DocumentHistoryPage() {
                         </td>
                         <td>
                           <div className={styles.userCell}>
-                            <span className={styles.tertiaryAvatar}>{initials(item.uploadedBy)}</span>
-                            <span>{item.uploadedBy || '—'}</span>
+                            <span className={styles.tertiaryAvatar}>{initials(item.uploadedByName || item.uploadedBy)}</span>
+                            <span>{item.uploadedByName || item.uploadedBy || '—'}</span>
                           </div>
                         </td>
                         <td className={styles.mutedCell}>{formatDateTime(item.createdAt)}</td>
@@ -226,7 +299,9 @@ export default function DocumentHistoryPage() {
                         <td>
                           <div className={styles.actionsCell}>
                             <button title="Download" type="button" onClick={() => handleDownload(item)} disabled={item.status !== 'INDEXED'}><DownloadOutlined /></button>
+                            <button title="Xem trước" type="button" onClick={() => handlePreview(item)} disabled={item.status !== 'INDEXED'}><EyeOutlined /></button>
                             {!item.current && <button className={styles.restoreButton} title="Khôi phục" type="button" onClick={() => handleRestore(item)} disabled={item.status !== 'INDEXED'}><ReloadOutlined /></button>}
+                            {!item.current && <button className={styles.deleteButton} title="Xóa" type="button" onClick={() => handleDelete(item)}><DeleteOutlined /></button>}
                           </div>
                         </td>
                       </tr>
@@ -241,6 +316,39 @@ export default function DocumentHistoryPage() {
           </div>
         </div>
       </main>
+
+      <Modal
+        title="Tải lên phiên bản mới"
+        open={isUploadModalVisible}
+        onCancel={() => {
+          if (!isUploading) setIsUploadModalVisible(false);
+        }}
+        confirmLoading={isUploading}
+        onOk={() => uploadForm.submit()}
+        okText="Tải lên"
+        cancelText="Hủy"
+      >
+        <p style={{ marginBottom: 16 }}>File đã chọn: <strong>{uploadFile?.name}</strong></p>
+        <Form form={uploadForm} layout="vertical" onFinish={submitUploadVersion}>
+          <Form.Item 
+            label="Version Number" 
+            name="versionNumber" 
+            rules={[
+              { required: true, message: 'Vui lòng nhập version number!' },
+              { pattern: /^\d+(\.\d+){1,2}$/, message: 'Định dạng không hợp lệ (vd: 1.0, 1.0.1)' }
+            ]}
+          >
+            <Input placeholder="Ví dụ: 1.3" />
+          </Form.Item>
+          <Form.Item 
+            label="Ghi chú thay đổi (Changelog)" 
+            name="changelog" 
+            rules={[{ required: true, message: 'Vui lòng nhập ghi chú thay đổi!' }]}
+          >
+            <Input.TextArea placeholder="Nhập ghi chú thay đổi cho version này..." rows={4} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

@@ -123,3 +123,14 @@ export async function permanentDeleteTrashDocuments(documentIds) {
   const response = await axiosClient.post('/documents/trash/permanent-delete', { documentIds });
   return unwrapApiResponse(response);
 }
+
+export async function getDocumentVersionPreviewUrl(id, versionId) {
+  const response = await axiosClient.get(`/documents/${id}/versions/${versionId}/preview-url`);
+  return unwrapApiResponse(response);
+}
+
+export async function deleteDocumentVersion(id, versionId) {
+  const response = await axiosClient.delete(`/documents/${id}/versions/${versionId}`);
+  // Return true on success since it's a 204 No Content
+  return response.status === 204;
+}

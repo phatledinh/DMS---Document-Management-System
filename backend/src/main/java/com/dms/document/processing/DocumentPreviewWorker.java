@@ -67,7 +67,7 @@ public class DocumentPreviewWorker {
         if (document == null || document.getStatus() == DocumentStatus.DELETED) {
             return true;
         }
-        if (document.getStatus() != DocumentStatus.PROCESSING) {
+        if (document.getStatus() != DocumentStatus.PROCESSING && document.getStatus() != DocumentStatus.INDEXED) {
             return true;
         }
         if (message.versionId() == null) {

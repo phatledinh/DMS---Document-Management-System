@@ -66,22 +66,22 @@ Quản lý xác thực (authentication), phiên đăng nhập và thông tin ng�
 ## PH2: Document Management — Quản lý Tài liệu (Core Domain)
 
 ### Mô tả
-Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload → xử lý → lưu trữ → audience theo tài nguyên → preview → download → versioning → lifecycle.
+Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload → xử lý → lưu trữ → kế thừa quyền từ danh mục → preview → download → versioning → lifecycle.
 
 ### Entities
 | Entity | Mô tả |
 |--------|-------|
-| `Document` | Metadata tài liệu (title, slug, document_code, file info, status, counters, visibility) |
+| `Document` | Metadata tài liệu (title, slug, document_code, file info, category_id, status, counters) |
 | `DocumentContent` | Nội dung text đã trích xuất từ file (tách bảng riêng vì data lớn) |
 | `DocumentVersion` | Lịch sử phiên bản file |
-| `DocumentDepartmentAccess` | Audience theo phòng ban cho tài liệu `RESTRICTED` |
-| `DocumentUserAccess` | Audience theo user được chia sẻ trực tiếp cho tài liệu `RESTRICTED` |
+| `CategoryDepartmentPermission` | Quyền danh mục theo phòng ban, tài liệu kế thừa qua `category_id` |
+| `CategoryUserPermission` | Quyền danh mục theo user cụ thể để mở rộng khi cần |
 
 ### Chức năng chính
 - Upload tài liệu bằng presigned URL init/complete, max 50MB
 - Validate MIME type thực tế, extension, kích thước và extension bị chặn
 - Trích xuất nội dung file (Content Extraction Pipeline)
-- Lưu metadata, audience access policy và phiên bản tài liệu
+- Lưu metadata và phiên bản tài liệu; quyền truy cập lấy từ danh mục
 - Cập nhật metadata tài liệu
 - Archive, soft delete, restore tài liệu
 - Preview tài liệu bằng presigned GET URL; PDF/image dùng object gốc, Word/Excel dùng preview artifact PDF/HTML đã sanitize
@@ -96,7 +96,7 @@ Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload
 | POST | `/documents/{id}/upload-complete` | Xác nhận upload xong, validate object và publish xử lý nền |
 | GET | `/documents` | Danh sách (pagination, filters) |
 | GET | `/documents/{id}` | Chi tiết tài liệu, có kiểm tra quyền truy cập |
-| PUT | `/documents/{id}` | Cập nhật metadata và audience access policy |
+| PUT | `/documents/{id}` | Cập nhật metadata tài liệu |
 | DELETE | `/documents/{id}` | Xóa mềm |
 | POST | `/documents/{id}/archive` | Archive tài liệu |
 | POST | `/documents/{id}/restore` | Restore tài liệu đã archive/delete |
@@ -127,12 +127,12 @@ Document Management
   └── DocumentLifecycleService      — Archive, soft delete, restore, retry processing
 ```
 
-### Quy tắc audience theo tài nguyên
-- `PUBLIC`: mọi user đã đăng nhập có thể xem.
-- `RESTRICTED`: chỉ owner, user được share trực tiếp, hoặc user thuộc department/group được gắn vào audience mới xem được khi enforcement bật.
-- Hiện tại policy chạy permissive để chưa chặn quyền, nhưng search, metadata detail, preview và download vẫn phải gọi `DocumentAccessPolicyService`.
-- Category có thể có audience riêng; document có thể thừa hưởng từ category hoặc override bằng audience riêng.
-- Khi enforcement bật, user không thuộc audience không được nhìn thấy title, snippet, metadata hoặc download URL.
+### Quy tắc phân quyền theo danh mục
+- Tài liệu kế thừa quyền từ danh mục chứa nó qua `documents.category_id`.
+- Quyền MVP cấp theo phòng ban bằng `category_department_permissions`; user có thể thuộc nhiều phòng ban qua `user_departments`.
+- Hệ thống hỗ trợ mở rộng cấp quyền trực tiếp theo user bằng `category_user_permissions`.
+- Search, metadata detail, preview và download đều phải gọi hoặc áp cùng `DocumentAccessPolicyService`/category ACL.
+- User không có quyền category không được nhìn thấy title, snippet, metadata hoặc download URL.
 
 ---
 

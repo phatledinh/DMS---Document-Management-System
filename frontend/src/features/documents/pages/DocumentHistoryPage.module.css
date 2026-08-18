@@ -529,6 +529,10 @@
   color: var(--dt-warning) !important;
 }
 
+.deleteButton:hover {
+  color: #d93025 !important;
+}
+
 @media (max-width: 900px) {
   .sidebar {
     display: none;

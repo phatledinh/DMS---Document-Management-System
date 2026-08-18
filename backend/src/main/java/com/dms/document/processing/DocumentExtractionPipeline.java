@@ -50,22 +50,26 @@ public class DocumentExtractionPipeline {
             String objectKey = version == null ? document.getStoragePath() : version.getStoragePath();
             String fileType = version == null ? document.getFileType() : fileType(version.getFileName());
             ExtractedDocumentText extractedText = textExtractionService.extract(fileType, document, objectStorageService.openStream(objectKey));
-            if (fileValidationService.requiresPreviewConversion(fileType)) {
-                if (version == null) {
-                    documentRepository.save(document);
-                }
-                publisher.publishPreview(document.getId(), message.versionId(), objectKey, version == null ? document.getMimeType() : version.getMimeType());
-                return;
-            }
+            boolean requiresPreviewConversion = fileValidationService.requiresPreviewConversion(fileType);
             if (version == null) {
                 contentService.saveSuccess(document.getId(), extractedText, message.attempt());
                 searchEngine.refreshIndex(document, extractedText.text());
-                document.setStatus(DocumentStatus.INDEXED);
+                if (!requiresPreviewConversion) {
+                    document.setStatus(DocumentStatus.INDEXED);
+                }
                 documentRepository.save(document);
+                if (requiresPreviewConversion) {
+                    publisher.publishPreview(document.getId(), null, objectKey, document.getMimeType());
+                }
             } else {
-                versionService.publishVersionAsCurrent(document, version, null);
                 contentService.saveSuccess(document.getId(), extractedText, message.attempt());
                 searchEngine.refreshIndex(document, extractedText.text());
+                if (!requiresPreviewConversion) {
+                    versionService.publishVersionAsCurrent(document, version, null);
+                }
+                if (requiresPreviewConversion) {
+                    publisher.publishPreview(document.getId(), message.versionId(), objectKey, version.getMimeType());
+                }
             }
         } catch (RuntimeException exception) {
             if (message.versionId() == null) {

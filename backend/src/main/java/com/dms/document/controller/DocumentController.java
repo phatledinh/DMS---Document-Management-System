@@ -205,9 +205,20 @@ public class DocumentController {
         return ApiResponse.success(versionService.createDownloadUrl(resolveId(identifier), versionId, request));
     }
 
+    @GetMapping("/{id}/versions/{versionId}/preview-url")
+    public ApiResponse<PresignedUrlResponse> versionPreviewUrl(@PathVariable("id") String identifier, @PathVariable Long versionId, HttpServletRequest request) {
+        return ApiResponse.success(versionService.createPreviewUrl(resolveId(identifier), versionId, request));
+    }
+
     @PostMapping("/{id}/versions/{versionId}/restore")
     public ApiResponse<VersionRestoreResponse> restoreVersion(@PathVariable("id") String identifier, @PathVariable Long versionId) {
         return ApiResponse.success("Document version restored successfully", versionService.restore(resolveId(identifier), versionId));
+    }
+
+    @DeleteMapping("/{id}/versions/{versionId}")
+    public ResponseEntity<Void> deleteVersion(@PathVariable("id") String identifier, @PathVariable Long versionId) {
+        versionService.deleteVersion(resolveId(identifier), versionId);
+        return ResponseEntity.noContent().build();
     }
 
     private Long resolveId(String identifier) {

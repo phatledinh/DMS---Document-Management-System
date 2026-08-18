@@ -7,7 +7,6 @@ import com.dms.document.dto.DocumentDetailResponse;
 import com.dms.document.dto.DocumentSearchRequest;
 import com.dms.document.dto.PageResponse;
 import com.dms.document.entity.Document;
-import com.dms.document.entity.DocumentAccessLevel;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
@@ -15,6 +14,8 @@ import com.dms.document.repository.DocumentRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.entity.UserStatus;
+import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.masterdata.repository.DepartmentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,23 +48,27 @@ class DocumentMetadataServiceTest {
     private CurrentUserProvider currentUserProvider;
     @Mock
     private DocumentAccessPolicyService accessPolicyService;
+    @Mock
+    private CategoryRepository categoryRepository;
+    @Mock
+    private UserRepository userRepository;
 
     private DocumentMetadataService service;
 
     @BeforeEach
     void setUp() {
-        service = new DocumentMetadataService(documentRepository, categoryPermissionRepository, departmentRepository, currentUserProvider, accessPolicyService);
+        service = new DocumentMetadataService(documentRepository, categoryPermissionRepository, departmentRepository, categoryRepository, userRepository, currentUserProvider, accessPolicyService);
     }
 
     @Test
     void listDocuments_returnsAclFilteredPageFromRepository() {
         User user = user(Role.USER);
-        Document document = document(DocumentAccessLevel.PUBLIC, DocumentStatus.INDEXED);
+        Document document = document(DocumentStatus.INDEXED);
         when(currentUserProvider.getRequiredUser()).thenReturn(user);
         when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(document)));
 
-        PageResponse<?> response = service.listDocuments(new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+        PageResponse<?> response = service.listDocuments(new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.totalElements()).isEqualTo(1);
@@ -73,7 +78,7 @@ class DocumentMetadataServiceTest {
     @Test
     void getDocumentDetail_allowed_returnsDetailWithoutIncrementingViewCount() {
         User user = user(Role.USER);
-        Document document = document(DocumentAccessLevel.PUBLIC, DocumentStatus.INDEXED);
+        Document document = document(DocumentStatus.INDEXED);
         when(currentUserProvider.getRequiredUser()).thenReturn(user);
         when(documentRepository.findById(1L)).thenReturn(Optional.of(document));
         when(accessPolicyService.canViewMetadata(user, document)).thenReturn(AccessDecision.allow());
@@ -90,7 +95,7 @@ class DocumentMetadataServiceTest {
     @Test
     void getDocumentDetail_deniedAccessDoesNotLeakDocument() {
         User user = user(Role.USER);
-        Document document = document(DocumentAccessLevel.RESTRICTED, DocumentStatus.INDEXED);
+        Document document = document(DocumentStatus.INDEXED);
         when(currentUserProvider.getRequiredUser()).thenReturn(user);
         when(documentRepository.findById(1L)).thenReturn(Optional.of(document));
         when(accessPolicyService.canViewMetadata(user, document)).thenReturn(AccessDecision.denied("ACCESS_DENIED"));
@@ -112,7 +117,7 @@ class DocumentMetadataServiceTest {
         return user;
     }
 
-    private Document document(DocumentAccessLevel accessLevel, DocumentStatus status) {
+    private Document document(DocumentStatus status) {
         Document document = new Document();
         document.setId(1L);
         document.setTitle("Document");
@@ -131,7 +136,6 @@ class DocumentMetadataServiceTest {
         document.setVersionNumber("1.0");
         document.setViewCount(7);
         document.setDownloadCount(3);
-        document.setAccessLevel(accessLevel);
         document.setStatus(status);
         return document;
     }

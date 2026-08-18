@@ -72,6 +72,30 @@ public class DocumentAccessPolicyService {
         return AccessDecision.allow();
     }
 
+    public AccessDecision canUpload(User user, Long categoryId) {
+        AccessDecision userDecision = ensureActiveUser(user);
+        if (!userDecision.granted()) {
+            return userDecision;
+        }
+        return evaluateCategoryPermission(user, categoryId, CategoryPermission.UPLOAD);
+    }
+
+    public AccessDecision canEdit(User user, Document document) {
+        AccessDecision userDecision = ensureActiveUser(user);
+        if (!userDecision.granted()) {
+            return userDecision;
+        }
+        return evaluateCategoryPermission(user, document, CategoryPermission.EDIT);
+    }
+
+    public AccessDecision canDelete(User user, Document document) {
+        AccessDecision userDecision = ensureActiveUser(user);
+        if (!userDecision.granted()) {
+            return userDecision;
+        }
+        return evaluateCategoryPermission(user, document, CategoryPermission.DELETE);
+    }
+
     public AccessDecision canUseAudience(User user, Document document) {
         return canViewMetadata(user, document);
     }
@@ -94,10 +118,17 @@ public class DocumentAccessPolicyService {
     }
 
     private AccessDecision evaluateCategoryPermission(User user, Document document, CategoryPermission permission) {
-        if (document == null || document.getCategoryId() == null) {
+        if (document == null) {
             return AccessDecision.denied(ACCESS_DENIED);
         }
-        if (categoryAccessPolicyService.hasPermission(user, document.getCategoryId(), permission)) {
+        return evaluateCategoryPermission(user, document.getCategoryId(), permission);
+    }
+
+    private AccessDecision evaluateCategoryPermission(User user, Long categoryId, CategoryPermission permission) {
+        if (categoryId == null) {
+            return AccessDecision.denied(ACCESS_DENIED);
+        }
+        if (categoryAccessPolicyService.hasPermission(user, categoryId, permission)) {
             return AccessDecision.allow();
         }
         return AccessDecision.denied(ACCESS_DENIED);

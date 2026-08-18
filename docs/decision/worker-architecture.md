@@ -68,11 +68,11 @@ Tách theo đặc tính tài nguyên để scale và cô lập lỗi độc lậ
 | Task | Queue | Đặc tính | Trigger |
 |------|-------|----------|---------|
 | Extract text (PDFBox/POI) | `dms.extract` | CPU vừa, nhanh | upload-complete, version complete, retry |
-| OCR (VietOCR) | `dms.ocr` | CPU rất nặng, chậm | khi extract phát hiện scanned PDF/image |
-| Preview convert (LibreOffice) | `dms.preview` | CPU/RAM nặng, spawn process con | upload-complete (nếu pre-gen artifact — xem [presigned-url.md §4](./presigned-url.md)) |
-| Refresh PostgreSQL search vector | `dms.index` | Nhẹ, I/O | sau extract thành công; khi metadata/audience đổi |
+| OCR (VietOCR) | inline trong `dms.extract` hiện tại; `dms.ocr` là queue planned | CPU rất nặng, chậm | khi extract phát hiện scanned PDF/image |
+| Preview convert (LibreOffice) | `dms.preview` | CPU/RAM nặng, spawn process con | sau extract nếu file Office cần preview artifact |
+| Refresh PostgreSQL search vector | inline trong `dms.extract` hiện tại; `dms.index` là queue planned | Nhẹ, I/O | sau extract thành công; khi metadata/audience đổi |
 
-> Tách `dms.ocr` và `dms.preview` khỏi `dms.extract`/`dms.index` là điểm quan trọng: task nặng không làm nghẽn task nhẹ, và có thể scale số worker OCR riêng khi hàng đợi OCR dồn.
+> Trạng thái code hiện tại đã tách `dms.extract` và `dms.preview`; OCR và refresh index vẫn chạy trong extract worker dù queue `dms.ocr`/`dms.index` đã được khai báo để mở rộng sau. Khi tải OCR/index tăng cao, bước tiếp theo là thêm consumer riêng cho hai queue này.
 
 ### Topology RabbitMQ
 
@@ -80,9 +80,9 @@ Tách theo đặc tính tài nguyên để scale và cô lập lỗi độc lậ
 Exchange: dms.tasks   (type: direct, durable)
 
   routing key = "extract"  ──▶ queue dms.extract  (durable, DLX=dms.dlx)
-  routing key = "ocr"      ──▶ queue dms.ocr      (durable, DLX=dms.dlx)
+  routing key = "ocr"      ──▶ queue dms.ocr      (durable, DLX=dms.dlx; planned consumer)
   routing key = "preview"  ──▶ queue dms.preview  (durable, DLX=dms.dlx)
-  routing key = "index"    ──▶ queue dms.index    (durable, DLX=dms.dlx)
+  routing key = "index"    ──▶ queue dms.index    (durable, DLX=dms.dlx; planned consumer)
 
 Exchange: dms.dlx     (type: direct, durable)   ← Dead Letter Exchange
   routing key = <same>     ──▶ queue dms.dlq     (durable, không TTL)
@@ -142,18 +142,18 @@ Nối tiếp flow presigned upload (bước `upload-complete`):
    - pull object từ storage
    - chọn extractor theo mimeType:
        ├─ text-based (PDF có text layer, DOCX...) → PDFBox/POI → extracted_text
-       └─ scanned/image → publish {type:OCR} → dms.ocr; ack task extract
+       └─ scanned/image → gọi OCR service từ extract worker hiện tại
    - lưu document_contents, extraction_status=SUCCESS
-   - publish {type:INDEX} → dms.index
-   - (nếu là Office & pre-gen preview) publish {type:PREVIEW} → dms.preview
+   - refresh `document_search_index`/`search_vector` inline và chuyển status = INDEXED
+   - (nếu là Office & pre-gen preview) publish {type:PREVIEW} → dms.preview; preview artifact có thể sẵn sàng sau khi document đã INDEXED
    - ack
 
-3. Worker consume dms.index
+3. Worker consume dms.index (planned khi cần tách index khỏi extract)
    - rebuild `document_search_index`/`search_vector` từ metadata + extracted_text
    - thành công → status = INDEXED, commit; ack
    - lỗi PostgreSQL tạm thời → nack/requeue qua dms.retry.30s
 
-4. Worker consume dms.ocr (nếu có)
+4. Worker consume dms.ocr (planned khi cần scale OCR riêng)
    - VietOCR OCR → extracted_text → publish {type:INDEX}; ack
 
 5. Worker consume dms.preview (nếu pre-gen)

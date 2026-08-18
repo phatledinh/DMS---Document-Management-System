@@ -12,7 +12,10 @@ public class CategoryMapper {
         return toResponse(category, List.of());
     }
 
-    public CategoryResponse toResponse(Category category, List<CategoryResponse.DepartmentPermissionResponse> departmentPermissions) {
+    public CategoryResponse toResponse(
+            Category category,
+            List<CategoryResponse.DepartmentPermissionResponse> departmentPermissions
+    ) {
         Long parentId = category.getParent() == null ? null : category.getParent().getId();
         return new CategoryResponse(
                 category.getId(),
