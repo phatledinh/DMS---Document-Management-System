@@ -52,21 +52,35 @@ public class DocumentSearchRepository {
     }
 
     public List<SearchFacetValueResponse> facets(User user, DocumentSearchRequest request, String field) {
-        String expression = switch (field) {
-            case "categories" -> "category_id::text";
-            case "departments" -> "department_id::text";
-            case "fileTypes" -> "file_type";
-            case "accessLevels" -> "access_level";
+        String valueExpression;
+        String labelExpression;
+        String join = "";
+        switch (field) {
+            case "categories" -> {
+                valueExpression = "m.category_id::text";
+                labelExpression = "c.name";
+                join = "JOIN categories c ON c.id = m.category_id";
+            }
+            case "departments" -> {
+                valueExpression = "m.department_id::text";
+                labelExpression = "dp.name";
+                join = "JOIN departments dp ON dp.id = m.department_id";
+            }
+            case "fileTypes" -> {
+                valueExpression = "m.file_type";
+                labelExpression = "m.file_type";
+            }
             default -> throw new IllegalArgumentException("Unsupported facet field: " + field);
-        };
+        }
         return jdbcTemplate.query(baseSql(request) + """
                 SELECT %s AS value, %s AS label, count(*) AS count
-                FROM matched
+                FROM matched m
+                %s
                 WHERE %s IS NOT NULL
-                GROUP BY %s
+                GROUP BY %s, %s
                 ORDER BY count DESC, label ASC
                 LIMIT 20
-                """.formatted(expression, expression, expression, expression), parameters(user, request), (rs, rowNum) -> new SearchFacetValueResponse(
+                """.formatted(valueExpression, labelExpression, join, valueExpression, valueExpression, labelExpression), parameters(user, request), (rs, rowNum) -> new SearchFacetValueResponse(
                 rs.getString("value"),
                 rs.getString("label"),
                 rs.getLong("count")
@@ -119,7 +133,7 @@ public class DocumentSearchRepository {
                 GROUP BY text, type
                 ORDER BY max(score) DESC, text ASC
                 LIMIT :limit
-                """.formatted(visibilityPredicate(user)), parameters, (rs, rowNum) -> new SearchSuggestionResponse(
+                """.formatted(accessPredicate(user)), parameters, (rs, rowNum) -> new SearchSuggestionResponse(
                 rs.getString("text"),
                 rs.getString("type"),
                 rs.getObject("document_id", Long.class)
@@ -152,9 +166,9 @@ public class DocumentSearchRepository {
 
     private String searchSql(DocumentSearchRequest request) {
         return baseSql(request) + """
-                SELECT id, slug, title, document_code, file_type, file_size, status, access_level, version_number,
+                SELECT id, slug, title, document_code, file_type, file_size, status, version_number,
                        view_count, download_count, category_id, department_id, owner_id, uploaded_by,
-                       effective_date, expiry_date, created_at, updated_at, relevance_score,
+                       effective_date, expiry_date, created_at, updated_at, relevance_score, match_count,
                        title_highlight, description_highlight, content_highlight
                 FROM matched
                 ORDER BY %s
@@ -171,9 +185,27 @@ public class DocumentSearchRepository {
         String rankExpression = hasQuery
                 ? "ts_rank_cd(d.search_vector, d.query_value) + CASE WHEN lower(coalesce(d.document_code, '')) = lower(:query) THEN 2.0 ELSE 0 END"
                 : "0.0";
-        String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(d.title_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=20, MinWords=5, HighlightAll=true')" : "NULL";
-        String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(d.description_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=8, HighlightAll=true')" : "NULL";
-        String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=35, MinWords=10, MaxFragments=2')" : "NULL";
+        String matchCountExpression = hasQuery
+                ? """
+                coalesce((
+                    SELECT sum(s.nentry)::int
+                    FROM ts_stat(format(
+                        'SELECT %L::tsvector',
+                        (to_tsvector('simple', unaccent(coalesce(d.title_text, ''))) ||
+                         to_tsvector('simple', unaccent(coalesce(d.description_text, ''))) ||
+                         to_tsvector('simple', unaccent(coalesce(d.content_text, ''))))::text
+                    )) s
+                    WHERE s.word IN (
+                        SELECT term
+                        FROM regexp_split_to_table(d.query_value::text, '[^[:alnum:]_]+') term
+                        WHERE term <> ''
+                    )
+                ), 0)
+                """
+                : "0";
+        String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(d.title_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=15, HighlightAll=true')" : "NULL";
+        String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(d.description_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=40, MinWords=20, HighlightAll=true')" : "NULL";
+        String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=60, MinWords=30, MaxFragments=3, FragmentDelimiter=\" ... \"')" : "NULL";
         return """
                 WITH %s visible AS (
                     SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text%s
@@ -184,16 +216,17 @@ public class DocumentSearchRepository {
                       %s
                       %s
                 ), matched AS (
-                    SELECT id, slug, title, document_code, file_type, file_size, status, access_level, version_number,
+                    SELECT id, slug, title, document_code, file_type, file_size, status, version_number,
                            view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                            effective_date, expiry_date, created_at, updated_at,
                            %s AS relevance_score,
+                           %s AS match_count,
                            %s AS title_highlight,
                            %s AS description_highlight,
                            %s AS content_highlight
                     FROM visible d
                 )
-                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, titleHighlight, descriptionHighlight, contentHighlight);
+                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
     }
 
     private String filterPredicate(DocumentSearchRequest request) {
@@ -206,9 +239,6 @@ public class DocumentSearchRepository {
         }
         if (request.fileType() != null && !request.fileType().isBlank()) {
             filters.append(" AND upper(d.file_type) = upper(:fileType)");
-        }
-        if (request.resolvedAccessLevel() != null) {
-            filters.append(" AND d.access_level = :accessLevel");
         }
         if (request.ownerId() != null) {
             filters.append(" AND d.owner_id = :ownerId");
@@ -231,7 +261,7 @@ public class DocumentSearchRepository {
         return filters.toString();
     }
 
-    private String visibilityPredicate(User user) {
+    private String accessPredicate(User user) {
         return user.getRole() == Role.ADMIN ? DocumentAclSqlFragments.ADMIN_VISIBLE_PREDICATE : DocumentAclSqlFragments.USER_VISIBLE_PREDICATE;
     }
 
@@ -244,12 +274,11 @@ public class DocumentSearchRepository {
                 .addValue("categoryId", request.categoryId(), Types.BIGINT)
                 .addValue("departmentId", request.departmentId(), Types.BIGINT)
                 .addValue("fileType", normalize(request.fileType()), Types.VARCHAR)
-                .addValue("accessLevel", enumName(request.resolvedAccessLevel()), Types.VARCHAR)
                 .addValue("ownerId", request.ownerId(), Types.BIGINT)
                 .addValue("uploadedBy", request.uploadedBy(), Types.BIGINT)
                 .addValue("status", enumName(request.status()), Types.VARCHAR)
-                .addValue("dateFrom", request.resolvedDateFrom(), Types.TIMESTAMP_WITH_TIMEZONE)
-                .addValue("dateTo", request.resolvedDateTo(), Types.TIMESTAMP_WITH_TIMEZONE);
+                .addValue("dateFrom", request.resolvedDateFrom() != null ? java.sql.Date.valueOf(request.resolvedDateFrom()) : null, Types.DATE)
+                .addValue("dateTo", request.resolvedDateTo() != null ? java.sql.Date.valueOf(request.resolvedDateTo()) : null, Types.DATE);
         if (request.tagIds() != null && !request.tagIds().isEmpty()) {
             parameters.addValue("tagIds", request.tagIds().toArray(Long[]::new));
         }
@@ -282,7 +311,6 @@ public class DocumentSearchRepository {
                 rs.getString("file_type"),
                 rs.getLong("file_size"),
                 rs.getString("status"),
-                rs.getString("access_level"),
                 rs.getString("version_number"),
                 rs.getInt("view_count"),
                 rs.getInt("download_count"),
@@ -295,6 +323,7 @@ public class DocumentSearchRepository {
                 offsetDateTime(rs, "created_at"),
                 offsetDateTime(rs, "updated_at"),
                 rs.getDouble("relevance_score"),
+                rs.getInt("match_count"),
                 rs.getString("title_highlight"),
                 rs.getString("description_highlight"),
                 rs.getString("content_highlight")
@@ -307,7 +336,6 @@ public class DocumentSearchRepository {
         filters.put("departmentId", request.departmentId());
         filters.put("fileType", request.fileType());
         filters.put("status", request.status());
-        filters.put("accessLevel", request.resolvedAccessLevel());
         filters.put("ownerId", request.ownerId());
         filters.put("uploadedBy", request.uploadedBy());
         filters.put("tagIds", request.tagIds());
@@ -324,7 +352,7 @@ public class DocumentSearchRepository {
     }
 
     private DocumentSearchRequest emptyRequest() {
-        return new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new DocumentSearchRequest(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private boolean hasQuery(DocumentSearchRequest request) {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftOutlined, DownloadOutlined, EyeOutlined, FileTextOutlined, HistoryOutlined } from '@ant-design/icons';
 import { Alert, Button, Empty, Modal, Space, Spin, Tag, Typography } from 'antd';
 import DOMPurify from 'dompurify';
@@ -65,8 +65,27 @@ export default function DocumentDetailPage() {
   const tags = getTags(document);
   const authorizedDepartments = getAuthorizedDepartments(document);
 
+  const { data: inlinePreview, isLoading: isInlinePreviewLoading } = useQuery({
+    queryKey: ['document-preview', document?.id],
+    queryFn: async () => {
+      const previewData = await getPreviewUrl(document.id);
+      const url = getPresignedUrl(previewData);
+      if (!url) throw new Error('Backend không trả về URL mở tài liệu.');
+      return { ...previewData, url };
+    },
+    enabled: !!document?.id && isReady && canPreviewFile(document),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
   async function handlePreview() {
     if (!document) return;
+
+    if (inlinePreview) {
+      setPreview(inlinePreview);
+      return;
+    }
+
     setIsPreviewLoading(true);
     try {
       const previewData = await getPreviewUrl(document.id);
@@ -148,9 +167,6 @@ export default function DocumentDetailPage() {
         <section className={styles.previewCard}>
           <div className={styles.previewToolbar}>
             <strong>Mở tài liệu</strong>
-            <Button icon={<EyeOutlined />} onClick={handlePreview} loading={isPreviewLoading} disabled={!isReady}>
-              Mở tài liệu
-            </Button>
           </div>
           {!isReady && (
             <Alert
@@ -162,25 +178,39 @@ export default function DocumentDetailPage() {
             />
           )}
           <div className={styles.previewCanvas}>
-            <div className={styles.paperPreview}>
-              <div className={styles.paperHeader}>
-                <div>
-                  <span>DMS</span>
-                  <small>{document.documentCode || 'DOCUMENT'}</small>
+            {isInlinePreviewLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 400 }}>
+                <Spin tip="Đang tải bản xem trước...">
+                  <div style={{ padding: '24px' }} />
+                </Spin>
+              </div>
+            ) : inlinePreview ? (
+              inlinePreview.contentType?.includes('html') ? (
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(inlinePreview.html || '') }} style={{ width: '100%', background: '#fff', padding: '16px', borderRadius: '8px', overflow: 'auto' }} />
+              ) : (
+                <iframe title="Mở tài liệu" src={inlinePreview.url} className={styles.previewFrame} />
+              )
+            ) : (
+              <div className={styles.paperPreview}>
+                <div className={styles.paperHeader}>
+                  <div>
+                    <span>DMS</span>
+                    <small>{document.documentCode || 'DOCUMENT'}</small>
+                  </div>
+                  <FileTextOutlined />
                 </div>
-                <FileTextOutlined />
+                <div className={styles.paperBody}>
+                  <h2>{document.title || document.fileName}</h2>
+                  <div className={styles.lineLong} />
+                  <div className={styles.lineMedium} />
+                  <div className={styles.lineFull} />
+                  <div className={styles.lineFull} />
+                  <div className={styles.lineShort} />
+                  <div className={styles.lineFull} />
+                  <div className={styles.lineMedium} />
+                </div>
               </div>
-              <div className={styles.paperBody}>
-                <h2>{document.title || document.fileName}</h2>
-                <div className={styles.lineLong} />
-                <div className={styles.lineMedium} />
-                <div className={styles.lineFull} />
-                <div className={styles.lineFull} />
-                <div className={styles.lineShort} />
-                <div className={styles.lineFull} />
-                <div className={styles.lineMedium} />
-              </div>
-            </div>
+            )}
           </div>
         </section>
 
