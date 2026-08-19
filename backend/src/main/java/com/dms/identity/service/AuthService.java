@@ -11,8 +11,10 @@ import com.dms.identity.dto.LoginResponse;
 import com.dms.identity.dto.RefreshResponse;
 import com.dms.identity.entity.RefreshToken;
 import com.dms.identity.entity.User;
+import com.dms.identity.entity.UserDepartment;
 import com.dms.identity.mapper.UserMapper;
 import com.dms.identity.repository.RefreshTokenRepository;
+import com.dms.identity.repository.UserDepartmentRepository;
 import com.dms.identity.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.Base64;
+import java.util.List;
 
 @Service
 public class AuthService {
@@ -29,6 +32,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserDepartmentRepository userDepartmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtProperties jwtProperties;
@@ -38,6 +42,7 @@ public class AuthService {
     public AuthService(
             UserRepository userRepository,
             RefreshTokenRepository refreshTokenRepository,
+            UserDepartmentRepository userDepartmentRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
             JwtProperties jwtProperties,
@@ -45,6 +50,7 @@ public class AuthService {
     ) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.userDepartmentRepository = userDepartmentRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.jwtProperties = jwtProperties;
@@ -67,9 +73,19 @@ public class AuthService {
                 jwtTokenProvider.createAccessToken(user),
                 TOKEN_TYPE,
                 jwtTokenProvider.accessExpirationSeconds(),
-                userMapper.toResponse(user)
+                userMapper.toResponse(user, departmentIds(user))
         );
         return new AuthResult<>(response, refreshToken.getToken(), jwtProperties.refreshExpiration() / 1000);
+    }
+
+    private List<Long> departmentIds(User user) {
+        List<Long> departmentIds = userDepartmentRepository.findByUserId(user.getId()).stream()
+                .map(UserDepartment::getDepartmentId)
+                .toList();
+        if (!departmentIds.isEmpty()) {
+            return departmentIds;
+        }
+        return user.getDepartmentId() == null ? List.of() : List.of(user.getDepartmentId());
     }
 
     @Transactional

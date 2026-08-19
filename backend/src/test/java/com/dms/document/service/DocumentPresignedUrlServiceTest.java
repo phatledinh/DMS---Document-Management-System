@@ -14,6 +14,7 @@ import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.processing.DocumentExtractionRequestedEvent;
 import com.dms.document.repository.AccessLogRepository;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentTagRepository;
 import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
@@ -21,6 +22,7 @@ import com.dms.identity.entity.UserStatus;
 import com.dms.identity.repository.UserRepository;
 import com.dms.masterdata.entity.Category;
 import com.dms.masterdata.repository.CategoryRepository;
+import com.dms.masterdata.repository.TagRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
 import com.dms.storage.ObjectMetadata;
@@ -61,6 +63,10 @@ class DocumentPresignedUrlServiceTest {
     @Mock
     private CategoryRepository categoryRepository;
     @Mock
+    private TagRepository tagRepository;
+    @Mock
+    private DocumentTagRepository documentTagRepository;
+    @Mock
     private CurrentUserProvider currentUserProvider;
     @Mock
     private DocumentAccessPolicyService accessPolicyService;
@@ -85,6 +91,8 @@ class DocumentPresignedUrlServiceTest {
                 accessLogRepository,
                 userRepository,
                 categoryRepository,
+                tagRepository,
+                documentTagRepository,
                 currentUserProvider,
                 accessPolicyService,
                 objectStorageService,

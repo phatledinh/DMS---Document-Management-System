@@ -6,6 +6,7 @@ import com.dms.document.dto.DocumentSearchHighlightResponse;
 import com.dms.document.dto.DocumentSearchRequest;
 import com.dms.document.dto.DocumentSearchResponse;
 import com.dms.document.dto.DocumentSearchResultResponse;
+import com.dms.document.dto.PopularSearchKeywordResponse;
 import com.dms.document.dto.SearchFacetValueResponse;
 import com.dms.document.dto.SearchSuggestionResponse;
 import com.dms.document.repository.DocumentSearchRepository;
@@ -37,6 +38,8 @@ public class DocumentSearchService {
     private static final int MAX_SIZE = 100;
     private static final int DEFAULT_SUGGESTION_LIMIT = 10;
     private static final int MAX_SUGGESTION_LIMIT = 20;
+    private static final int DEFAULT_POPULAR_KEYWORD_LIMIT = 5;
+    private static final int MAX_POPULAR_KEYWORD_LIMIT = 10;
     private static final PolicyFactory HIGHLIGHT_POLICY = new HtmlPolicyBuilder().allowElements("em").toFactory();
 
     private final CurrentUserProvider currentUserProvider;
@@ -99,6 +102,14 @@ public class DocumentSearchService {
         long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
         searchRepository.logSuggestion(user, prefix, suggestions.size(), latencyMs);
         return suggestions;
+    }
+
+    @Transactional(readOnly = true)
+    public List<PopularSearchKeywordResponse> popularKeywords(Integer limit) {
+        int resolvedLimit = limit == null || limit < 1
+                ? DEFAULT_POPULAR_KEYWORD_LIMIT
+                : Math.min(limit, MAX_POPULAR_KEYWORD_LIMIT);
+        return searchRepository.popularKeywords(resolvedLimit);
     }
 
     private Map<String, List<SearchFacetValueResponse>> facets(User user, DocumentSearchRequest request) {

@@ -4,6 +4,7 @@ import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.entity.DocumentVersion;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentTagRepository;
 import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.storage.ObjectStorageService;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -16,11 +17,13 @@ import java.time.OffsetDateTime;
 @Component
 public class ExpiredUploadCleanupJob {
     private final DocumentRepository documentRepository;
+    private final DocumentTagRepository documentTagRepository;
     private final DocumentVersionRepository versionRepository;
     private final ObjectStorageService objectStorageService;
 
-    public ExpiredUploadCleanupJob(DocumentRepository documentRepository, DocumentVersionRepository versionRepository, ObjectStorageService objectStorageService) {
+    public ExpiredUploadCleanupJob(DocumentRepository documentRepository, DocumentTagRepository documentTagRepository, DocumentVersionRepository versionRepository, ObjectStorageService objectStorageService) {
         this.documentRepository = documentRepository;
+        this.documentTagRepository = documentTagRepository;
         this.versionRepository = versionRepository;
         this.objectStorageService = objectStorageService;
     }
@@ -51,6 +54,7 @@ public class ExpiredUploadCleanupJob {
             objectStorageService.deleteObject(document.getStoragePath());
         } catch (RuntimeException ignored) {
         }
+        documentTagRepository.deleteByDocumentId(document.getId());
         documentRepository.delete(document);
     }
 

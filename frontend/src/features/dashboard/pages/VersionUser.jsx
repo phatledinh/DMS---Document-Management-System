@@ -1,8 +1,13 @@
-import { DownloadOutlined, FileDoneOutlined, FilterOutlined, SearchOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Input, Pagination, Select, Skeleton, Tag } from 'antd';
+import { DeleteOutlined, DownloadOutlined, EditOutlined, FileDoneOutlined, FilterOutlined, HistoryOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Input, Modal, Pagination, Select, Skeleton, Space, Tag } from 'antd';
 import { useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
-import { getDocumentVersionDownloadUrl } from '../../../api/documentApi.js';
+import {
+  deleteDocumentVersion,
+  getDocumentVersionDownloadUrl,
+  restoreDocumentVersion,
+  updateDocumentVersion,
+} from '../../../api/documentApi.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import { useMyDocumentVersions } from '../hooks/useMyDocumentVersions.js';
 import styles from './VersionUser.module.css';
@@ -28,12 +33,17 @@ function getDateRange(value) {
 }
 
 export default function VersionUser() {
+  const [modal, modalContextHolder] = Modal.useModal();
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState();
   const [status, setStatus] = useState();
   const [range, setRange] = useState();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
+  const [editingVersion, setEditingVersion] = useState(null);
+  const [editVersionNumber, setEditVersionNumber] = useState('');
+  const [editChangelog, setEditChangelog] = useState('');
+  const [actionKey, setActionKey] = useState('');
   const params = useMemo(() => ({
     keyword: keyword || undefined,
     category,
@@ -57,8 +67,84 @@ export default function VersionUser() {
     }
   }
 
+  function makeCurrent(row) {
+    modal.confirm({
+      title: 'Đặt phiên bản này làm hiện hành?',
+      content: `Phiên bản ${row.versionNumber} sẽ thay thế phiên bản hiện hành của tài liệu.`,
+      okText: 'Đặt làm hiện hành',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        const key = `restore-${row.versionId}`;
+        setActionKey(key);
+        try {
+          await restoreDocumentVersion(row.documentId, row.versionId);
+          toast.success('Đang xử lý để đặt phiên bản làm hiện hành');
+          await versionsQuery.refetch();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+          throw error;
+        } finally {
+          setActionKey('');
+        }
+      },
+    });
+  }
+
+  function openEdit(row) {
+    setEditingVersion(row);
+    setEditVersionNumber(row.versionNumber || '');
+    setEditChangelog(row.note || '');
+  }
+
+  async function saveVersionInfo() {
+    if (!editingVersion) return;
+    if (!/^\d+(\.\d+){1,2}$/.test(editVersionNumber.trim()) || !editChangelog.trim()) {
+      toast.error('Vui lòng nhập số phiên bản hợp lệ và ghi chú thay đổi.');
+      return;
+    }
+    setActionKey(`edit-${editingVersion.versionId}`);
+    try {
+      await updateDocumentVersion(editingVersion.documentId, editingVersion.versionId, {
+        versionNumber: editVersionNumber.trim(),
+        changelog: editChangelog.trim(),
+      });
+      toast.success('Đã cập nhật thông tin phiên bản');
+      setEditingVersion(null);
+      await versionsQuery.refetch();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setActionKey('');
+    }
+  }
+
+  function removeVersion(row) {
+    modal.confirm({
+      title: 'Xóa phiên bản?',
+      content: `Phiên bản ${row.versionNumber} và file tương ứng sẽ bị xóa vĩnh viễn.`,
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        const key = `delete-${row.versionId}`;
+        setActionKey(key);
+        try {
+          await deleteDocumentVersion(row.documentId, row.versionId);
+          toast.success('Đã xóa phiên bản');
+          await versionsQuery.refetch();
+        } catch (error) {
+          toast.error(getApiErrorMessage(error));
+          throw error;
+        } finally {
+          setActionKey('');
+        }
+      },
+    });
+  }
+
   return (
     <main className={styles.page}>
+      {modalContextHolder}
       <header className={styles.heroHeader}>
         <div>
           <h1>Version của tôi</h1>
@@ -146,9 +232,16 @@ export default function VersionUser() {
                     <td>{formatBytes(row.fileSize)}</td>
                     <td>{formatDate(row.uploadedAt)}</td>
                     <td>
-                      <Button type="link" className={styles.downloadButton} icon={<DownloadOutlined />} onClick={() => downloadVersion(row)}>
-                        Tải
-                      </Button>
+                      <Space size={4} wrap>
+                        <Button type="link" className={styles.actionButton} icon={<DownloadOutlined />} onClick={() => downloadVersion(row)}>Tải</Button>
+                        {!row.current && row.status === 'INDEXED' && (
+                          <Button type="link" className={styles.actionButton} icon={<HistoryOutlined />} loading={actionKey === `restore-${row.versionId}`} onClick={() => makeCurrent(row)}>Hiện hành</Button>
+                        )}
+                        <Button type="link" className={styles.actionButton} icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
+                        {!row.current && (
+                          <Button danger type="link" className={styles.actionButton} icon={<DeleteOutlined />} loading={actionKey === `delete-${row.versionId}`} onClick={() => removeVersion(row)}>Xóa</Button>
+                        )}
+                      </Space>
                     </td>
                   </tr>
                 ))}
@@ -173,6 +266,23 @@ export default function VersionUser() {
           }}
         />
       </footer>
+
+      <Modal
+        title="Sửa thông tin phiên bản"
+        open={Boolean(editingVersion)}
+        okText="Lưu thay đổi"
+        cancelText="Hủy"
+        confirmLoading={actionKey === `edit-${editingVersion?.versionId}`}
+        onOk={saveVersionInfo}
+        onCancel={() => setEditingVersion(null)}
+      >
+        <div className={styles.editForm}>
+          <label htmlFor="edit-version-number">Số phiên bản</label>
+          <Input id="edit-version-number" value={editVersionNumber} onChange={(event) => setEditVersionNumber(event.target.value)} placeholder="Ví dụ: 1.0 hoặc 1.0.1" />
+          <label htmlFor="edit-version-note">Ghi chú thay đổi</label>
+          <Input.TextArea id="edit-version-note" rows={4} value={editChangelog} onChange={(event) => setEditChangelog(event.target.value)} />
+        </div>
+      </Modal>
     </main>
   );
 }

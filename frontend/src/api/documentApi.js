@@ -89,6 +89,11 @@ export async function restoreDocumentVersion(documentId, versionId) {
   return unwrapApiResponse(response);
 }
 
+export async function updateDocumentVersion(documentId, versionId, payload) {
+  const response = await axiosClient.put(`/documents/${documentId}/versions/${versionId}`, payload);
+  return unwrapApiResponse(response);
+}
+
 export async function archiveDocument(documentId) {
   const response = await axiosClient.post(`/documents/${documentId}/archive`);
   return unwrapApiResponse(response);

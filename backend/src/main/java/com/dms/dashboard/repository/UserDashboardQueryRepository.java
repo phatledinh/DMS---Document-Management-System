@@ -64,7 +64,7 @@ public class UserDashboardQueryRepository {
 
     public List<UserRecentDocumentResponse> recentDocuments(Long userId, int limit) {
         return jdbcTemplate.query("""
-                SELECT d.id, d.title, d.document_code, c.name AS category_name, d.status
+                SELECT d.id, d.slug, d.title, d.document_code, c.name AS category_name, d.status
                 FROM documents d
                 JOIN categories c ON c.id = d.category_id
                 WHERE d.status = 'INDEXED'
@@ -81,6 +81,7 @@ public class UserDashboardQueryRepository {
                 LIMIT :limit
                 """, params(userId).addValue("limit", limit), (rs, rowNum) -> new UserRecentDocumentResponse(
                 rs.getLong("id"),
+                rs.getString("slug"),
                 rs.getString("title"),
                 rs.getString("document_code"),
                 rs.getString("category_name"),
@@ -155,7 +156,7 @@ public class UserDashboardQueryRepository {
                     SELECT d.id AS document_id, d.title AS document_title, d.document_code,
                            dv.id AS version_id, dv.version_number, dv.changelog, dv.file_size,
                            dv.created_at AS uploaded_at, c.name AS category_name, dv.status,
-                           (dv.version_number = d.version_number) AS current_version
+                           (dv.id = d.current_version_id) AS current_version
                     FROM document_versions dv
                     JOIN documents d ON d.id = dv.document_id
                     JOIN categories c ON c.id = d.category_id

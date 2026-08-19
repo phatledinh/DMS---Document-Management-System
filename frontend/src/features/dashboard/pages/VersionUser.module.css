@@ -153,11 +153,22 @@
   font-weight: 700;
 }
 
-.downloadButton {
+.actionButton {
   padding: 0;
   color: #005c8d;
   font-size: 12px;
   font-weight: 700;
+}
+
+.editForm {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.editForm label {
+  color: #0d2034;
+  font-weight: 600;
 }
 
 .paginationFooter {

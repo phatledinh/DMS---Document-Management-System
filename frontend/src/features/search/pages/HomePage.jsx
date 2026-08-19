@@ -11,20 +11,16 @@ import {
   HistoryOutlined,
   MoreOutlined,
   SearchOutlined,
-  TagOutlined,
 } from "@ant-design/icons";
 import {
   Button,
   Card,
   Col,
   Dropdown,
-  Flex,
   Input,
   Empty,
-  Modal,
   Row,
   Select,
-  Space,
   Spin,
   Tag,
   Tooltip,
@@ -33,6 +29,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { getDocuments, getDownloadUrl } from "../../../api/documentApi.js";
+import { getPopularSearchKeywords, searchDocuments } from "../../../api/searchApi.js";
 import {
   formatDateTime,
   formatFileSize,
@@ -43,24 +40,26 @@ import styles from "./HomePage.module.css";
 
 const { Title, Text, Paragraph } = Typography;
 
-const SUGGESTED_SEARCHES = [
-  "Quy trình ISO 9001",
-  "SOP-QA-001",
-  "Báo cáo tài chính",
-  "Hợp đồng",
-  "Biểu mẫu nhân sự",
+const DATE_RANGE_OPTIONS = [
+  { value: "7", label: "7 ngày qua" },
+  { value: "30", label: "30 ngày qua" },
+  { value: "90", label: "90 ngày qua" },
 ];
+
+function dateFromDaysAgo(days) {
+  const date = new Date();
+  date.setDate(date.getDate() - Number(days));
+  return date.toISOString().slice(0, 10);
+}
 
 export default function HomePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedFileType, setSelectedFileType] = useState("");
   const [selectedTag, setSelectedTag] = useState("");
   const [selectedDateRange, setSelectedDateRange] = useState("");
 
-  const [previewDoc, setPreviewDoc] = useState(null);
   const latestDocumentsQuery = useQuery({
     queryKey: ["home-latest-documents"],
     queryFn: () => getDocuments({ page: 0, size: 6, sort: "createdAt,desc" }),
@@ -68,6 +67,22 @@ export default function HomePage() {
   const latestDocuments = getPageContent(latestDocumentsQuery.data)
     .map(normalizeDocument)
     .filter(Boolean);
+  const searchMetadataQuery = useQuery({
+    queryKey: ["home-search-metadata"],
+    queryFn: () => searchDocuments({ page: 0, size: 1, sort: "createdAt,desc" }),
+  });
+  const popularKeywordsQuery = useQuery({
+    queryKey: ["home-popular-search-keywords"],
+    queryFn: () => getPopularSearchKeywords({ limit: 5 }),
+  });
+  const facets = searchMetadataQuery.data?.facets || {};
+  const popularKeywords = Array.isArray(popularKeywordsQuery.data)
+    ? popularKeywordsQuery.data.map((item) => item.keyword).filter(Boolean)
+    : [];
+  const facetOptions = (items = []) => items.map((item) => ({
+    value: item.value,
+    label: item.count === undefined ? item.label : `${item.label} (${item.count})`,
+  }));
 
   const handleSearchSubmit = (value) => {
     const q = value !== undefined ? value : searchQuery;
@@ -122,7 +137,7 @@ export default function HomePage() {
       key: "preview",
       icon: <EyeOutlined />,
       label: "Xem chi tiết",
-      onClick: () => setPreviewDoc(doc),
+      onClick: () => navigate(`/documents/${doc.slug}`),
     },
     {
       key: "download",
@@ -176,7 +191,7 @@ export default function HomePage() {
           </div>
 
           <div className={styles.suggestions}>
-            {SUGGESTED_SEARCHES.map((tag) => (
+            {popularKeywords.map((tag) => (
               <button
                 key={tag}
                 type="button"
@@ -200,31 +215,11 @@ export default function HomePage() {
             value={selectedCategory || undefined}
             onChange={(val) => {
               setSelectedCategory(val);
-              navigate(`/search?category=${val || ""}`);
+              navigate(val ? `/search?categoryId=${encodeURIComponent(val)}` : "/search");
             }}
             allowClear
-            options={[
-              { value: "hr", label: "Nhân sự" },
-              { value: "it", label: "Công nghệ" },
-              { value: "qa", label: "QA/QC" },
-              { value: "finance", label: "Tài chính" },
-            ]}
-          />
-
-          <Select
-            className={styles.filterSelect}
-            placeholder="Phòng ban"
-            value={selectedDepartment || undefined}
-            onChange={(val) => {
-              setSelectedDepartment(val);
-              navigate(`/search?department=${val || ""}`);
-            }}
-            allowClear
-            options={[
-              { value: "qa", label: "QA/QC" },
-              { value: "dev", label: "Development" },
-              { value: "hr", label: "Hành chính Nhân sự" },
-            ]}
+            loading={searchMetadataQuery.isLoading}
+            options={facetOptions(facets.categories)}
           />
 
           <Select
@@ -233,14 +228,11 @@ export default function HomePage() {
             value={selectedFileType || undefined}
             onChange={(val) => {
               setSelectedFileType(val);
-              navigate(`/search?fileType=${val || ""}`);
+              navigate(val ? `/search?fileType=${encodeURIComponent(val)}` : "/search");
             }}
             allowClear
-            options={[
-              { value: "pdf", label: "PDF" },
-              { value: "docx", label: "DOCX" },
-              { value: "xlsx", label: "XLSX" },
-            ]}
+            loading={searchMetadataQuery.isLoading}
+            options={facetOptions(facets.fileTypes)}
           />
 
           <Select
@@ -249,14 +241,11 @@ export default function HomePage() {
             value={selectedTag || undefined}
             onChange={(val) => {
               setSelectedTag(val);
-              navigate(`/search?tag=${val || ""}`);
+              navigate(val ? `/search?tagId=${encodeURIComponent(val)}` : "/search");
             }}
             allowClear
-            options={[
-              { value: "iso", label: "ISO" },
-              { value: "internal", label: "Nội bộ" },
-              { value: "sop", label: "SOP" },
-            ]}
+            loading={searchMetadataQuery.isLoading}
+            options={facetOptions(facets.tags)}
           />
 
           <Select
@@ -265,13 +254,10 @@ export default function HomePage() {
             value={selectedDateRange || undefined}
             onChange={(val) => {
               setSelectedDateRange(val);
-              navigate(`/search?dateRange=${val || ""}`);
+              navigate(val ? `/search?dateFrom=${dateFromDaysAgo(val)}` : "/search");
             }}
             allowClear
-            options={[
-              { value: "7", label: "7 ngày qua" },
-              { value: "30", label: "30 ngày qua" },
-            ]}
+            options={DATE_RANGE_OPTIONS}
           />
         </div>
       </div>
@@ -300,7 +286,7 @@ export default function HomePage() {
                         flexDirection: "column",
                       },
                     }}
-                    onClick={() => setPreviewDoc(doc)}
+                    onClick={() => navigate(`/documents/${doc.slug}`)}
                   >
                     <div className={styles.cardHeader}>
                       {renderFileIcon(doc.fileType)}
@@ -355,81 +341,6 @@ export default function HomePage() {
         </Spin>
       </div>
 
-      {/* Preview Modal */}
-      {previewDoc && (
-        <Modal
-          open={!!previewDoc}
-          title={
-            <Flex align="center" gap={10}>
-              {renderFileIcon(previewDoc.fileType)}
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>
-                  {previewDoc.title}
-                </div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Mã tài liệu: {previewDoc.documentCode || "—"}
-                </Text>
-              </div>
-            </Flex>
-          }
-          onCancel={() => setPreviewDoc(null)}
-          footer={[
-            <Button key="close" onClick={() => setPreviewDoc(null)}>
-              Đóng
-            </Button>,
-            <Button
-              key="download"
-              type="primary"
-              icon={<DownloadOutlined />}
-              onClick={() => handleDownload(previewDoc)}
-            >
-              Tải xuống ({formatFileSize(previewDoc.fileSize)})
-            </Button>,
-          ]}
-          width={600}
-        >
-          <div style={{ paddingTop: 8 }}>
-            <div style={{ marginBottom: 12 }}>
-              <Tag color="cyan">
-                {previewDoc.categoryName || previewDoc.categoryId || "—"}
-              </Tag>
-              <Tag color="geekblue">
-                {previewDoc.departmentName || previewDoc.departmentId || "—"}
-              </Tag>
-              <Text type="secondary" style={{ fontSize: 13, marginLeft: 8 }}>
-                Ngày cập nhật:{" "}
-                {formatDateTime(previewDoc.updatedAt || previewDoc.createdAt)}
-              </Text>
-            </div>
-
-            <Paragraph
-              style={{
-                background: "#f5f7fa",
-                padding: 12,
-                borderRadius: 8,
-                fontSize: 13,
-              }}
-            >
-              <strong>Mô tả:</strong>{" "}
-              {previewDoc.description || "Không có mô tả."}
-            </Paragraph>
-
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                <strong>Người đăng:</strong>{" "}
-                {previewDoc.uploadedByName || previewDoc.uploadedBy || "—"}
-              </Text>
-              <Flex align="center" gap={6}>
-                <TagOutlined style={{ color: "#86909c" }} />
-                <Text type="secondary" style={{ fontSize: 13 }}>
-                  <strong>Trạng thái:</strong>
-                </Text>
-                <Tag>{previewDoc.status || "—"}</Tag>
-              </Flex>
-            </Space>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

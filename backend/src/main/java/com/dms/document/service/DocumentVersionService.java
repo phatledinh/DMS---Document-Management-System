@@ -9,6 +9,7 @@ import com.dms.document.dto.VersionRestoreResponse;
 import com.dms.document.dto.VersionUploadCompleteResponse;
 import com.dms.document.dto.VersionUploadInitRequest;
 import com.dms.document.dto.VersionUploadInitResponse;
+import com.dms.document.dto.VersionUpdateRequest;
 import com.dms.document.entity.AccessLog;
 import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
@@ -104,9 +105,9 @@ public class DocumentVersionService {
 
     @Transactional
     public VersionUploadInitResponse initiateVersionUpload(Long documentId, VersionUploadInitRequest request) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
+        requireAdminOrOriginalUploader(currentUser, document);
         if (document.getStatus() == DocumentStatus.DELETED) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_FOUND, "Document not found", HttpStatus.NOT_FOUND);
         }
@@ -131,7 +132,7 @@ public class DocumentVersionService {
         version.setStatus(DocumentStatus.AWAITING_UPLOAD);
         version.setUploadExpiresAt(presignedUrl.expiresAt());
         version.setChangelog(request.changelog().trim());
-        version.setUploadedBy(admin.getId());
+        version.setUploadedBy(currentUser.getId());
         version = versionRepository.save(version);
 
         return new VersionUploadInitResponse(
@@ -147,9 +148,9 @@ public class DocumentVersionService {
 
     @Transactional
     public VersionUploadCompleteResponse completeVersionUpload(Long documentId, Long versionId) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
+        requireAdminOrOriginalUploader(currentUser, document);
         DocumentVersion version = findVersion(documentId, versionId);
         if (version.getStatus() != DocumentStatus.AWAITING_UPLOAD) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Version is not awaiting upload", HttpStatus.CONFLICT);
@@ -181,7 +182,7 @@ public class DocumentVersionService {
         versionRepository.save(version);
         documentRepository.save(document);
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), version.getId(), version.getStoragePath(), version.getMimeType()));
-        logAction(admin, document, AccessLogAction.VERSION_UPLOAD);
+        logAction(currentUser, document, AccessLogAction.VERSION_UPLOAD);
         enforceMaxVersions(document.getId());
         return new VersionUploadCompleteResponse(version.getId(), document.getId(), version.getVersionNumber(), document.getStatus().name(), version.getCreatedAt());
     }
@@ -248,9 +249,9 @@ public class DocumentVersionService {
 
     @Transactional
     public VersionRestoreResponse restore(Long documentId, Long versionId) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
+        requireAdminOrOriginalUploader(currentUser, document);
         if (document.getStatus() != DocumentStatus.INDEXED && document.getStatus() != DocumentStatus.EXTRACTION_FAILED) {
             throw new AppException(ErrorCodes.INVALID_DOCUMENT_STATUS, "Document cannot be restored from status " + document.getStatus(), HttpStatus.CONFLICT);
         }
@@ -266,8 +267,31 @@ public class DocumentVersionService {
         versionRepository.save(version);
         documentRepository.save(document);
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), version.getId(), version.getStoragePath(), version.getMimeType()));
-        logAction(admin, document, AccessLogAction.VERSION_RESTORE);
+        logAction(currentUser, document, AccessLogAction.VERSION_RESTORE);
         return new VersionRestoreResponse(document.getId(), version.getId(), version.getVersionNumber(), document.getStatus().name());
+    }
+
+    @Transactional
+    public DocumentVersionResponse updateVersion(Long documentId, Long versionId, VersionUpdateRequest request) {
+        User currentUser = currentUserProvider.getRequiredUser();
+        Document document = findDocument(documentId);
+        requireAdminOrOriginalUploader(currentUser, document);
+        DocumentVersion version = findVersion(documentId, versionId);
+        String versionNumber = request.versionNumber().trim();
+        if (!versionNumber.equals(version.getVersionNumber())
+                && versionRepository.existsByDocumentIdAndVersionNumber(documentId, versionNumber)) {
+            throw new AppException(ErrorCodes.VERSION_DUPLICATE, "Version number already exists", HttpStatus.CONFLICT);
+        }
+        version.setVersionNumber(versionNumber);
+        version.setChangelog(request.changelog().trim());
+        versionRepository.save(version);
+        if (version.getId().equals(document.getCurrentVersionId())) {
+            document.setVersionNumber(versionNumber);
+            document.setUpdatedAt(OffsetDateTime.now());
+            documentRepository.save(document);
+        }
+        String uploadedByName = userRepository.findById(version.getUploadedBy()).map(User::getName).orElse(null);
+        return toResponse(version, document, uploadedByName);
     }
 
     public void publishVersionAsCurrent(Document document, DocumentVersion version, String previewObjectKey) {
@@ -327,15 +351,15 @@ public class DocumentVersionService {
 
     @Transactional
     public void deleteVersion(Long documentId, Long versionId) {
-        User admin = currentUserProvider.getRequiredUser();
-        requireAdmin(admin);
+        User currentUser = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
+        requireAdminOrOriginalUploader(currentUser, document);
         DocumentVersion version = findVersion(documentId, versionId);
         if (version.getId().equals(document.getCurrentVersionId())) {
             throw new AppException(ErrorCodes.VALIDATION_ERROR, "Cannot delete current version", HttpStatus.BAD_REQUEST);
         }
         deleteVersion(version);
-        logAction(admin, document, AccessLogAction.VERSION_DELETE);
+        logAction(currentUser, document, AccessLogAction.VERSION_DELETE);
     }
 
     private void deleteVersion(DocumentVersion version) {
@@ -427,6 +451,19 @@ public class DocumentVersionService {
     private void requireAdmin(User user) {
         if (user.getRole() != Role.ADMIN) {
             throw new AppException(ErrorCodes.ACCESS_DENIED, "Admin role is required", HttpStatus.FORBIDDEN);
+        }
+    }
+
+    private void requireAdminOrOriginalUploader(User user, Document document) {
+        boolean isAdmin = user.getRole() == Role.ADMIN;
+        boolean isOriginalUploader = document.getUploadedBy() != null
+                && document.getUploadedBy().equals(user.getId());
+        if (!isAdmin && !isOriginalUploader) {
+            throw new AppException(
+                    ErrorCodes.ACCESS_DENIED,
+                    "Only an admin or the original uploader can upload a new version",
+                    HttpStatus.FORBIDDEN
+            );
         }
     }
 

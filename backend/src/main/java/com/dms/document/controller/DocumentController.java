@@ -15,6 +15,7 @@ import com.dms.document.dto.DocumentListItemResponse;
 import com.dms.document.dto.DocumentSearchRequest;
 import com.dms.document.dto.DocumentSearchResponse;
 import com.dms.document.dto.PageResponse;
+import com.dms.document.dto.PopularSearchKeywordResponse;
 import com.dms.document.dto.PresignedUrlResponse;
 import com.dms.document.dto.TrashDocumentResponse;
 import com.dms.document.dto.SearchSuggestionResponse;
@@ -25,6 +26,7 @@ import com.dms.document.dto.VersionRestoreResponse;
 import com.dms.document.dto.VersionUploadCompleteResponse;
 import com.dms.document.dto.VersionUploadInitRequest;
 import com.dms.document.dto.VersionUploadInitResponse;
+import com.dms.document.dto.VersionUpdateRequest;
 import com.dms.document.dto.DocumentVersionResponse;
 import com.dms.document.service.DocumentLifecycleService;
 import com.dms.document.service.DocumentMetadataService;
@@ -42,6 +44,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -85,6 +88,11 @@ public class DocumentController {
     @GetMapping("/search/suggestions")
     public ApiResponse<List<SearchSuggestionResponse>> searchSuggestions(String q, Integer limit) {
         return ApiResponse.success(searchService.suggestions(q, limit));
+    }
+
+    @GetMapping("/search/popular-keywords")
+    public ApiResponse<List<PopularSearchKeywordResponse>> popularSearchKeywords(Integer limit) {
+        return ApiResponse.success(searchService.popularKeywords(limit));
     }
 
     @GetMapping("/{id}")
@@ -213,6 +221,15 @@ public class DocumentController {
     @PostMapping("/{id}/versions/{versionId}/restore")
     public ApiResponse<VersionRestoreResponse> restoreVersion(@PathVariable("id") String identifier, @PathVariable Long versionId) {
         return ApiResponse.success("Document version restored successfully", versionService.restore(resolveId(identifier), versionId));
+    }
+
+    @PutMapping("/{id}/versions/{versionId}")
+    public ApiResponse<DocumentVersionResponse> updateVersion(
+            @PathVariable("id") String identifier,
+            @PathVariable Long versionId,
+            @Valid @RequestBody VersionUpdateRequest request
+    ) {
+        return ApiResponse.success("Document version updated successfully", versionService.updateVersion(resolveId(identifier), versionId, request));
     }
 
     @DeleteMapping("/{id}/versions/{versionId}")

@@ -15,6 +15,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -59,6 +61,26 @@ class DocumentSearchRepositoryTest {
         assertThat(sql).contains("cdp.category_id = d.category_id");
         assertThat(sql).contains("cdp.permission = 'VIEW'");
         assertThat(sql).contains("ts_headline");
+    }
+
+    @Test
+    void search_bindsTagIdsAsCollectionForSqlInClause() {
+        User admin = user(Role.ADMIN);
+        DocumentSearchRequest request = new DocumentSearchRequest(
+                null, null, null, null, null, null, null,
+                List.of(3L, 7L), null, null, null, null,
+                "createdAt,desc", 0, 5
+        );
+        when(jdbcTemplate.query(any(String.class), any(MapSqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<MapSqlParameterSource> parametersCaptor = ArgumentCaptor.forClass(MapSqlParameterSource.class);
+
+        repository.search(admin, request);
+
+        verify(jdbcTemplate).query(sqlCaptor.capture(), parametersCaptor.capture(), any(RowMapper.class));
+        assertThat(sqlCaptor.getValue()).contains("dt.tag_id IN (:tagIds)");
+        assertThat(parametersCaptor.getValue().getValue("tagIds")).isEqualTo(List.of(3L, 7L));
     }
 
     @Test

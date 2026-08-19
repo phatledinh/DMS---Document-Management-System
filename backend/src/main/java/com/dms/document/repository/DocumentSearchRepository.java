@@ -1,6 +1,7 @@
 package com.dms.document.repository;
 
 import com.dms.document.dto.DocumentSearchRequest;
+import com.dms.document.dto.PopularSearchKeywordResponse;
 import com.dms.document.dto.SearchFacetValueResponse;
 import com.dms.document.dto.SearchSuggestionResponse;
 import com.dms.identity.entity.Role;
@@ -49,6 +50,23 @@ public class DocumentSearchRepository {
     public long count(User user, DocumentSearchRequest request) {
         Long count = jdbcTemplate.queryForObject(baseSql(request) + "SELECT count(*) FROM matched", parameters(user, request), Long.class);
         return count == null ? 0 : count;
+    }
+
+    public List<PopularSearchKeywordResponse> popularKeywords(int limit) {
+        return jdbcTemplate.query("""
+                SELECT keyword, count(*) AS search_count
+                FROM search_logs
+                WHERE keyword IS NOT NULL
+                  AND btrim(keyword) <> ''
+                  AND coalesce(filters ->> 'type', '') <> 'suggestions'
+                GROUP BY keyword
+                ORDER BY search_count DESC, max(created_at) DESC, keyword ASC
+                LIMIT :limit
+                """, new MapSqlParameterSource("limit", limit), (rs, rowNum) ->
+                new PopularSearchKeywordResponse(
+                        rs.getString("keyword"),
+                        rs.getLong("search_count")
+                ));
     }
 
     public List<SearchFacetValueResponse> facets(User user, DocumentSearchRequest request, String field) {
@@ -281,7 +299,10 @@ public class DocumentSearchRepository {
                 .addValue("dateFrom", request.resolvedDateFrom() != null ? java.sql.Date.valueOf(request.resolvedDateFrom()) : null, Types.DATE)
                 .addValue("dateTo", request.resolvedDateTo() != null ? java.sql.Date.valueOf(request.resolvedDateTo()) : null, Types.DATE);
         if (request.tagIds() != null && !request.tagIds().isEmpty()) {
-            parameters.addValue("tagIds", request.tagIds().toArray(Long[]::new));
+            // NamedParameterJdbcTemplate expands a Collection into the individual
+            // placeholders required by an SQL IN clause. Passing a Long[] is bound
+            // by PostgreSQL as one bigint[] value and causes `bigint = bigint[]`.
+            parameters.addValue("tagIds", request.tagIds());
         }
         return parameters;
     }

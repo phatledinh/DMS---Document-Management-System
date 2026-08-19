@@ -16,16 +16,19 @@ import com.dms.document.entity.AccessLog;
 import com.dms.document.entity.AccessLogAction;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
+import com.dms.document.entity.DocumentTag;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.processing.DocumentExtractionRequestedEvent;
 import com.dms.document.repository.AccessLogRepository;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentTagRepository;
 import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.repository.UserRepository;
 import com.dms.masterdata.repository.CategoryRepository;
+import com.dms.masterdata.repository.TagRepository;
 import com.dms.storage.FileValidationService;
 import com.dms.storage.MimeDetectionService;
 import com.dms.storage.ObjectMetadata;
@@ -55,6 +58,8 @@ public class DocumentPresignedUrlService {
     private final AccessLogRepository accessLogRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
+    private final TagRepository tagRepository;
+    private final DocumentTagRepository documentTagRepository;
     private final CurrentUserProvider currentUserProvider;
     private final DocumentAccessPolicyService accessPolicyService;
     private final ObjectStorageService objectStorageService;
@@ -69,6 +74,8 @@ public class DocumentPresignedUrlService {
             AccessLogRepository accessLogRepository,
             UserRepository userRepository,
             CategoryRepository categoryRepository,
+            TagRepository tagRepository,
+            DocumentTagRepository documentTagRepository,
             CurrentUserProvider currentUserProvider,
             DocumentAccessPolicyService accessPolicyService,
             ObjectStorageService objectStorageService,
@@ -81,6 +88,8 @@ public class DocumentPresignedUrlService {
         this.accessLogRepository = accessLogRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
+        this.tagRepository = tagRepository;
+        this.documentTagRepository = documentTagRepository;
         this.currentUserProvider = currentUserProvider;
         this.accessPolicyService = accessPolicyService;
         this.objectStorageService = objectStorageService;
@@ -122,6 +131,7 @@ public class DocumentPresignedUrlService {
         document.setEffectiveDate(request.effectiveDate());
         document.setExpiryDate(request.expiryDate());
         document = documentRepository.save(document);
+        saveDocumentTags(document.getId(), request.tagIds());
         return new UploadInitResponse(
                 document.getId(),
                 document.getStatus().name(),
@@ -131,6 +141,25 @@ public class DocumentPresignedUrlService {
                 presignedUrl.requiredHeaders(),
                 presignedUrl.expiresIn()
         );
+    }
+
+    private void saveDocumentTags(Long documentId, List<Long> requestedTagIds) {
+        if (requestedTagIds == null || requestedTagIds.isEmpty()) {
+            return;
+        }
+        List<Long> tagIds = requestedTagIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        long activeTagCount = tagRepository.findAllById(tagIds).stream()
+                .filter(tag -> tag.getDeletedAt() == null)
+                .count();
+        if (activeTagCount != tagIds.size()) {
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Một hoặc nhiều tag không tồn tại", HttpStatus.BAD_REQUEST);
+        }
+        documentTagRepository.saveAll(tagIds.stream().map(tagId -> {
+            DocumentTag link = new DocumentTag();
+            link.setDocumentId(documentId);
+            link.setTagId(tagId);
+            return link;
+        }).toList());
     }
 
     @Transactional
@@ -148,6 +177,7 @@ public class DocumentPresignedUrlService {
         ObjectMetadata metadata = objectStorageService.headObject(document.getStoragePath());
         if (metadata.contentLength() != document.getFileSize()) {
             objectStorageService.deleteObject(document.getStoragePath());
+            documentTagRepository.deleteByDocumentId(document.getId());
             documentRepository.delete(document);
             throw new AppException(ErrorCodes.UPLOAD_SIZE_MISMATCH, "Uploaded size does not match declared size", HttpStatus.BAD_REQUEST);
         }
@@ -156,6 +186,7 @@ public class DocumentPresignedUrlService {
             fileValidationService.validateDetected(document.getFileType(), detectedMimeType);
         } catch (AppException exception) {
             objectStorageService.deleteObject(document.getStoragePath());
+            documentTagRepository.deleteByDocumentId(document.getId());
             documentRepository.delete(document);
             throw exception;
         }

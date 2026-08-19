@@ -196,6 +196,16 @@
 .documentItem {
   align-items: center;
   padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.documentItem:hover,
+.documentItem:focus-visible {
+  border-color: #8ccbd8;
+  box-shadow: 0 8px 20px rgba(13, 32, 52, 0.08);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .documentIcon {

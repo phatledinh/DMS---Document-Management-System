@@ -11,9 +11,11 @@ import com.dms.identity.dto.RefreshResponse;
 import com.dms.identity.entity.RefreshToken;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
+import com.dms.identity.entity.UserDepartment;
 import com.dms.identity.entity.UserStatus;
 import com.dms.identity.mapper.UserMapper;
 import com.dms.identity.repository.RefreshTokenRepository;
+import com.dms.identity.repository.UserDepartmentRepository;
 import com.dms.identity.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +45,9 @@ class AuthServiceTest {
     private RefreshTokenRepository refreshTokenRepository;
 
     @Mock
+    private UserDepartmentRepository userDepartmentRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -55,6 +61,7 @@ class AuthServiceTest {
         authService = new AuthService(
                 userRepository,
                 refreshTokenRepository,
+                userDepartmentRepository,
                 passwordEncoder,
                 jwtTokenProvider,
                 jwtProperties,
@@ -70,6 +77,10 @@ class AuthServiceTest {
         when(jwtTokenProvider.createAccessToken(user)).thenReturn("access-token");
         when(jwtTokenProvider.accessExpirationSeconds()).thenReturn(900L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userDepartmentRepository.findByUserId(user.getId())).thenReturn(List.of(
+                userDepartment(user.getId(), 10L),
+                userDepartment(user.getId(), 20L)
+        ));
 
         AuthResult<LoginResponse> result = authService.login(
                 new LoginRequest("admin@dms.com", "admin"),
@@ -79,6 +90,7 @@ class AuthServiceTest {
         assertThat(result.response().accessToken()).isEqualTo("access-token");
         assertThat(result.response().expiresIn()).isEqualTo(900L);
         assertThat(result.response().user().email()).isEqualTo("admin@dms.com");
+        assertThat(result.response().user().departmentIds()).containsExactly(10L, 20L);
         assertThat(result.refreshToken()).isNotBlank();
         assertThat(result.refreshMaxAgeSeconds()).isEqualTo(604800L);
         assertThat(user.getLastLogin()).isNotNull();
@@ -210,5 +222,12 @@ class AuthServiceTest {
         refreshToken.setExpiresAt(OffsetDateTime.now().plusDays(1));
         refreshToken.setRevoked(false);
         return refreshToken;
+    }
+
+    private UserDepartment userDepartment(Long userId, Long departmentId) {
+        UserDepartment userDepartment = new UserDepartment();
+        userDepartment.setUserId(userId);
+        userDepartment.setDepartmentId(departmentId);
+        return userDepartment;
     }
 }

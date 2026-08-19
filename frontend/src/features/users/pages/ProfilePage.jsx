@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Avatar, Breadcrumb, Button, Card, Col, Form, Input, Row, Tag, Typography } from 'antd';
 import { toast } from 'react-toastify';
 import { getDepartments } from '../../../api/departmentApi.js';
-import { updateUser } from '../../../api/userApi.js';
+import { getCurrentUser, updateUser } from '../../../api/userApi.js';
 import { useAuthStore } from '../../../store/authStore.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './ProfilePage.module.css';
@@ -17,6 +17,7 @@ function normalizeList(data) {
 
 export default function ProfilePage() {
   const currentUser = useAuthStore((state) => state.user);
+  const setCurrentUser = useAuthStore((state) => state.setUser);
   const [passwordForm] = Form.useForm();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [departments, setDepartments] = useState([]);
@@ -40,17 +41,21 @@ export default function ProfilePage() {
   const displayName = currentUser?.name || currentUser?.email || '—';
 
   useEffect(() => {
-    async function loadDepartments() {
+    async function loadProfileData() {
       try {
-        const data = await getDepartments();
-        setDepartments(normalizeList(data));
+        const [user, departmentData] = await Promise.all([
+          getCurrentUser(),
+          getDepartments(),
+        ]);
+        setCurrentUser(user);
+        setDepartments(normalizeList(departmentData));
       } catch (error) {
         toast.error(getApiErrorMessage(error));
       }
     }
 
-    loadDepartments();
-  }, []);
+    loadProfileData();
+  }, [setCurrentUser]);
 
   async function handlePasswordChange(values) {
     if (!currentUser?.id) {

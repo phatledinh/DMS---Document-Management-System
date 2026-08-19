@@ -10,6 +10,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { Alert, Empty, Skeleton } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../../store/authStore.js';
 import { getApiErrorMessage } from '../../../utils/response.js';
 import { useUserDashboard } from '../hooks/useUserDashboard.js';
@@ -73,7 +74,7 @@ function StatusPill({ status, tone }) {
   );
 }
 
-function DocumentList({ documents }) {
+function DocumentList({ documents, onOpen }) {
   if (!documents.length) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có tài liệu liên quan" />;
   }
@@ -81,7 +82,19 @@ function DocumentList({ documents }) {
   return (
     <div className={styles.documentList}>
       {documents.map((doc) => (
-        <article className={styles.documentItem} key={doc.id}>
+        <article
+          className={styles.documentItem}
+          key={doc.id}
+          role="link"
+          tabIndex={0}
+          onClick={() => onOpen(doc)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onOpen(doc);
+            }
+          }}
+        >
           <span className={styles.documentIcon}><FileTextOutlined /></span>
           <div className={styles.itemMain}>
             <strong>{doc.title}</strong>
@@ -139,6 +152,7 @@ function getDisplayName(user) {
 }
 
 export default function DashboardUser() {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const dashboardQuery = useUserDashboard();
   const dashboard = dashboardQuery.data;
@@ -183,7 +197,10 @@ export default function DashboardUser() {
               title="Tài liệu liên quan gần đây"
               className={styles.documentsPanel}
             >
-              <DocumentList documents={dashboard?.recentDocuments || []} />
+              <DocumentList
+                documents={dashboard?.recentDocuments || []}
+                onOpen={(doc) => navigate(`/documents/${doc.slug}`)}
+              />
             </SectionCard>
 
             <aside className={styles.sideRail}>

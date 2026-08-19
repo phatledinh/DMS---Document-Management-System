@@ -92,10 +92,11 @@ export default function TagsPage() {
     async function loadRelatedDocuments() {
       setLoadingDocuments(true);
       try {
-        const data = await searchDocuments({ tagIds: selectedTag.id, page: 0, size: 5, sort: 'created_at_desc' });
+        const data = await searchDocuments({ tagIds: selectedTag.id, page: 0, size: 5, sort: 'createdAt,desc' });
         setRelatedDocuments(getPageContent(data).map((item) => normalizeDocument(item.document || item)).filter(Boolean));
         setRelatedTotal(data?.totalElements ?? data?.total ?? getPageContent(data).length);
-      } catch {
+      } catch (error) {
+        toast.error(getApiErrorMessage(error));
         setRelatedDocuments([]);
         setRelatedTotal(0);
       } finally {
@@ -260,6 +261,14 @@ export default function TagsPage() {
                           className={styles.documentCard}
                           key={doc.id}
                           onClick={() => navigate(`/documents/${doc.slug || doc.id}`)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              navigate(`/documents/${doc.slug || doc.id}`);
+                            }
+                          }}
+                          role="link"
+                          tabIndex={0}
                           style={{ cursor: "pointer" }}
                         >
                           <FileTextOutlined />
