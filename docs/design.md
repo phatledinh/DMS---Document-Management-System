@@ -101,9 +101,9 @@ Tất cả endpoint PHẢI trả data trong format thống nhất.
 | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | `.docx` | POI (XWPF) |
 | `application/vnd.ms-excel` | `.xls` | POI |
 | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | `.xlsx` | POI |
-| `image/jpeg` | `.jpg`, `.jpeg` | Tesseract OCR |
-| `image/png` | `.png` | Tesseract OCR |
-| `image/tiff` | `.tiff` | Tesseract OCR |
+| `image/jpeg` | `.jpg`, `.jpeg` | VietOCR |
+| `image/png` | `.png` | VietOCR |
+| `image/tiff` | `.tiff` | VietOCR |
 
 Upload validation rules:
 
@@ -150,15 +150,18 @@ Tất cả entity chính đều có:
 
 Soft Delete: `deleted_at` (TIMESTAMP, NULLABLE) cho User, Document, Category, Department, Tag.
 
-### Document Access Model
+### Resource Access Model
 
-| Access level | Quyền truy cập |
-|--------------|----------------|
+DMS dùng quyền truy cập theo từng tài nguyên, không dùng RBAC để quyết định ai được xem tài liệu. Role chỉ nên phục vụ thao tác quản trị hệ thống; quyền xem tài liệu/danh mục dựa trên audience được gắn vào category hoặc document.
+
+| Visibility | Quyền truy cập dự kiến |
+|------------|------------------------|
 | `PUBLIC` | Tất cả user đã đăng nhập có thể xem, preview, download và search thấy tài liệu. |
-| `DEPARTMENT` | Chỉ user thuộc các phòng ban được cấp trong `document_department_accesses` hoặc admin. |
-| `RESTRICTED` | Chỉ owner, user được cấp trực tiếp trong `document_user_accesses`, hoặc admin. |
+| `RESTRICTED` | Chỉ owner, user được cấp trực tiếp, hoặc user thuộc department/group được cấp quyền mới xem được. |
 
-Quy tắc áp dụng cho mọi read-path của tài liệu: list, detail, search, preview, download, version download và dashboard drill-down.
+Giai đoạn hiện tại để permissive: mặc định `PUBLIC`, policy service luôn cho qua nhưng toàn bộ read-path vẫn gọi policy service. Sau này bật enforcement thì list, detail, search, preview, download, version download và dashboard drill-down dùng lại cùng logic.
+
+Category có thể có audience riêng; document có thể thừa hưởng từ category hoặc override bằng audience riêng.
 
 ### Document Lifecycle
 
@@ -244,6 +247,26 @@ DELETED -> INDEXED/ARCHIVED          // restore nếu còn trong retention windo
 | updated_at | TIMESTAMP | NULLABLE | |
 | deleted_at | TIMESTAMP | NULLABLE | |
 
+### Table: `category_department_accesses`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| category_id | BIGINT | FK → categories, NOT NULL | Danh mục được cấu hình audience |
+| department_id | BIGINT | FK → departments, NOT NULL | Phòng ban được xem danh mục |
+| granted_by | BIGINT | FK → users, NOT NULL | Người cấp quyền |
+| created_at | TIMESTAMP | NOT NULL | |
+| | | Composite PK (category_id, department_id) | |
+
+### Table: `category_user_accesses`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| category_id | BIGINT | FK → categories, NOT NULL | Danh mục được cấu hình audience |
+| user_id | BIGINT | FK → users, NOT NULL | User được xem danh mục trực tiếp |
+| granted_by | BIGINT | FK → users, NOT NULL | Người cấp quyền |
+| created_at | TIMESTAMP | NOT NULL | |
+| | | Composite PK (category_id, user_id) | |
+
 ### Table: `tags`
 
 | Column | Type | Constraints | Description |
@@ -279,7 +302,7 @@ DELETED -> INDEXED/ARCHIVED          // restore nếu còn trong retention windo
 | document_code | VARCHAR(100) | NOT NULL, UNIQUE | Mã tài liệu do backend tự sinh |
 | version_number | VARCHAR(20) | DEFAULT '1.0' | Phiên bản hiện tại |
 | status | VARCHAR(30) | DEFAULT 'AWAITING_UPLOAD' | AWAITING_UPLOAD / PROCESSING / INDEXED / EXTRACTION_FAILED / ARCHIVED / DELETED |
-| access_level | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC / DEPARTMENT / RESTRICTED |
+| visibility | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC / RESTRICTED; hiện tại permissive mặc định PUBLIC |
 | view_count | INT | DEFAULT 0 | |
 | download_count | INT | DEFAULT 0 | |
 | effective_date | DATE | NULLABLE | |
@@ -295,7 +318,7 @@ DELETED -> INDEXED/ARCHIVED          // restore nếu còn trong retention windo
 |--------|------|-------------|-------------|
 | document_id | BIGINT | FK → documents, NOT NULL | |
 | department_id | BIGINT | FK → departments, NOT NULL | |
-| granted_by | BIGINT | FK → users, NOT NULL | Admin cấp quyền |
+| granted_by | BIGINT | FK → users, NOT NULL | Người cấp quyền |
 | created_at | TIMESTAMP | NOT NULL | |
 | | | Composite PK (document_id, department_id) | |
 
@@ -305,7 +328,7 @@ DELETED -> INDEXED/ARCHIVED          // restore nếu còn trong retention windo
 |--------|------|-------------|-------------|
 | document_id | BIGINT | FK → documents, NOT NULL | |
 | user_id | BIGINT | FK → users, NOT NULL | User được cấp quyền |
-| granted_by | BIGINT | FK → users, NOT NULL | Admin cấp quyền |
+| granted_by | BIGINT | FK → users, NOT NULL | Người cấp quyền |
 | created_at | TIMESTAMP | NOT NULL | |
 | | | Composite PK (document_id, user_id) | |
 
@@ -414,7 +437,7 @@ CREATE INDEX idx_documents_department ON documents(department_id);
 CREATE INDEX idx_documents_uploaded_by ON documents(uploaded_by);
 CREATE INDEX idx_documents_owner ON documents(owner_id);
 CREATE INDEX idx_documents_status ON documents(status);
-CREATE INDEX idx_documents_access_level ON documents(access_level);
+CREATE INDEX idx_documents_visibility ON documents(visibility);
 CREATE INDEX idx_documents_file_type ON documents(file_type);
 CREATE INDEX idx_documents_effective_date ON documents(effective_date);
 CREATE INDEX idx_documents_created_at ON documents(created_at);
@@ -482,25 +505,26 @@ CREATE INDEX idx_doc_search_tags_trgm ON document_search_index USING GIN(tag_tex
 - Fuzzy/typeahead: `pg_trgm` (`similarity`, `%`) hoặc prefix query trên `title_text`, `document_code_text`, `tag_text`.
 - Facets tối thiểu: category, department, document_type, tags, created date range bằng SQL aggregation.
 
-### Permission Filter
+### Access Filter
 
-Mọi query search phải JOIN về `documents` và thêm filter quyền theo user hiện tại:
+Mọi query search phải JOIN về `documents` và đi qua cùng resource access policy. Hiện tại policy ở chế độ permissive nên không loại tài liệu theo audience; khi bật enforcement thì filter dự kiến là:
 
 ```text
 d.status = 'INDEXED'
 AND (
-  d.access_level = 'PUBLIC'
+  d.visibility = 'PUBLIC'
   OR d.owner_id = current_user_id
-  OR EXISTS (department ACL match current_user.department_id)
-  OR EXISTS (user ACL match current_user_id)
-  OR current_user.role = 'ADMIN'
+  OR EXISTS (document department audience match current_user.department_id)
+  OR EXISTS (document user audience match current_user_id)
+  OR EXISTS (category department audience match current_user.department_id)
+  OR EXISTS (category user audience match current_user_id)
 )
 ```
 
 ### Sync & Retry
 
 - Khi upload hoặc upload version mới: tạo row `AWAITING_UPLOAD`, client PUT trực tiếp lên object storage qua presigned URL, complete validate MIME thực tế rồi chuyển `PROCESSING`; sau commit publish message RabbitMQ để worker extract text, tạo preview artifact và refresh `document_search_index`.
-- Khi metadata, tags, category, ACL hoặc status thay đổi: refresh search row hoặc để query JOIN trạng thái/quyền mới nhất từ bảng nguồn.
+- Khi metadata, tags, category, audience hoặc status thay đổi: refresh search row hoặc để query JOIN trạng thái/quyền mới nhất từ bảng nguồn.
 - Khi archive/delete: cập nhật `documents.status`; search query tự loại theo status mặc định.
 - `POST /documents/{id}/retry-indexing` chỉ áp dụng cho tài liệu `EXTRACTION_FAILED` hoặc tài liệu có lỗi refresh search gần nhất.
 
@@ -538,7 +562,7 @@ AND (
 | 12 | POST | `/documents/upload-init` | Admin | Khởi tạo upload tài liệu, trả presigned PUT URL |
 | 13 | GET | `/documents` | Auth | Danh sách tài liệu theo quyền hiện tại |
 | 14 | GET | `/documents/{id}` | Auth | Chi tiết tài liệu |
-| 15 | PUT | `/documents/{id}` | Admin | Cập nhật metadata, tags, ACL |
+| 15 | PUT | `/documents/{id}` | Admin | Cập nhật metadata, tags, audience |
 | 16 | DELETE | `/documents/{id}` | Admin | Xóa tài liệu (soft delete) |
 | 17 | POST | `/documents/{id}/archive` | Admin | Archive tài liệu |
 | 18 | POST | `/documents/{id}/restore` | Admin | Restore tài liệu đã archive/delete |
@@ -597,9 +621,9 @@ Dashboard dùng convention `/admin/dashboard/summary` cho thống kê tổng qua
 |--------|-----------|
 | Login/logout | `audit_logs` |
 | Create/update/delete/archive/restore/move/permanent delete document | `audit_logs` |
-| Update ACL/tags/category/metadata | `audit_logs` |
+| Update audience/tags/category/metadata | `audit_logs` |
 | Preview/download/version download | `access_logs` — ghi tại thời điểm backend cấp presigned URL, không phải lúc object storage truyền byte hoàn tất |
-| Denied preview/download/detail due to ACL | `access_logs` |
+| Denied preview/download/detail due to resource access policy | `access_logs` |
 | Search/suggestions | `search_logs` |
 | Retry extraction/indexing | `audit_logs` |
 | Batch upload/delete/move | `audit_logs` per affected document |

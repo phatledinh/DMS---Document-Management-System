@@ -1,0 +1,328 @@
+.container {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 36px 30px 52px;
+}
+
+.heroSection {
+  position: relative;
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 72px 24px 64px;
+  border: 1px solid #dfe8f0;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(39, 168, 183, 0.18), transparent 30%),
+    radial-gradient(circle at 82% 18%, rgba(15, 82, 116, 0.12), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #f2f9fc 54%, #f8fbfd 100%);
+  margin-bottom: 38px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(13, 32, 52, 0.08);
+}
+
+.heroBackground {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(#0f7896 0.8px, transparent 0.8px);
+  background-size: 28px 28px;
+  opacity: 0.045;
+  pointer-events: none;
+}
+
+.heroBadge {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 18px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #e5f4fa;
+  color: #0f5274;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.heroTitle {
+  position: relative;
+  z-index: 1;
+  color: #0d2034 !important;
+  font-size: clamp(38px, 4.4vw, 58px) !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.045em;
+  margin-bottom: 12px !important;
+}
+
+.heroSubtitle {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  color: #647383 !important;
+  font-size: 18px !important;
+  line-height: 1.7 !important;
+  margin: 0 auto 34px !important;
+}
+
+.searchCard {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 100%);
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid rgba(216, 225, 233, 0.95);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 22px 54px rgba(13, 32, 52, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.searchRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  gap: 10px;
+  align-items: center;
+}
+
+.searchInput :global(.ant-input-affix-wrapper) {
+  min-height: 58px;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: none;
+  transition: box-shadow 0.25s ease;
+}
+
+.searchInput :global(.ant-input-affix-wrapper:hover),
+.searchInput :global(.ant-input-affix-wrapper-focused) {
+  box-shadow: inset 0 0 0 1px rgba(15, 120, 150, 0.26);
+}
+
+.searchInput :global(.ant-input) {
+  color: #0d2034;
+  font-size: 16px;
+}
+
+.searchInput :global(.ant-input::placeholder) {
+  color: #8a98a8;
+}
+
+.searchButton {
+  min-height: 58px;
+  border-radius: 18px !important;
+  background: linear-gradient(135deg, #0f5274 0%, #187f99 100%) !important;
+  border: 0 !important;
+  font-weight: 800 !important;
+  box-shadow: 0 12px 24px rgba(15, 82, 116, 0.22) !important;
+}
+
+.suggestions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 10px 2px;
+}
+
+.suggestionBtn {
+  cursor: pointer;
+  padding: 7px 13px;
+  border: 1px solid #d8e1e9;
+  border-radius: 999px;
+  background: #f6fafd;
+  color: #425466;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.suggestionBtn:hover {
+  color: #005c8d;
+  border-color: #9bd3dc;
+  background: #ecf5fb;
+}
+
+.filterCard {
+  width: min(880px, 100%);
+  margin: -6px auto 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filterSelect {
+  flex: 0 0 auto;
+  min-width: 132px;
+}
+
+.filterSelect :global(.ant-select-selector) {
+  min-height: 42px !important;
+  border-color: #d8e1e9 !important;
+  border-radius: 999px !important;
+  background: #ffffff !important;
+  box-shadow: 0 8px 20px rgba(13, 32, 52, 0.06) !important;
+}
+
+.filterSelect :global(.ant-select-selection-placeholder),
+.filterSelect :global(.ant-select-selection-item) {
+  color: #26384a !important;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 100%;
+  margin: 0 0 22px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  margin: 0 !important;
+  color: #0d2034 !important;
+  font-size: 24px !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.02em;
+}
+
+.docCard {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2eaf1 !important;
+  border-radius: 20px !important;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(13, 32, 52, 0.05);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s, box-shadow 0.25s !important;
+}
+
+.docCard:hover {
+  transform: translateY(-4px);
+  border-color: #9bd3dc !important;
+  box-shadow: 0 18px 42px rgba(13, 32, 52, 0.1) !important;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.iconBadge {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23px;
+}
+
+.pdfBadge {
+  background: #fff1f0;
+  color: #e5484d;
+}
+
+.docxBadge {
+  background: #e8f7fb;
+  color: #1685a0;
+}
+
+.xlsxBadge {
+  background: #eaf7f1;
+  color: #2f9e73;
+}
+
+.defaultBadge {
+  background: #f1f5f9;
+  color: #647383;
+}
+
+.docTitle {
+  height: 44px;
+  display: -webkit-box;
+  overflow: hidden;
+  color: #0d2034 !important;
+  font-size: 16px !important;
+  font-weight: 750 !important;
+  line-height: 1.38 !important;
+  margin-bottom: 10px !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+
+.cardFooter {
+  margin-top: auto;
+  padding-top: 13px;
+  border-top: 1px dashed #dfe8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #647383;
+  font-size: 12px;
+}
+
+.metaGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dotDivider {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #b7c4d0;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 20px 14px 40px;
+  }
+
+  .heroSection {
+    min-height: auto;
+    padding: 48px 16px 42px;
+    border-radius: 22px;
+  }
+
+  .searchRow {
+    grid-template-columns: 1fr;
+  }
+
+  .searchButton {
+    width: 100%;
+  }
+
+  .suggestions {
+    justify-content: center;
+  }
+}

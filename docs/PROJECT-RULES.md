@@ -708,32 +708,34 @@ Response
 
 ---
 
-## 14. Document Access Control
+## 14. Resource Access Control
 
-| Access Level | Ai có quyền |
-|-------------|------------|
+DMS dùng quyền truy cập theo từng tài liệu/danh mục, không dùng RBAC để quyết định ai được xem tài liệu. Role chỉ phục vụ thao tác quản trị hệ thống nếu cần.
+
+| Visibility | Ai có quyền khi enforcement bật |
+|------------|---------------------------------|
 | `PUBLIC` | Tất cả user đã đăng nhập |
-| `DEPARTMENT` | User thuộc phòng ban được gán + Admin |
-| `RESTRICTED` | Owner, Admin, hoặc user được chia sẻ trực tiếp |
+| `RESTRICTED` | Owner, user được share trực tiếp, hoặc user thuộc department/group nằm trong audience của document/category |
 
 ### Rules
 
-- Search, preview, download phải dùng **cùng một logic** ACL trong `DocumentAccessPolicyService`
-- PostgreSQL FTS query **PHẢI** filter quyền trước khi trả kết quả — KHÔNG filter ở frontend
-- User không có quyền **KHÔNG** nhìn thấy title, snippet, metadata, download URL
-- Tài liệu `DELETED` không xuất hiện trong search/preview/download
-- Admin mặc định không thấy `DELETED` trừ khi filter rõ `status = DELETED`
+- Hiện tại policy chạy permissive: chưa chặn theo audience, mặc định tài liệu/danh mục là `PUBLIC`.
+- Search, preview, download phải dùng **cùng một logic** resource access trong `DocumentAccessPolicyService`/`CategoryAccessPolicyService`.
+- PostgreSQL FTS query **PHẢI** đi qua policy/filter quyền trước khi trả kết quả — KHÔNG filter ở frontend.
+- Khi enforcement bật, user không thuộc audience **KHÔNG** nhìn thấy title, snippet, metadata, download URL.
+- Tài liệu `DELETED` không xuất hiện trong search/preview/download.
 
-### ACL Query Pattern (cho cả search lẫn document detail)
+### Access Query Pattern (cho cả search lẫn document detail khi bật enforcement)
 
 ```sql
 d.status = 'INDEXED'
 AND (
-  d.access_level = 'PUBLIC'
+  d.visibility = 'PUBLIC'
   OR d.owner_id = :currentUserId
   OR EXISTS (SELECT 1 FROM document_department_accesses dda WHERE dda.document_id = d.id AND dda.department_id = :userDepartmentId)
   OR EXISTS (SELECT 1 FROM document_user_accesses dua WHERE dua.document_id = d.id AND dua.user_id = :currentUserId)
-  OR :isAdmin = true
+  OR EXISTS (SELECT 1 FROM category_department_accesses cda WHERE cda.category_id = d.category_id AND cda.department_id = :userDepartmentId)
+  OR EXISTS (SELECT 1 FROM category_user_accesses cua WHERE cua.category_id = d.category_id AND cua.user_id = :currentUserId)
 )
 ```
 
@@ -798,7 +800,7 @@ DELETED → INDEXED / ARCHIVED (restore nếu còn retention window)
 | Queue | Task | Trigger |
 |-------|------|---------|
 | `dms.extract` | Extract text (PDFBox/POI) | upload-complete, retry |
-| `dms.ocr` | OCR scanned PDF/image (Tesseract) | Extract phát hiện scan |
+| `dms.ocr` | OCR scanned PDF/image (VietOCR) | Extract phát hiện scan |
 | `dms.preview` | Generate preview PDF/HTML (LibreOffice) | File Office sau upload |
 | `dms.index` | Refresh `document_search_index` | Extract thành công, metadata đổi |
 
@@ -824,7 +826,7 @@ DELETED → INDEXED / ARCHIVED (restore nếu còn retention window)
 - Highlight: `ts_headline` — backend sanitize HTML trước khi trả frontend
 - Fuzzy/typeahead: `pg_trgm` (`similarity`, trigram GIN index)
 - Facets: category, department, file type, tags bằng SQL `GROUP BY`
-- Permission filter: JOIN ACL ngay trong SQL (xem Section 14)
+- Resource access filter: JOIN audience ngay trong SQL khi enforcement bật (xem Section 14)
 - Suggestions: autocomplete cho title, document_code, tags — có thể cache Redis
 
 ---
@@ -876,7 +878,7 @@ class DocumentSearchIntegrationTest {
 - `@DisplayName` trên mọi test — mô tả behavior
 - Unit tests: `@ExtendWith(MockitoExtension.class)`, mock dependencies
 - Integration tests: `@SpringBootTest` + `@Testcontainers`
-- **Ưu tiên Testcontainers PostgreSQL** cho test FTS query, ACL, facet, cache
+- **Ưu tiên Testcontainers PostgreSQL** cho test FTS query, resource access policy, facet, cache
 - H2 chỉ dùng cho test JPA đơn giản — FTS/pg_trgm/extension không chạy trên H2
 - Always test: happy path + validation error + not found + unauthorized + access denied
 - Biến môi trường test phải set trước khi chạy
@@ -946,7 +948,7 @@ public class DocumentService {
 
 ### Source of Truth
 
-- **PostgreSQL** là source of truth cho metadata, ACL, lifecycle, extracted text, search vector
+- **PostgreSQL** là source of truth cho metadata, audience, lifecycle, extracted text, search vector
 - **Object storage** (MinIO/R2) chỉ lưu binary/artifact theo UUID object key
 - `document_search_index` là derived table — có thể rebuild từ PostgreSQL + extracted content
 

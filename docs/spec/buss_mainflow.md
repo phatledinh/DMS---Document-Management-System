@@ -68,27 +68,27 @@ Admin chọn "Upload tài liệu"
   • Chọn danh mục
   • Gắn tags
   • Chọn ngày hiệu lực (optional)
-  • Chọn access level: PUBLIC / DEPARTMENT / RESTRICTED
-  • Nếu DEPARTMENT: chọn một hoặc nhiều phòng ban được phép xem
-  • Nếu RESTRICTED: chọn owner hoặc danh sách user được chia sẻ trực tiếp
+  • Visibility mặc định: PUBLIC
+  • Audience tùy chọn cho tương lai: chọn user/phòng ban/nhóm được phép xem nếu đặt RESTRICTED
+  • Hiện tại hệ thống chạy permissive nên có thể bỏ qua bước chọn audience
       ↓
 [Frontend] — Validate client-side
   • Kiểm tra file type (pdf, doc, docx, xls, xlsx, jpg, png, tiff)
   • Kiểm tra file size (≤ 50MB)
   • Kiểm tra required fields
-  • Kiểm tra dữ liệu phân quyền tương ứng access level
+  • Nếu chọn RESTRICTED thì kiểm tra audience user/phòng ban/nhóm hợp lệ
       ↓
 [DocumentController] — POST /documents/upload-init hoặc /documents/batch-upload-init
       ↓
 [FileUploadHandler] — Server-side validation
   ├── ❌ File type không hợp lệ → 415 Unsupported Media Type
   ├── ❌ File quá lớn → 413 Payload Too Large
-  ├── ❌ Thiếu rule phân quyền → 400 Bad Request
+  ├── ❌ Audience RESTRICTED không hợp lệ → 400 Bad Request
   └── ✅ Hợp lệ
         ↓
 [DocumentService] — Tạo metadata PostgreSQL
   • Sinh UUID object key, client không được chọn storage path
-  • Tạo documents + document_versions + ACL/tag rows
+  • Tạo documents + document_versions + audience/tag rows
   • Status = "AWAITING_UPLOAD"
   • upload_expires_at = now + 5 phút
         ↓
@@ -97,7 +97,7 @@ Admin chọn "Upload tài liệu"
   • Tạo record trong bảng `documents`
   • Tạo record trong `document_tags` (N:N)
   • Tạo record trong `document_versions` (v1.0)
-  • Lưu access_level, department ACL hoặc direct-share ACL
+  • Lưu visibility và audience nếu có; mặc định PUBLIC/permissive
   • Status = "PROCESSING"
 [S3StorageService] — Ký presigned PUT URL cho đúng object key/content-type/content-length
         ↓
@@ -134,7 +134,7 @@ Frontend cần metadata/detail đầy đủ thì gọi `GET /documents/{id}` sau
 [After Commit] — Publish RabbitMQ message {type: EXTRACT} vào dms.extract
         ↓
 [Worker] — Consume dms.extract / dms.ocr / dms.preview / dms.index
-  • Extract text bằng PDFBox/POI hoặc OCR bằng Tesseract
+  • Extract text bằng PDFBox/POI hoặc OCR bằng VietOCR
   • Generate preview artifact PDF/HTML cho Office nếu cần
   • Refresh document_search_index trong PostgreSQL
         ↓
@@ -246,10 +246,10 @@ User click vào tài liệu từ kết quả tìm kiếm
 [DocumentService]
   ├── Lấy metadata từ PostgreSQL
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
+  ├── Đi qua resource access policy
   │     ├── PUBLIC     → mọi user đã đăng nhập
-  │     ├── DEPARTMENT → user thuộc phòng ban được gán hoặc Admin
-  │     └── RESTRICTED → owner, Admin hoặc user được chia sẻ trực tiếp
+  │     ├── RESTRICTED → owner, shared users hoặc department/group audience khi enforcement bật
+  │     └── Hiện tại permissive → chưa chặn theo audience
   ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403, không trả metadata/file URL
   └── ✅ Có quyền
         ↓
@@ -270,7 +270,7 @@ User click "Preview"
       ↓
 [PreviewService]
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
+  ├── Đi qua resource access policy
   ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403
   └── ✅ Có quyền
         ↓
@@ -290,7 +290,7 @@ User click "Download"
       ↓
 [DocumentService]
   ├── Kiểm tra status = INDEXED
-  ├── Kiểm tra quyền truy cập theo access_level
+  ├── Đi qua resource access policy
   ├── ❌ Không có quyền / tài liệu không hiển thị → 404/403
   └── ✅ Có quyền
         ↓
@@ -456,7 +456,7 @@ Admin mở màn hình Quản lý User
       ↓
 Nếu role/department thay đổi
       ↓
-Quyền search/metadata detail/preview/download thay đổi theo access_level của tài liệu
+Quyền search/metadata detail/preview/download thay đổi theo audience của tài liệu/danh mục khi enforcement bật
 ```
 
 ---

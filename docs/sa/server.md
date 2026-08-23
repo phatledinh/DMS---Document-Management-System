@@ -8,15 +8,15 @@
 
 ### Single Server — Development & MVP
 
-Hệ thống dùng **PostgreSQL-only**: PostgreSQL là source of truth cho metadata/ACL/lifecycle/log và đồng thời là search engine bằng Full-Text Search (`tsvector`/`tsquery`), GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Không triển khai Elasticsearch/OpenSearch trong MVP.
+Hệ thống dùng **PostgreSQL-only**: PostgreSQL là source of truth cho metadata/audience/lifecycle/log và đồng thời là search engine bằng Full-Text Search (`tsvector`/`tsquery`), GIN index, `pg_trgm`, `unaccent` và tùy chọn `pgvector`. Không triển khai Elasticsearch/OpenSearch trong MVP.
 
 ```text
 Single Server / VPS
 ├── Frontend Container (Nginx + React): 80/443
 ├── Backend API Container (Spring Boot profile=api): 8080
-│   └── REST API, auth, ACL, metadata, presigned URL signing, RabbitMQ publish
+│   └── REST API, auth, resource access policy, metadata, presigned URL signing, RabbitMQ publish
 ├── Worker Container (Spring Boot profile=worker)
-│   └── RabbitMQ consumers, PDFBox/POI, LibreOffice, Tesseract, PostgreSQL FTS refresh
+│   └── RabbitMQ consumers, PDFBox/POI, LibreOffice, VietOCR, PostgreSQL FTS refresh
 ├── RabbitMQ Container: 5672 / 15672
 │   └── dms.tasks, retry queues, DLQ
 ├── PostgreSQL Container: 5432

@@ -66,7 +66,7 @@ CREATE TABLE refresh_tokens (
 
 -- Default Admin Account (Optional, added as requested/good practice)
 INSERT INTO users (name, email, password, role, status)
-VALUES ('System Admin', 'admin@dms.com', '$2a$10$3m.j.O0tA42gH9vJvDk3EOCd0X92U9U9X0.q/3bQ0A0a1pZ6q0iM2', 'ADMIN', 'ACTIVE');
+VALUES ('System Admin', 'admin@dms.com', '$2a$10$5OjzLbScdSUHVRtoDBaXduV9BNJGHLIerPPkjED0sMFvn7V7WEHk.', 'ADMIN', 'ACTIVE');
 -- Note: Password is 'admin' BCrypt hashed.
 
 -- Document Domain
@@ -226,6 +226,7 @@ CREATE INDEX idx_documents_deleted_at ON documents(deleted_at);
 CREATE INDEX idx_documents_purge_after ON documents(purge_after);
 
 CREATE INDEX idx_document_versions_doc ON document_versions(document_id);
+CREATE UNIQUE INDEX uk_document_versions_document_version ON document_versions(document_id, version_number);
 CREATE INDEX idx_audit_logs_actor_date ON audit_logs(actor_id, created_at);
 CREATE INDEX idx_audit_logs_target ON audit_logs(target_type, target_id);
 CREATE INDEX idx_access_logs_doc_date ON access_logs(document_id, created_at);

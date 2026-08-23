@@ -31,10 +31,10 @@ Hệ thống DMS được chia thành **6 phân hệ chính**:
 
 ---
 
-## PH1: Identity — Quản lý Người dùng & Phân quyền
+## PH1: Identity — Quản lý Người dùng & Xác thực
 
 ### Mô tả
-Quản lý xác thực (authentication), phiên đăng nhập và phân quyền vai trò (RBAC) cho toàn bộ hệ thống.
+Quản lý xác thực (authentication), phiên đăng nhập và thông tin người dùng. Identity không quyết định quyền xem tài liệu theo role; quyền xem tài liệu/danh mục thuộc resource access policy ở PH2.
 
 ### Entities
 | Entity | Mô tả |
@@ -46,8 +46,8 @@ Quản lý xác thực (authentication), phiên đăng nhập và phân quyền 
 - Đăng nhập / Đăng xuất (JWT + Refresh Token)
 - Quản lý user (Admin CRUD hoặc deactivate)
 - Xem / Sửa profile cá nhân
-- Phân quyền RBAC (ADMIN, USER)
-- Gán phòng ban cho user để phục vụ quyền truy cập tài liệu cấp `DEPARTMENT`
+- Gán phòng ban cho user để phục vụ audience theo phòng ban ở tài liệu/danh mục
+- Cung cấp user identity cho resource access policy kiểm tra quyền theo từng tài nguyên
 
 ### API Endpoints
 | Method | Endpoint | Mô tả |
@@ -66,22 +66,22 @@ Quản lý xác thực (authentication), phiên đăng nhập và phân quyền 
 ## PH2: Document Management — Quản lý Tài liệu (Core Domain)
 
 ### Mô tả
-Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload → xử lý → lưu trữ → phân quyền → preview → download → versioning → lifecycle.
+Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload → xử lý → lưu trữ → kế thừa quyền từ danh mục → preview → download → versioning → lifecycle.
 
 ### Entities
 | Entity | Mô tả |
 |--------|-------|
-| `Document` | Metadata tài liệu (title, slug, document_code, file info, status, counters, access_level) |
+| `Document` | Metadata tài liệu (title, slug, document_code, file info, category_id, status, counters) |
 | `DocumentContent` | Nội dung text đã trích xuất từ file (tách bảng riêng vì data lớn) |
 | `DocumentVersion` | Lịch sử phiên bản file |
-| `DocumentDepartmentAccess` | ACL theo phòng ban cho tài liệu `DEPARTMENT` |
-| `DocumentUserAccess` | ACL theo user được chia sẻ trực tiếp cho tài liệu `RESTRICTED` |
+| `CategoryDepartmentPermission` | Quyền danh mục theo phòng ban, tài liệu kế thừa qua `category_id` |
+| `CategoryUserPermission` | Quyền danh mục theo user cụ thể để mở rộng khi cần |
 
 ### Chức năng chính
 - Upload tài liệu bằng presigned URL init/complete, max 50MB
 - Validate MIME type thực tế, extension, kích thước và extension bị chặn
 - Trích xuất nội dung file (Content Extraction Pipeline)
-- Lưu metadata, ACL và phiên bản tài liệu
+- Lưu metadata và phiên bản tài liệu; quyền truy cập lấy từ danh mục
 - Cập nhật metadata tài liệu
 - Archive, soft delete, restore tài liệu
 - Preview tài liệu bằng presigned GET URL; PDF/image dùng object gốc, Word/Excel dùng preview artifact PDF/HTML đã sanitize
@@ -96,7 +96,7 @@ Phân hệ cốt lõi — quản lý toàn bộ vòng đời tài liệu: upload
 | POST | `/documents/{id}/upload-complete` | Xác nhận upload xong, validate object và publish xử lý nền |
 | GET | `/documents` | Danh sách (pagination, filters) |
 | GET | `/documents/{id}` | Chi tiết tài liệu, có kiểm tra quyền truy cập |
-| PUT | `/documents/{id}` | Cập nhật metadata và ACL |
+| PUT | `/documents/{id}` | Cập nhật metadata tài liệu |
 | DELETE | `/documents/{id}` | Xóa mềm |
 | POST | `/documents/{id}/archive` | Archive tài liệu |
 | POST | `/documents/{id}/restore` | Restore tài liệu đã archive/delete |
@@ -120,26 +120,26 @@ Document Management
   │     ├── DocxExtractor           (Apache POI - XWPF)
   │     ├── DocExtractor            (Apache POI - HWPF)
   │     ├── ExcelExtractor          (Apache POI)
-  │     └── ImageOcrExtractor       (Tesseract OCR)
+  │     └── ImageOcrExtractor       (VietOCR)
   ├── PreviewService                — Convert, sanitize & stream file preview
   ├── HtmlSanitizer                 — Làm sạch HTML preview để tránh XSS
   ├── VersionService                — Quản lý phiên bản
   └── DocumentLifecycleService      — Archive, soft delete, restore, retry processing
 ```
 
-### Quy tắc phân quyền tài liệu
-- `PUBLIC`: mọi user đã đăng nhập có quyền xem.
-- `DEPARTMENT`: user thuộc một trong các phòng ban được gán hoặc Admin có quyền xem.
-- `RESTRICTED`: owner, Admin hoặc user được chia sẻ trực tiếp có quyền xem.
-- Search, metadata detail, preview và download phải dùng cùng logic trong `DocumentAccessPolicyService`.
-- User không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL.
+### Quy tắc phân quyền theo danh mục
+- Tài liệu kế thừa quyền từ danh mục chứa nó qua `documents.category_id`.
+- Quyền MVP cấp theo phòng ban bằng `category_department_permissions`; user có thể thuộc nhiều phòng ban qua `user_departments`.
+- Hệ thống hỗ trợ mở rộng cấp quyền trực tiếp theo user bằng `category_user_permissions`.
+- Search, metadata detail, preview và download đều phải gọi hoặc áp cùng `DocumentAccessPolicyService`/category ACL.
+- User không có quyền category không được nhìn thấy title, snippet, metadata hoặc download URL.
 
 ---
 
 ## PH3: Search Engine — Tìm kiếm Full-text (Core Feature)
 
 ### Mô tả
-Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô tả, mã tài liệu, tags và nội dung file đã trích xuất, đồng thời áp dụng filter quyền truy cập ngay trong PostgreSQL FTS query.
+Cho phép User tìm kiếm tài liệu theo từ khóa trong tiêu đề, mô tả, mã tài liệu, tags và nội dung file đã trích xuất, đồng thời đi qua resource access policy trong PostgreSQL FTS query.
 
 ### Chức năng chính
 - Full-text search bằng PostgreSQL FTS trên `title`, `description`, `extracted_content`, `document_code`, `tags`
@@ -310,7 +310,7 @@ Audit & Access Log
 | Document → Identity | Document thuộc về User (owner/uploader), dùng department/role để kiểm tra quyền |
 | Document → Master Data | Document gắn với Category, Department, Tags |
 | Document → Search | Document phát sinh refresh search/deactivate khi create/update/delete/version restore |
-| Search → Document | Search dùng metadata, status và ACL của Document để build query/filter |
+| Search → Document | Search dùng metadata, status và resource access policy của Document/Category để build query/filter |
 | Search → Audit Log | Search ghi keyword, filters, resultCount, searchTime |
 | Document → Audit Log | Document ghi upload, metadata update, archive, delete, restore, preview, download |
 | Identity → Audit Log | User management actions được ghi log |

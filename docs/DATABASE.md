@@ -1,7 +1,7 @@
 # Database Schema — Hệ Thống Quản Lý Tài Liệu Nội Bộ (DMS)
 
 > Schema thiết kế cho hệ thống Quản lý & Tìm kiếm Tài liệu Doanh nghiệp.
-> PostgreSQL lưu metadata, dữ liệu quan hệ, ACL và log; PostgreSQL FTS là search engine mặc định cho full-text search.
+> PostgreSQL lưu metadata, dữ liệu quan hệ, audience access policy và log; PostgreSQL FTS là search engine mặc định cho full-text search.
 
 ---
 
@@ -17,6 +17,8 @@
 [documents] 1──N [document_versions]
 [documents] N──N [tags] (via document_tags)
 [documents] 1──1 [document_contents]
+[categories] N──N [departments] (via category_department_accesses)
+[categories] N──N [users] (via category_user_accesses)
 [documents] N──N [departments] (via document_department_accesses)
 [documents] N──N [users] (via document_user_accesses)
 
@@ -62,15 +64,19 @@ Tất cả entity chính có:
 
 ## 3. Access Model & Lifecycle
 
-### Document Access Levels
+### Resource Access Model
 
-| Access level | Quyền truy cập |
-|--------------|----------------|
-| `PUBLIC` | Tất cả user đã đăng nhập có thể xem, search, preview và download. |
-| `DEPARTMENT` | User thuộc các phòng ban được cấp trong `document_department_accesses`, hoặc Admin. |
-| `RESTRICTED` | Owner, user được cấp trực tiếp trong `document_user_accesses`, hoặc Admin. |
+Bài toán phân quyền của DMS là **quyền truy cập theo danh mục cho phòng ban**, không phải RBAC theo vai trò và không phải audience riêng theo từng tài liệu. Role nếu còn dùng chỉ phục vụ thao tác quản trị hệ thống; quyền của user thường với tài liệu phải trả lời câu hỏi: category chứa tài liệu có cấp quyền cần dùng cho một trong các phòng ban mà user thuộc về không?
 
-Quy tắc quyền phải dùng thống nhất cho list, detail, search, preview, download, version download và dashboard drill-down.
+| Permission | Ảnh hưởng trên tài liệu thuộc category |
+|------------|----------------------------------------|
+| `VIEW` | Xem metadata, xuất hiện trong list/search/suggestion/facet và được preview nếu lifecycle hợp lệ. |
+| `UPLOAD` | Khởi tạo upload tài liệu mới vào category. |
+| `DOWNLOAD` | Nhận presigned download URL cho tài liệu/version. |
+| `EDIT` | Sửa metadata hoặc thao tác chỉnh sửa tài liệu nếu API mở cho user. |
+| `DELETE` | Xóa/archive/restore nếu API mở cho user. |
+
+`category_department_permissions` là source of truth cho quyền tài liệu của user thường. User thuộc nhiều phòng ban được gộp union quyền trên cùng một category; quyền đó chỉ áp dụng cho tài liệu thuộc chính category được cấp. `owner_id`, `uploaded_by` và direct user grants không phải nguồn cấp quyền đọc/tải tài liệu.
 
 ### Document Lifecycle
 
@@ -197,6 +203,26 @@ MB hiển thị = bytes / 1024 / 1024, làm tròn 2 chữ số. Các giá trị 
 | updated_at | TIMESTAMP | NULLABLE, updated by trigger/app | |
 | deleted_at | TIMESTAMP | NULLABLE | Soft delete |
 
+### category_department_accesses
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| category_id | BIGINT | FK → categories(id), NOT NULL | Danh mục được cấu hình audience |
+| department_id | BIGINT | FK → departments(id), NOT NULL | Phòng ban được xem danh mục |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Người cấp quyền |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
+| | | Composite PK (category_id, department_id) | |
+
+### category_user_accesses
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| category_id | BIGINT | FK → categories(id), NOT NULL | Danh mục được cấu hình audience |
+| user_id | BIGINT | FK → users(id), NOT NULL | User được xem danh mục trực tiếp |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Người cấp quyền |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
+| | | Composite PK (category_id, user_id) | |
+
 ### tags
 
 | Column | Type | Constraints | Description |
@@ -236,7 +262,7 @@ MB hiển thị = bytes / 1024 / 1024, làm tròn 2 chữ số. Các giá trị 
 | document_code | VARCHAR(100) | NOT NULL, UNIQUE | Mã tài liệu do backend tự sinh, ví dụ `DMS-202607-000001` |
 | version_number | VARCHAR(20) | NOT NULL, DEFAULT '1.0' | Phiên bản hiện tại |
 | status | VARCHAR(30) | NOT NULL, DEFAULT 'AWAITING_UPLOAD' | AWAITING_UPLOAD, PROCESSING, INDEXED, EXTRACTION_FAILED, ARCHIVED, DELETED |
-| access_level | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC, DEPARTMENT, RESTRICTED |
+| visibility | VARCHAR(20) | NOT NULL, DEFAULT 'PUBLIC' | PUBLIC, RESTRICTED; hiện tại permissive mặc định PUBLIC, sau này dùng để bật audience enforcement |
 | view_count | INT | NOT NULL, DEFAULT 0 | Số lượt preview/xem |
 | download_count | INT | NOT NULL, DEFAULT 0 | Số lượt tải |
 | effective_date | DATE | NULLABLE | Ngày hiệu lực |
@@ -256,7 +282,7 @@ MB hiển thị = bytes / 1024 / 1024, làm tròn 2 chữ số. Các giá trị 
 |--------|------|-------------|-------------|
 | document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu được cấp quyền |
 | department_id | BIGINT | FK → departments(id), NOT NULL | Phòng ban được xem |
-| granted_by | BIGINT | FK → users(id), NOT NULL | Admin cấp quyền |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Người cấp quyền |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
 | | | Composite PK (document_id, department_id) | |
 
@@ -266,7 +292,7 @@ MB hiển thị = bytes / 1024 / 1024, làm tròn 2 chữ số. Các giá trị 
 |--------|------|-------------|-------------|
 | document_id | BIGINT | FK → documents(id), NOT NULL | Tài liệu được cấp quyền |
 | user_id | BIGINT | FK → users(id), NOT NULL | User được xem trực tiếp |
-| granted_by | BIGINT | FK → users(id), NOT NULL | Admin cấp quyền |
+| granted_by | BIGINT | FK → users(id), NOT NULL | Người cấp quyền |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | Thời điểm cấp quyền |
 | | | Composite PK (document_id, user_id) | |
 
@@ -384,7 +410,7 @@ CREATE INDEX idx_documents_department ON documents(department_id);
 CREATE INDEX idx_documents_uploaded_by ON documents(uploaded_by);
 CREATE INDEX idx_documents_owner ON documents(owner_id);
 CREATE INDEX idx_documents_status ON documents(status);
-CREATE INDEX idx_documents_access_level ON documents(access_level);
+CREATE INDEX idx_documents_visibility ON documents(visibility);
 CREATE INDEX idx_documents_file_type ON documents(file_type);
 CREATE INDEX idx_documents_effective_date ON documents(effective_date);
 CREATE INDEX idx_documents_created_at ON documents(created_at);
@@ -405,11 +431,13 @@ CREATE INDEX idx_search_logs_user_date ON search_logs(user_id, created_at);
 CREATE INDEX idx_documents_cat_status_date ON documents(category_id, status, created_at);
 CREATE INDEX idx_documents_dept_type ON documents(department_id, file_type);
 CREATE INDEX idx_documents_status_purge ON documents(status, purge_after);
+CREATE INDEX idx_cat_dept_access_dept ON category_department_accesses(department_id, category_id);
+CREATE INDEX idx_cat_user_access_user ON category_user_accesses(user_id, category_id);
 CREATE INDEX idx_doc_dept_access_dept ON document_department_accesses(department_id, document_id);
 CREATE INDEX idx_doc_user_access_user ON document_user_accesses(user_id, document_id);
 ```
 
-PostgreSQL dùng B-tree indexes cho lookup metadata, join, filter, ACL và dashboard; full-text search dùng GIN/trigram indexes ở mục 9.
+PostgreSQL dùng B-tree indexes cho lookup metadata, join, audience filter và dashboard; full-text search dùng GIN/trigram indexes ở mục 9.
 
 ---
 
@@ -463,18 +491,19 @@ CREATE INDEX idx_doc_search_tags_trgm ON document_search_index USING GIN(tag_tex
 -- CREATE INDEX idx_doc_search_embedding ON document_search_index USING hnsw (embedding vector_cosine_ops);
 ```
 
-### Permission Filter
+### Access Filter
 
-Mọi search query phải JOIN về `documents` và áp quyền theo user hiện tại ngay trong SQL:
+Mọi search query phải JOIN về `documents` và đi qua cùng resource access policy. Hiện tại policy ở chế độ permissive nên không loại tài liệu theo audience; khi bật enforcement thì filter dự kiến là:
 
 ```text
 d.status = 'INDEXED'
 AND (
-  d.access_level = 'PUBLIC'
+  d.visibility = 'PUBLIC'
   OR d.owner_id = current_user_id
-  OR EXISTS (department ACL match current_user.department_id)
-  OR EXISTS (user ACL match current_user_id)
-  OR current_user.role = 'ADMIN'
+  OR EXISTS (document department audience match current_user.department_id)
+  OR EXISTS (document user audience match current_user_id)
+  OR EXISTS (category department audience match current_user.department_id)
+  OR EXISTS (category user audience match current_user_id)
 )
 ```
 
@@ -484,7 +513,7 @@ AND (
 - Ranking: `ts_rank_cd(search_vector, query)` cộng boost phụ cho exact `document_code`, tài liệu mới hơn hoặc nhiều lượt xem/tải hơn.
 - Highlight: `ts_headline` cho `title_text`, `description_text`, `content_text`; backend sanitize HTML trước khi trả frontend.
 - Fuzzy/typeahead: `pg_trgm` (`similarity`, `%`) trên `title_text`, `document_code_text`, `tag_text`.
-- Facets: SQL `GROUP BY` trên category, department, file type, tags sau khi đã áp ACL/filter.
+- Facets: SQL `GROUP BY` trên category, department, file type, tags sau khi đã áp resource access filter.
 - Tiếng Việt: `unaccent` xử lý normalize dấu cơ bản; nếu cần tách từ tốt hơn thì bổ sung dictionary/tokenizer tiếng Việt ở migration/config.
 
 ---
@@ -495,10 +524,10 @@ AND (
 |--------|-----------|
 | Login/logout | `audit_logs` |
 | Create/update/delete/archive/restore/move/permanent delete document | `audit_logs` |
-| Update ACL/tags/category/metadata | `audit_logs` |
+| Update audience/tags/category/metadata | `audit_logs` |
 | Upload/restore version | `audit_logs` |
 | Preview/download/version download | `access_logs` — ghi tại thời điểm backend cấp presigned URL, không phải lúc object storage truyền byte hoàn tất |
-| Denied preview/download/detail due to ACL | `access_logs` |
+| Denied preview/download/detail due to resource access policy | `access_logs` |
 | Search/suggestions | `search_logs` |
 | Retry extraction/indexing | `audit_logs` |
 | Batch upload/delete/move | `audit_logs` per affected document |

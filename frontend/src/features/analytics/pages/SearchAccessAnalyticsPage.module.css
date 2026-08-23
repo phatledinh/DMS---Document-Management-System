@@ -1,0 +1,266 @@
+.page {
+  min-height: 100vh;
+  padding: 24px 32px 48px;
+  background: #f8f9fa;
+}
+
+.headerRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.pageTitle {
+  margin: 0 !important;
+  color: #202124 !important;
+  font-size: 32px !important;
+  line-height: 40px !important;
+  letter-spacing: -0.02em;
+}
+
+.pageSubtitle {
+  display: block;
+  margin-top: 4px;
+  color: #414754 !important;
+}
+
+.rangeTabs :global(.ant-tabs-nav) {
+  margin: 0;
+  padding: 4px;
+  background: #f3f4f5;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+}
+
+.rangeTabs :global(.ant-tabs-tab) {
+  margin: 0 !important;
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+.rangeTabs :global(.ant-tabs-tab-active) {
+  background: #ffffff;
+}
+
+.rangeTabs :global(.ant-tabs-ink-bar) {
+  display: none;
+}
+
+
+.metricsGrid,
+.chartsGrid {
+  margin-bottom: 24px;
+}
+
+.metricCard,
+.panel {
+  border-color: #dadce0;
+  border-radius: 12px;
+}
+
+.metricCard :global(.ant-card-body) {
+  padding: 20px;
+}
+
+.metricLabel {
+  color: #414754;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metricValue {
+  margin: 8px 0 4px;
+  color: #202124;
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+}
+
+.successText {
+  color: #0d9648;
+  font-size: 13px;
+}
+
+.warningText {
+  color: #f9ab00;
+  font-size: 13px;
+}
+
+.chartFrame {
+  position: relative;
+  min-height: 300px;
+}
+
+.chartFrame svg {
+  display: block;
+  width: 100%;
+  height: 300px;
+}
+
+.gridLine {
+  stroke: #e1e3e4;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.searchLine,
+.accessLine {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.searchLine {
+  stroke: #005bbf;
+}
+
+.accessLine {
+  stroke: #0d9648;
+  stroke-dasharray: 6 6;
+}
+
+.axisText {
+  fill: #5f6368;
+  font-size: 12px;
+}
+
+.legend {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  color: #5f6368;
+  font-size: 12px;
+}
+
+.legend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.searchSwatch,
+.accessSwatch {
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.searchSwatch {
+  background: #005bbf;
+}
+
+.accessSwatch {
+  background: repeating-linear-gradient(90deg, #0d9648 0 6px, transparent 6px 10px);
+}
+
+.barChart {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 300px;
+  padding-top: 24px;
+}
+
+.barItem {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 276px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.barTrack {
+  display: flex;
+  width: 100%;
+  max-width: 42px;
+  height: 220px;
+  align-items: end;
+  justify-content: center;
+  border-bottom: 1px solid #e1e3e4;
+}
+
+.bar {
+  position: relative;
+  width: 24px;
+  min-height: 18px;
+  background: #1a73e8;
+  border-radius: 4px 4px 0 0;
+}
+
+.bar span {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  color: #5f6368;
+  font-size: 11px;
+  transform: translateX(-50%);
+}
+
+.barLabel {
+  width: 100%;
+  margin-top: 10px;
+  overflow: hidden;
+  color: #5f6368;
+  font-size: 11px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.documentTitle {
+  display: inline-block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.emptyState {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  color: #5f6368;
+  text-align: center;
+}
+
+.pdfIcon {
+  color: #ba1a1a;
+}
+
+.docIcon {
+  color: #005bbf;
+}
+
+.sheetIcon {
+  color: #0d9648;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px;
+  }
+
+  .headerRow {
+    flex-direction: column;
+  }
+
+  .pageTitle {
+    font-size: 26px !important;
+    line-height: 34px !important;
+  }
+
+  .legend {
+    position: static;
+    margin-top: 8px;
+  }
+}

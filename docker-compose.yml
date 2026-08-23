@@ -35,10 +35,11 @@ services:
             - SPRING_DATASOURCE_PASSWORD=123456
             - SPRING_DATA_REDIS_HOST=redis
             - SPRING_DATA_REDIS_PORT=6379
-            - JWT_SECRET=your-256-bit-secret-key-here
+            - JWT_SECRET=qlktl-dev-jwt-secret-256-bit-minimum-32-bytes
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000
             - STORAGE_ENDPOINT=http://minio:9000
+            - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
             - STORAGE_BUCKET=dms-documents
             - STORAGE_ACCESS_KEY=dms_minio
             - STORAGE_SECRET_KEY=dms_minio_password
@@ -52,7 +53,7 @@ services:
             - SPRING_RABBITMQ_PORT=5672
             - SPRING_RABBITMQ_USERNAME=dms
             - SPRING_RABBITMQ_PASSWORD=dms_password
-            - PROCESSING_MAX_ATTEMPTS=3
+            - PROCESSING_MAX_RETRY_COUNT=3
         healthcheck:
             test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/v1/actuator/health"]
             interval: 30s
@@ -72,11 +73,14 @@ services:
                 condition: service_healthy
             rabbitmq:
                 condition: service_healthy
+            ocr-service:
+                condition: service_healthy
         environment:
             - SPRING_PROFILES_ACTIVE=worker,dev
             - SPRING_DATASOURCE_URL=jdbc:postgresql://postgresql:5432/dms
             - SPRING_DATASOURCE_USERNAME=postgres
             - SPRING_DATASOURCE_PASSWORD=123456
+            - JWT_SECRET=qlktl-dev-jwt-secret-256-bit-minimum-32-bytes
             - SPRING_RABBITMQ_HOST=rabbitmq
             - SPRING_RABBITMQ_PORT=5672
             - SPRING_RABBITMQ_USERNAME=dms
@@ -87,7 +91,26 @@ services:
             - STORAGE_SECRET_KEY=dms_minio_password
             - STORAGE_REGION=auto
             - STORAGE_PATH_STYLE_ACCESS=true
-            - PROCESSING_MAX_ATTEMPTS=3
+            - PROCESSING_MAX_RETRY_COUNT=3
+            - OCR_SERVICE_URL=http://ocr-service:8000/ocr
+            - OCR_TIMEOUT_PER_PAGE=PT3M
+
+    ocr-service:
+        image: qlktl-ocr-service:latest
+        build:
+            context: ./ocr-service
+            dockerfile: Dockerfile
+        ports:
+            - "8000:8000"
+        environment:
+            - VIETOCR_DEVICE=cpu
+            - VIETOCR_MODEL_PATH=${OCR_VIETOCR_MODEL_PATH:-}
+        healthcheck:
+            test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+            start_period: 60s
 
     rabbitmq:
         image: rabbitmq:3-management
@@ -108,7 +131,7 @@ services:
     postgresql:
         image: pgvector/pgvector:pg17
         ports:
-            - "5432:5432"
+            - "5433:5432"
         environment:
             - POSTGRES_DB=dms
             - POSTGRES_USER=postgres
@@ -144,6 +167,7 @@ services:
         environment:
             - MINIO_ROOT_USER=dms_minio
             - MINIO_ROOT_PASSWORD=dms_minio_password
+            - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000,http://localhost:5173
         volumes:
             - minio-data:/data
         healthcheck:
@@ -152,6 +176,17 @@ services:
             timeout: 10s
             retries: 5
 
+    minio-init:
+        image: minio/mc:latest
+        depends_on:
+            minio:
+                condition: service_healthy
+        entrypoint: >
+            /bin/sh -c "
+            mc alias set local http://minio:9000 dms_minio dms_minio_password &&
+            mc mb --ignore-existing local/dms-documents &&
+            mc anonymous set none local/dms-documents
+            "
 volumes:
     postgresql-data:
     redis-data:

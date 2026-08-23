@@ -8,7 +8,7 @@
 
 Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, cho phép:
 
-- **Admin**: Upload một/nhiều tài liệu, phân loại theo danh mục/folder, quản lý metadata/ACL/version/lifecycle, theo dõi dashboard, xử lý tài liệu lỗi và thùng rác.
+- **Admin**: Upload một/nhiều tài liệu, phân loại theo danh mục/folder, quản lý metadata/audience/version/lifecycle, theo dõi dashboard, xử lý tài liệu lỗi và thùng rác.
 - **User (Nhân viên)**: Tìm kiếm, đọc online (preview) và tải tài liệu được cấp quyền.
 - **Chức năng cốt lõi**: **Search Engine** mạnh mẽ, hỗ trợ tìm kiếm full-text nội dung bên trong file và luôn áp dụng permission filter trước khi trả kết quả.
 - **Vận hành tài liệu**: Tự sinh mã tài liệu, thống kê dung lượng theo MB, ghi nhận dữ liệu truy cập, tự purge tài liệu trong thùng rác sau 30 ngày.
@@ -21,7 +21,7 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 
 | #   | Chức năng               | Mô tả                                                                             |
 | --- | ----------------------- | --------------------------------------------------------------------------------- |
-| 1   | Quản lý tài liệu        | Upload, sửa metadata/ACL, archive, restore, move, soft delete và permanent delete |
+| 1   | Quản lý tài liệu        | Upload, sửa metadata/audience, archive, restore, move, soft delete và permanent delete |
 | 2   | Phân loại tài liệu      | Quản lý danh mục (cây phân cấp), phòng ban, tags                                  |
 | 3   | Tìm kiếm full-text      | Tìm kiếm qua PostgreSQL FTS trong tiêu đề + mô tả + nội dung file                  |
 | 4   | Permission-aware Search | Kết quả tìm kiếm chỉ bao gồm tài liệu user hiện tại có quyền xem                  |
@@ -30,7 +30,7 @@ Xây dựng hệ thống quản lý tài liệu nội bộ cho doanh nghiệp, c
 | 7   | Quản lý phiên bản       | Lịch sử phiên bản, upload version mới, chọn version hiện hành                     |
 | 8   | Quản lý người dùng      | CRUD user, phân quyền Admin/User                                                  |
 | 9   | Dashboard thống kê      | Thống kê tài liệu, tổng MB lưu trữ, dữ liệu truy cập, lỗi xử lý, từ khóa tìm kiếm |
-| 10  | Xác thực & Phân quyền   | JWT + Refresh Token, RBAC (Admin/User), phân quyền truy cập tài liệu              |
+| 10  | Xác thực & Resource Access | JWT + Refresh Token, user identity và quyền truy cập theo tài liệu/danh mục       |
 | 11  | Audit & Access Log      | Ghi nhận upload, update metadata, delete, restore, move, batch action và search   |
 | 12  | Thùng rác tài liệu      | Quản lý tài liệu đã xóa mềm, restore hoặc xóa vĩnh viễn sau thời hạn              |
 | 13  | Batch operations        | Upload nhiều file, xóa nhiều file, chuyển nhiều file giữa các danh mục/folder     |
@@ -56,7 +56,7 @@ Mục tiêu: chứng minh luồng quản lý tài liệu và tìm kiếm full-te
 
 | Nhóm | Bao gồm |
 | ---- | ------- |
-| Auth | Login, refresh token, RBAC `ADMIN`/`USER` |
+| Auth | Login, refresh token, user identity; role chỉ phục vụ thao tác quản trị nếu cần |
 | User/Department | CRUD user, CRUD department mức cơ bản, mỗi user thuộc một department chính |
 | Document Upload | Admin khởi tạo presigned upload 1 file/request, client PUT trực tiếp vào MinIO/dev object storage, complete validate size/MIME thực tế và lưu metadata PostgreSQL |
 | File support | PDF text và DOCX; chưa bắt buộc OCR scan/image và Excel preview |
@@ -69,7 +69,7 @@ Mục tiêu: chứng minh luồng quản lý tài liệu và tìm kiếm full-te
 Done criteria:
 
 1. Admin upload được PDF text/DOCX hợp lệ qua flow `upload-init -> PUT object storage -> upload-complete` và tài liệu chuyển từ `AWAITING_UPLOAD` sang `PROCESSING` rồi `INDEXED`.
-2. User chỉ search/preview/download được tài liệu có quyền theo `PUBLIC`, `DEPARTMENT`, `RESTRICTED`.
+2. Search/preview/download đi qua resource access policy; hiện tại permissive mặc định `PUBLIC`, sau này bật enforcement theo audience `RESTRICTED`.
 3. Search trả kết quả từ PostgreSQL FTS với highlight cơ bản và P95 < 500ms với bộ dữ liệu MVP dưới 10k documents.
 4. File sai định dạng, vượt 50 MB hoặc thuộc extension bị chặn bị từ chối ở `upload-init` hoặc `upload-complete` sau khi Tika validate MIME thực tế.
 5. Tài liệu `DELETED` không xuất hiện trong search và không preview/download được bởi User.
@@ -119,7 +119,7 @@ Done criteria:
 
 #### Thứ tự triển khai khuyến nghị
 
-1. Backend auth/RBAC và data model user/department/document/version tối thiểu.
+1. Backend auth và data model user/department/document/version tối thiểu, kèm điểm móc resource access policy permissive.
 2. Object storage dev + presigned upload init/complete + metadata transaction.
 3. RabbitMQ worker extraction/search refresh pipeline cho PDF text/DOCX.
 4. Permission-aware PostgreSQL FTS query.
@@ -134,57 +134,57 @@ Done criteria:
 
 | Actor     | Vai trò       | Quyền hạn                                                                                                       |
 | --------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
-| **ADMIN** | Quản trị viên | Upload/batch upload, edit metadata/ACL, move, archive, delete/restore/permanent delete tài liệu; quản lý categories/tags/departments/users; xem dashboard dung lượng/truy cập/lỗi xử lý; xem audit log |
-| **USER**  | Nhân viên     | Tìm kiếm, Đọc (preview), Tải (download) tài liệu được cấp quyền; Xem & sửa profile cá nhân                      |
+| **ADMIN** | Quản trị viên | Upload/batch upload, edit metadata/audience, move, archive, delete/restore/permanent delete tài liệu; quản lý categories/tags/departments/users; xem dashboard dung lượng/truy cập/lỗi xử lý; xem audit log |
+| **USER**  | Nhân viên     | Tìm kiếm, Đọc (preview), Tải (download) tài liệu được phép xem theo resource access policy; Xem & sửa profile cá nhân |
 
 ---
 
-## 4. Quyền truy cập tài liệu
+## 4. Quyền truy cập tài liệu/danh mục
 
-| Access Level | Mô tả                                   | Ai có quyền xem                               |
-| ------------ | --------------------------------------- | --------------------------------------------- |
-| `PUBLIC`     | Tài liệu công khai nội bộ               | Tất cả user đã đăng nhập                      |
-| `DEPARTMENT` | Tài liệu thuộc một hoặc nhiều phòng ban | User thuộc phòng ban được gán, Admin          |
-| `RESTRICTED` | Tài liệu giới hạn                       | Owner, Admin hoặc user được chia sẻ trực tiếp |
+DMS phân quyền theo danh mục, không dùng RBAC để quyết định ai được xem tài liệu. Role chỉ phục vụ thao tác quản trị hệ thống; quyền xem/preview/download/upload được cấu hình trên category và tài liệu kế thừa từ category chứa nó.
+
+| Permission | Ý nghĩa |
+| ---------- | ------- |
+| `VIEW` | Được thấy danh mục/tài liệu trong list, detail, search/suggestion |
+| `UPLOAD` | Được upload tài liệu vào danh mục |
+| `DOWNLOAD` | Được lấy presigned download URL |
+| `EDIT` | Được sửa metadata/danh mục nếu UI nghiệp vụ cho phép |
+| `DELETE` | Được xóa/di chuyển/lifecycle nếu UI nghiệp vụ cho phép |
 
 Business rules:
 
-- Search, preview và download phải áp dụng cùng một logic phân quyền.
-- PostgreSQL FTS query phải filter theo quyền truy cập trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
-- User không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL của tài liệu.
-- Admin có quyền quản trị toàn bộ metadata và lifecycle tài liệu.
+- Quyền tài liệu của user thường được cấp theo phòng ban qua `category_department_permissions`.
+- User thuộc nhiều phòng ban được gộp union quyền trên cùng một category; quyền chỉ áp dụng cho tài liệu thuộc category đó.
+- `category_user_permissions` không được dùng để quyết định quyền tài liệu trong luồng list/search/preview/download/upload.
+- Tài liệu không có `PUBLIC`/`RESTRICTED`, `visibility`, hoặc audience riêng; `owner_id` là metadata người chịu trách nhiệm, không phải nguồn cấp quyền đọc.
+- Search, preview và download phải đi qua cùng category access policy; user không có quyền không được nhìn thấy title, snippet, metadata hoặc download URL.
+- PostgreSQL FTS query phải áp category access policy trước khi trả kết quả, không search xong rồi mới loại bỏ ở frontend.
 
-### PostgreSQL ACL Query Model
+### PostgreSQL Resource Access Query Model
 
-Search query phải JOIN về bảng nguồn để áp quyền bằng SQL, không lưu ACL dạng array denormalized như search engine ngoài:
+Search query phải JOIN về bảng nguồn để áp quyền bằng SQL, không lưu audience dạng array denormalized như search engine ngoài:
 
 | Source | Mục đích |
 | ----- | -------- |
 | `documents.status` | Lọc lifecycle; User mặc định chỉ thấy `INDEXED` |
-| `documents.access_level` | `PUBLIC`, `DEPARTMENT`, `RESTRICTED` |
-| `documents.owner_id` | Chủ sở hữu/người chịu trách nhiệm tài liệu |
-| `document_department_accesses` | Danh sách phòng ban được cấp quyền xem tài liệu |
-| `document_user_accesses` | Danh sách user được chia sẻ trực tiếp |
+| `documents.category_id` | Khóa kế thừa quyền từ danh mục |
+| `category_department_permissions` | Quyền category theo phòng ban |
+| `user_departments` | Các phòng ban mà user thuộc về |
 
-Query cho User thường phải áp filter trước khi trả kết quả:
+Query cho User:
 
 ```text
 d.status = 'INDEXED'
-AND (
-  d.access_level = 'PUBLIC'
-  OR d.owner_id = current_user.id
-  OR EXISTS (department ACL match any current_user.department_ids)
-  OR EXISTS (user ACL match current_user.id)
-)
+AND EXISTS (user_departments join category_department_permissions match d.category_id, 'VIEW')
 ```
 
 Query cho Admin:
 
 ```text
-Nếu current_user.role = ADMIN:
-  - Không bắt buộc áp ACL filter theo access_level/owner/department/allowed_user_ids.
-  - Vẫn áp filter status/access_level/department/category/tag/date nếu Admin truyền filter trên màn hình.
-  - Mặc định không trả `DELETED` cho danh sách/search thông thường, trừ khi Admin filter rõ `status = DELETED`.
+Nếu current_user có quyền quản trị metadata/lifecycle:
+  - Admin không bị giới hạn bởi category-department permission.
+  - Vẫn áp filter status/department/category/tag/date nếu người dùng truyền filter trên màn hình.
+  - Mặc định không trả `DELETED` cho danh sách/search thông thường, trừ khi filter rõ `status = DELETED`.
 ```
 
 Business decisions:
@@ -192,9 +192,9 @@ Business decisions:
 - MVP giả định mỗi user có một department chính; query vẫn dùng `current_user.department_ids` để không phải đổi model nếu sau này user thuộc nhiều phòng ban.
 - Chưa áp dụng kế thừa quyền theo department hierarchy trong MVP; nếu cần kế thừa, backend phải mở rộng `current_user.department_ids` thành toàn bộ department được thừa hưởng trước khi query PostgreSQL FTS.
 - User bị deactivate không được cấp access token mới; nếu token hiện tại còn hạn, API authorization phải kiểm tra trạng thái user ở backend trước search/preview/download.
-- Khi user đổi department, không cần refresh search vector vì search query JOIN ACL và dùng department hiện tại của user. Chỉ cần refresh search row khi metadata/content search của document thay đổi.
-- Facet/aggregation cho User phải chạy trên cùng tập kết quả đã áp ACL filter để không lộ category/tag/department của tài liệu không có quyền.
-- Search suggestions cũng phải áp cùng ACL filter; không gợi ý title/document code/tag chỉ tồn tại trong tài liệu user không có quyền.
+- Khi user đổi department, không cần refresh search vector vì search query JOIN audience và dùng department hiện tại của user. Chỉ cần refresh search row khi metadata/content search của document thay đổi.
+- Facet/aggregation cho User phải chạy trên cùng tập kết quả đã áp resource access filter để không lộ category/tag/department của tài liệu không có quyền khi enforcement bật.
+- Search suggestions cũng phải áp cùng resource access filter; không gợi ý title/document code/tag chỉ tồn tại trong tài liệu user không có quyền khi enforcement bật.
 
 ---
 
@@ -203,12 +203,12 @@ Business decisions:
 | Loại          | Định dạng               | Trích xuất nội dung | Preview | Ghi chú                                          |
 | ------------- | ----------------------- | :-----------------: | :-----: | ------------------------------------------------ |
 | PDF (Text)    | `.pdf`                  |         ✅          |   ✅    | Apache PDFBox, browser render trực tiếp          |
-| PDF (Scanned) | `.pdf`                  |         ✅          |   ✅    | OCR bằng Tesseract để search nội dung            |
+| PDF (Scanned) | `.pdf`                  |         ✅          |   ✅    | OCR bằng VietOCR để search nội dung            |
 | Word (mới)    | `.docx`                 |         ✅          |   ✅    | Apache POI - XWPF, convert sang PDF/HTML preview |
 | Word (cũ)     | `.doc`                  |         ✅          |   ✅    | Apache POI - HWPF, convert sang PDF/HTML preview |
 | Excel (mới)   | `.xlsx`                 |         ✅          |   ✅    | Apache POI, convert sang HTML table hoặc PDF     |
 | Excel (cũ)    | `.xls`                  |         ✅          |   ✅    | Apache POI, convert sang HTML table hoặc PDF     |
-| Ảnh           | `.jpg`, `.png`, `.tiff` |         ✅          |   ✅    | Preview trực tiếp, OCR bằng Tesseract            |
+| Ảnh           | `.jpg`, `.png`, `.tiff` |         ✅          |   ✅    | Preview trực tiếp, OCR bằng VietOCR            |
 
 ### Upload Constraints
 
@@ -216,7 +216,7 @@ Business decisions:
 | ---------------------- | -------------------------------------------------------------------- |
 | Kích thước file tối đa | 50 MB                                                                |
 | Số file mỗi request    | `upload-init` nhận 1 file; `batch-upload-init` nhận nhiều file và trả presigned PUT URL theo item, mỗi file tối đa 50 MB |
-| Metadata bắt buộc      | File, title, category, access level và ACL tương ứng; `document_code` do backend tự sinh |
+| Metadata bắt buộc      | File, title, category; `document_code` do backend tự sinh |
 | Đặt tên file lưu trữ   | UUID-based, không dùng tên file user nhập làm storage path trực tiếp |
 | Kiểm tra định dạng     | Validate MIME type thực tế và extension                              |
 | File bị chặn           | Không cho phép upload `.exe`, `.sh`, `.bat`, `.cmd`, `.js`, `.html`  |
@@ -429,7 +429,7 @@ Hệ thống cần ghi nhận các hành động quan trọng để phục vụ 
 
 ### DB/Object Storage/Search Consistency Pattern
 
-- PostgreSQL là source of truth cho metadata, ACL, document lifecycle, version hiện hành, extracted content, search vector và object key đang được tham chiếu.
+- PostgreSQL là source of truth cho metadata, audience, document lifecycle, version hiện hành, extracted content, search vector và object key đang được tham chiếu.
 - Object storage chỉ lưu binary/artifact theo object key UUID-based; không dùng object storage làm nguồn sự thật cho quyền hoặc lifecycle.
 - `document_search_index` là derived table; dữ liệu search phải có thể rebuild từ PostgreSQL và nội dung đã extract/object storage.
 - Upload tạo row `AWAITING_UPLOAD` và object key trong PostgreSQL trước, client PUT binary vào object storage, sau đó `upload-complete` validate object và chuyển `PROCESSING`. Row/object quá TTL được cleanup.

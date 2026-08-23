@@ -25,7 +25,7 @@ Trong spec hiện tại, toàn bộ byte của file đều đi qua Spring Boot:
 
 ### Mục tiêu của presigned URL
 
-Cho client nói chuyện **trực tiếp** với object storage cho phần truyền byte, backend chỉ ký URL (cấp quyền có thời hạn) và giữ metadata/ACL. Backend không còn nằm trên đường truyền byte.
+Cho client nói chuyện **trực tiếp** với object storage cho phần truyền byte, backend chỉ ký URL (cấp quyền có thời hạn) và giữ metadata/audience. Backend không còn nằm trên đường truyền byte.
 
 > **Đánh đổi cần chấp nhận**: một số ràng buộc bảo mật/logging trong spec hiện tại giả định backend thấy được từng request byte. Presigned URL phá vỡ giả định đó. Phần §5 và §6 xử lý chính xác các đánh đổi này.
 
@@ -33,8 +33,8 @@ Cho client nói chuyện **trực tiếp** với object storage cho phần truy�
 
 ## 2. Nguyên tắc thiết kế
 
-1. **PostgreSQL vẫn là source of truth** cho metadata, ACL, lifecycle, current version, object key. Không đổi.
-2. **Backend luôn kiểm tra quyền (`DocumentAccessPolicyService`) TRƯỚC khi ký bất kỳ URL nào.** Presigned URL chỉ được cấp sau khi pass ACL.
+1. **PostgreSQL vẫn là source of truth** cho metadata, audience, lifecycle, current version, object key. Không đổi.
+2. **Backend luôn kiểm tra quyền (`DocumentAccessPolicyService`) TRƯỚC khi ký bất kỳ URL nào.** Presigned URL chỉ được cấp sau khi pass resource access policy. Hiện tại policy permissive, sau này enforcement dựa trên audience tài liệu/danh mục.
 3. **Presigned URL có thời hạn ngắn** (TTL nhỏ) và **scope hẹp** (đúng 1 object key, đúng 1 method).
 4. **Object key luôn do backend sinh** (UUID/generated key), client không bao giờ chọn key. Chống path traversal / ghi đè.
 5. **Validation không mất đi, chỉ dịch chuyển**: từ đồng bộ (lúc nhận byte) sang bất đồng bộ (sau khi byte đã vào storage) + ràng buộc ký trước (content-length, content-type).
@@ -49,7 +49,7 @@ Upload chuyển từ 1 request multipart thành flow 3 bước: **init → clien
 ┌────────┐   1. POST /documents/upload-init      ┌──────────┐
 │ Client │ ─────────────────────────────────────▶│ Backend  │
 │        │   {title, categoryId, fileName,       │          │
-│        │    fileSize, contentType, ...ACL}     │  - check quyền ADMIN
+│        │    fileSize, contentType, ...audience}     │  - check quyền ADMIN
 │        │                                        │  - validate metadata + kích thước + ext/contentType khai báo
 │        │                                        │  - sinh objectKey (UUID)
 │        │                                        │  - tạo row documents status=AWAITING_UPLOAD
@@ -82,7 +82,7 @@ Upload chuyển từ 1 request multipart thành flow 3 bước: **init → clien
 
 Backend nhận metadata + thông tin file **khai báo** (chưa có byte):
 
-- Validate metadata nghiệp vụ (category tồn tại, ACL hợp lệ, document_code chưa trùng...).
+- Validate metadata nghiệp vụ (category tồn tại, audience hợp lệ, document_code chưa trùng...).
 - Validate `fileSize <= 50MB` (từ chối sớm nếu client khai vượt).
 - Validate `contentType` + đuôi `fileName` khai báo nằm trong allowlist, không thuộc dangerous extension. *(Đây là validate sơ bộ dựa trên khai báo — validate thật bằng Tika ở bước 3.)*
 - Sinh `objectKey` = UUID, tạo row `documents` với `status = AWAITING_UPLOAD`, lưu `objectKey`, `file_name` (sanitized), `file_size` khai báo.
@@ -119,7 +119,7 @@ Backend nhận metadata + thông tin file **khai báo** (chưa có byte):
 ```text
 ┌────────┐  GET /documents/{id}/download-url   ┌──────────┐
 │ Client │ ───────────────────────────────────▶│ Backend  │
-│        │                                       │  - check ACL (DocumentAccessPolicyService)
+│        │                                       │  - check resource access policy (DocumentAccessPolicyService)
 │        │                                       │  - status hợp lệ (không DELETED cho User...)
 │        │                                       │  - tăng download_count
 │        │                                       │  - ghi access_logs (DOWNLOAD, granted=true)
@@ -135,7 +135,7 @@ Backend nhận metadata + thông tin file **khai báo** (chưa có byte):
 
 ### Điểm mấu chốt
 
-- Backend **ký URL rồi mới trả**, và **kiểm tra ACL + ghi log ngay tại thời điểm ký** — không phải tại thời điểm client tải thật. Đây là chỗ dịch chuyển ngữ nghĩa của `download_count` / `access_logs` (§6).
+- Backend **ký URL rồi mới trả**, và **kiểm tra resource access policy + ghi log ngay tại thời điểm ký** — không phải tại thời điểm client tải thật. Đây là chỗ dịch chuyển ngữ nghĩa của `download_count` / `access_logs` (§6).
 - Presigned GET có thể set `response-content-disposition`:
   - Download → `attachment; filename="<file_name gốc>"`.
   - Preview PDF/image → `inline`.
@@ -160,7 +160,7 @@ PDF/image gốc: preview = presigned GET `inline` trực tiếp, không cần co
 | Client upload sai loại file | Tika validate ở `upload-complete` (chốt chặn thật). `contentType` ký ở init chỉ là ràng buộc sơ bộ. |
 | Client ghi đè object của tài liệu khác | `objectKey` do backend sinh (UUID), presigned PUT scope đúng 1 key. Client không chọn được key. |
 | Upload vượt 50MB | Ký presigned PUT với ràng buộc `Content-Length`. Storage từ chối nếu vượt. Kiểm lại size bằng HEAD ở bước complete. |
-| Bypass ACL để tải file | Presigned URL chỉ cấp SAU khi `DocumentAccessPolicyService` pass. Không có endpoint nào trả object key thô ra ngoài. |
+| Bypass resource access policy để tải file | Presigned URL chỉ cấp SAU khi `DocumentAccessPolicyService` pass. Không có endpoint nào trả object key thô ra ngoài. |
 | Enumerate object key | Key là UUID, không đoán được; và storage bucket **không** để public — chỉ truy cập được qua presigned URL. |
 | Dangerous extension (.exe, .js...) | Chặn ở cả init (khai báo) và complete (Tika thực tế). |
 
@@ -169,7 +169,7 @@ PDF/image gốc: preview = presigned GET `inline` trực tiếp, không cần co
 - CORS cho phép PUT/GET từ origin frontend (cần cho browser upload/download trực tiếp).
 - Credential ký URL (access key/secret) chỉ nằm ở backend, không lộ ra client.
 
-**Ràng buộc từ spec vẫn giữ:** "User không được thấy title/snippet/URL của tài liệu không có quyền" → vì URL chỉ cấp sau ACL check, user không quyền không bao giờ nhận được presigned URL. Đảm bảo endpoint trả `403/404` không kèm URL.
+**Ràng buộc từ spec vẫn giữ:** "User không được thấy title/snippet/URL của tài liệu không có quyền" → vì URL chỉ cấp sau resource access policy check, user không quyền không bao giờ nhận được presigned URL. Đảm bảo endpoint trả `403/404` không kèm URL.
 
 ---
 
@@ -201,7 +201,7 @@ PDF/image gốc: preview = presigned GET `inline` trực tiếp, không cần co
 |--------|----------|------|-------|
 | POST | `/documents/upload-init` | 👑 | Khởi tạo upload: validate metadata, sinh objectKey, trả presigned PUT URL |
 | POST | `/documents/{id}/upload-complete` | 👑 | Xác nhận đã PUT xong: Tika validate, chuyển PROCESSING, trigger extraction |
-| GET | `/documents/{id}/download-url` | 🔒 | Trả presigned GET URL (attachment), check ACL, tăng download_count, log |
+| GET | `/documents/{id}/download-url` | 🔒 | Trả presigned GET URL (attachment), check resource access policy, tăng download_count, log |
 | GET | `/documents/{id}/preview-url` | 🔒 | Trả presigned GET URL (inline) cho PDF/image gốc hoặc preview artifact |
 | POST | `/documents/{id}/versions/init` | 👑 | Như upload-init nhưng cho version mới |
 | POST | `/documents/{id}/versions/{versionId}/complete` | 👑 | Như upload-complete cho version |
@@ -293,7 +293,7 @@ PDF/image gốc: preview = presigned GET `inline` trực tiếp, không cần co
 4. **Versions**: áp init/complete + download-url cho version.
 5. **FE**: cập nhật upload zone, download, preview.
 6. **Cleanup**: bỏ/redirect các endpoint stream cũ, cập nhật docs gốc, security matrix, logging rules.
-7. **Test**: Testcontainers với MinIO — test full flow init→PUT→complete→refresh search vector và presigned GET, test ACL chặn cấp URL, test TTL hết hạn.
+7. **Test**: Testcontainers với MinIO — test full flow init→PUT→complete→refresh search vector và presigned GET, test resource access policy chặn cấp URL, test TTL hết hạn.
 
 ---
 
@@ -307,4 +307,4 @@ PDF/image gốc: preview = presigned GET `inline` trực tiếp, không cần co
 | 2 | Preview Office (DOC/DOCX/XLS/XLSX) | **Pre-generate preview artifact** (PDF/HTML sanitized) lúc xử lý nền/refresh search vector, lưu key `preview/{objectKey}`; preview = ký presigned GET cho artifact. Thêm cột `preview_object_key`. |
 | 3 | Endpoint multipart cũ (`POST /documents` multipart) | **Bỏ hẳn.** Chỉ dùng flow `upload-init` + `upload-complete`. Không giữ fallback. |
 | 4 | TTL presigned URL | **Upload PUT: 5 phút. Download/Preview GET: 5 phút.** Thống nhất `expiresIn = 300`. |
-| 5 | Trạng thái được cấp download/preview URL | **Chỉ `INDEXED`** cho User. Admin được thêm `ARCHIVED`. Không cấp cho `AWAITING_UPLOAD`/`PROCESSING`/`EXTRACTION_FAILED`/`DELETED` → trả `409 DOCUMENT_NOT_READY` hoặc `404` theo policy ACL. |
+| 5 | Trạng thái được cấp download/preview URL | **Chỉ `INDEXED`** cho User. Admin được thêm `ARCHIVED`. Không cấp cho `AWAITING_UPLOAD`/`PROCESSING`/`EXTRACTION_FAILED`/`DELETED` → trả `409 DOCUMENT_NOT_READY` hoặc `404` theo resource access policy. |
