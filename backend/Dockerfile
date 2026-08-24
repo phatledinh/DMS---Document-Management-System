@@ -1,12 +1,12 @@
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
-COPY mvnw .
-COPY .mvn .mvn
-COPY pom.xml .
+COPY backend/mvnw .
+COPY backend/.mvn .mvn
+COPY backend/pom.xml .
 # Cache dependencies trước (giúp giảm thời gian build lại đáng kể nếu không đổi pom.xml)
 RUN chmod +x ./mvnw && ./mvnw dependency:go-offline
 
-COPY src ./src
+COPY backend/src ./src
 RUN ./mvnw clean package -DskipTests
 
 FROM eclipse-temurin:25-jre
