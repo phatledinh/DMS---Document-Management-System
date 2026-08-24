@@ -4,9 +4,26 @@ spring:
       on-profile: prod
 
   jpa:
+    hibernate:
+      ddl-auto: validate
     show-sql: false
+
+  flyway:
+    enabled: true
+
+  data:
+    redis:
+      ssl:
+        enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:false}
+
+  rabbitmq:
+    ssl:
+      enabled: ${SPRING_RABBITMQ_SSL_ENABLED:false}
 
 logging:
   level:
-    root: INFO
+    root: WARN
     com.dms: INFO
+
+server:
+  port: ${PORT:8080}
