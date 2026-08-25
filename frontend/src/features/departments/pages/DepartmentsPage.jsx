@@ -32,6 +32,16 @@ function getInitials(name = '') {
   return parts.slice(-2).map((part) => part.charAt(0).toUpperCase()).join('');
 }
 
+function getUserDepartmentIds(user) {
+  if (Array.isArray(user?.departmentIds) && user.departmentIds.length > 0) {
+    return user.departmentIds;
+  }
+  if (Array.isArray(user?.departments) && user.departments.length > 0) {
+    return user.departments.map((department) => department.id).filter(Boolean);
+  }
+  return user?.departmentId ? [user.departmentId] : [];
+}
+
 export default function DepartmentsPage() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
@@ -168,11 +178,13 @@ export default function DepartmentsPage() {
 
   const usersByDepartmentId = useMemo(() => {
     return users.reduce((map, user) => {
-      if (!user.departmentId) return map;
-      const key = String(user.departmentId);
-      const current = map.get(key) || [];
-      current.push(user);
-      map.set(key, current);
+      const departmentIds = new Set(getUserDepartmentIds(user));
+      departmentIds.forEach((departmentId) => {
+        const key = String(departmentId);
+        const current = map.get(key) || [];
+        current.push(user);
+        map.set(key, current);
+      });
       return map;
     }, new Map());
   }, [users]);
