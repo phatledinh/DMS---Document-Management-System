@@ -2,6 +2,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml* ./
+RUN pnpm config set ignore-scripts false
 RUN pnpm install --frozen-lockfile=false
 COPY . .
 RUN pnpm build
