@@ -11,12 +11,14 @@ import com.dms.document.entity.DocumentStatus;
 import com.dms.document.policy.AccessDecision;
 import com.dms.document.policy.DocumentAccessPolicyService;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentTagRepository;
 import com.dms.identity.entity.Role;
 import com.dms.identity.entity.User;
 import com.dms.identity.entity.UserStatus;
 import com.dms.identity.repository.UserRepository;
 import com.dms.masterdata.repository.CategoryRepository;
 import com.dms.masterdata.repository.DepartmentRepository;
+import com.dms.masterdata.repository.TagRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,12 +54,16 @@ class DocumentMetadataServiceTest {
     private CategoryRepository categoryRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private DocumentTagRepository documentTagRepository;
+    @Mock
+    private TagRepository tagRepository;
 
     private DocumentMetadataService service;
 
     @BeforeEach
     void setUp() {
-        service = new DocumentMetadataService(documentRepository, categoryPermissionRepository, departmentRepository, categoryRepository, userRepository, currentUserProvider, accessPolicyService);
+        service = new DocumentMetadataService(documentRepository, categoryPermissionRepository, departmentRepository, categoryRepository, userRepository, documentTagRepository, tagRepository, currentUserProvider, accessPolicyService);
     }
 
     @Test

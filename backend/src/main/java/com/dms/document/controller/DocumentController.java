@@ -14,6 +14,7 @@ import com.dms.document.dto.DocumentLifecycleResponse;
 import com.dms.document.dto.DocumentListItemResponse;
 import com.dms.document.dto.DocumentSearchRequest;
 import com.dms.document.dto.DocumentSearchResponse;
+import com.dms.document.dto.DocumentUpdateRequest;
 import com.dms.document.dto.PageResponse;
 import com.dms.document.dto.PopularSearchKeywordResponse;
 import com.dms.document.dto.PresignedUrlResponse;
@@ -98,6 +99,14 @@ public class DocumentController {
     @GetMapping("/{id}")
     public ApiResponse<DocumentDetailResponse> documentDetail(@PathVariable("id") String identifier) {
         return ApiResponse.success(metadataService.getDocumentDetail(resolveId(identifier)));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<DocumentDetailResponse> updateDocument(
+            @PathVariable("id") String identifier,
+            @Valid @RequestBody DocumentUpdateRequest request
+    ) {
+        return ApiResponse.success("Document updated successfully", metadataService.updateDocument(resolveId(identifier), request));
     }
 
     @DeleteMapping("/{id}")

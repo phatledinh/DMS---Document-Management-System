@@ -12,6 +12,11 @@ export async function getDocumentById(id) {
   return unwrapApiResponse(response);
 }
 
+export async function updateDocument(id, payload) {
+  const response = await axiosClient.put(`/documents/${id}`, payload);
+  return unwrapApiResponse(response);
+}
+
 export async function initUpload(payload) {
   const response = await axiosClient.post('/documents/upload-init', payload);
   return unwrapApiResponse(response);

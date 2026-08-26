@@ -1,130 +1,157 @@
-import {
-  AppstoreOutlined,
-  BellOutlined,
-  CalendarOutlined,
-  CloseOutlined,
-  DownOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  GlobalOutlined,
-  HistoryOutlined,
-  LockOutlined,
-  QuestionCircleOutlined,
-  SaveOutlined,
-  SecurityScanOutlined,
-  SettingOutlined,
-  ShopOutlined,
-  TagsOutlined,
-  TeamOutlined,
-  UploadOutlined,
-} from '@ant-design/icons';
+import { FileTextOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Select, Spin } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import { getCategories } from '../../../api/categoryApi.js';
+import { getDocumentById, updateDocument } from '../../../api/documentApi.js';
+import { getTags } from '../../../api/tagApi.js';
+import { getApiErrorMessage } from '../../../utils/response.js';
 import styles from './EditDocumentPage.module.css';
 
+const EMPTY_FORM = {
+  title: '', documentCode: '', categoryId: '', tagIds: [],
+  effectiveDate: '', expiryDate: '', description: '',
+};
+
+function asList(data) {
+  if (Array.isArray(data)) return data;
+  return data?.content || data?.items || [];
+}
 
 export default function EditDocumentPage() {
+  const { slug } = useParams();
+  const navigate = useNavigate();
+  const [document, setDocument] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [isLoading, setLoading] = useState(true);
+  const [isSaving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    async function loadPage() {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const [documentData, categoryData, tagData] = await Promise.all([
+          getDocumentById(slug), getCategories({ activeOnly: true }), getTags(),
+        ]);
+        if (!active) return;
+        setDocument(documentData);
+        setCategories(asList(categoryData));
+        setTags(asList(tagData));
+        setForm({
+          title: documentData?.title || '',
+          documentCode: documentData?.documentCode || '',
+          categoryId: documentData?.categoryId ?? '',
+          tagIds: (documentData?.tags || []).map((tag) => tag.id),
+          effectiveDate: documentData?.effectiveDate || '',
+          expiryDate: documentData?.expiryDate || '',
+          description: documentData?.description || '',
+        });
+      } catch (error) {
+        if (active) setLoadError(getApiErrorMessage(error));
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    loadPage();
+    return () => { active = false; };
+  }, [slug]);
+
+  const tagOptions = useMemo(
+    () => tags.map((tag) => ({ label: tag.name, value: tag.id })),
+    [tags],
+  );
+
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!form.title.trim()) return toast.error('Tên tài liệu không được bỏ trống.');
+    if (!form.categoryId) return toast.error('Vui lòng chọn danh mục.');
+    if (form.effectiveDate && form.expiryDate && form.expiryDate <= form.effectiveDate) {
+      return toast.error('Ngày hết hạn phải sau ngày hiệu lực.');
+    }
+
+    setSaving(true);
+    try {
+      await updateDocument(slug, {
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        categoryId: Number(form.categoryId),
+        tagIds: form.tagIds.map(Number),
+        effectiveDate: form.effectiveDate || null,
+        expiryDate: form.expiryDate || null,
+      });
+      toast.success('Đã lưu thay đổi tài liệu.');
+      navigate('/admin/documents-admin');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (isLoading) return <div className={styles.statePanel}><Spin size="large" /></div>;
+  if (loadError) {
+    return <div className={styles.statePanel}><Alert type="error" showIcon message="Không thể tải tài liệu" description={loadError} /></div>;
+  }
+
   return (
     <div className={styles.page}>
-
       <main className={styles.pageBody}>
-
         <div className={styles.canvas}>
           <div className={styles.container}>
             <div className={styles.pageHeader}>
               <h2>Chỉnh sửa tài liệu</h2>
-              <p><FileTextOutlined />Hợp đồng dịch vụ bảo trì phần mềm 2023</p>
+              <p><FileTextOutlined />{document?.title}</p>
             </div>
-
-            <form className={styles.formCard}>
+            <form className={styles.formCard} onSubmit={handleSubmit}>
               <section className={styles.section}>
                 <h3>Thông tin cơ bản</h3>
                 <div className={styles.formGrid}>
                   <label className={styles.fullField}>
                     <span>Tên tài liệu <strong>*</strong></span>
-                    <input defaultValue="Hợp đồng dịch vụ bảo trì phần mềm 2023" type="text" />
+                    <input disabled={isSaving} value={form.title} onChange={(event) => updateField('title', event.target.value)} type="text" />
                   </label>
                   <label>
                     <span>Mã tài liệu</span>
-                    <input readOnly defaultValue="HD-2023-889" />
+                    <input readOnly value={form.documentCode} />
                   </label>
                   <label>
                     <span>Danh mục <strong>*</strong></span>
-                    <div className={styles.selectWrap}>
-                      <select defaultValue="hop-dong-kh">
-                        <option value="hop-dong-kh">Hợp đồng KH</option>
-                        <option value="tai-lieu-noi-bo">Tài liệu nội bộ</option>
-                        <option value="bao-cao-tai-chinh">Báo cáo tài chính</option>
-                      </select>
-                      <DownOutlined />
-                    </div>
+                    <select disabled={isSaving} value={form.categoryId} onChange={(event) => updateField('categoryId', event.target.value)}>
+                      <option value="">Chọn danh mục</option>
+                      {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </select>
                   </label>
                   <label className={styles.fullField}>
                     <span>Thẻ tag (Tags)</span>
-                    <div className={styles.tagsInput}>
-                      {['Maintenance', 'Software', '2023'].map((tag) => (
-                        <span key={tag}>{tag}<button type="button"><CloseOutlined /></button></span>
-                      ))}
-                      <input placeholder="Thêm tag..." type="text" />
-                    </div>
+                    <Select className={styles.tagsSelect} mode="multiple" allowClear showSearch disabled={isSaving} optionFilterProp="label" options={tagOptions} placeholder="Chọn tags" value={form.tagIds} onChange={(value) => updateField('tagIds', value)} />
                   </label>
                   <label>
                     <span>Ngày hiệu lực</span>
-                    <div className={styles.iconInput}><CalendarOutlined /><input defaultValue="2023-01-01" type="date" /></div>
+                    <input disabled={isSaving} value={form.effectiveDate} onChange={(event) => updateField('effectiveDate', event.target.value)} type="date" />
                   </label>
                   <label>
                     <span>Ngày hết hạn</span>
-                    <div className={styles.iconInput}><CalendarOutlined /><input defaultValue="2024-01-01" type="date" /></div>
+                    <input disabled={isSaving} min={form.effectiveDate || undefined} value={form.expiryDate} onChange={(event) => updateField('expiryDate', event.target.value)} type="date" />
                   </label>
                   <label className={styles.fullField}>
                     <span>Mô tả chi tiết</span>
-                    <textarea rows={4} defaultValue="Hợp đồng dịch vụ bảo trì và nâng cấp phần mềm quản lý nội bộ năm 2023 ký với công ty đối tác." />
+                    <textarea disabled={isSaving} rows={4} value={form.description} onChange={(event) => updateField('description', event.target.value)} />
                   </label>
                 </div>
               </section>
-
-              <section className={`${styles.section} ${styles.aclSection}`}>
-                <div className={styles.aclTitle}>
-                  <SecurityScanOutlined />
-                  <h3>Quyền truy cập (ACL)</h3>
-                </div>
-
-                <div className={styles.aclList}>
-                  <label className={styles.aclOption}>
-                    <input name="acl_level" type="radio" value="public" />
-                    <div>
-                      <div><strong>Công khai (PUBLIC)</strong><GlobalOutlined /></div>
-                      <p>Tất cả người dùng trong hệ thống đều có thể xem tài liệu này.</p>
-                    </div>
-                  </label>
-
-                  <label className={`${styles.aclOption} ${styles.aclOptionActive}`}>
-                    <input defaultChecked name="acl_level" type="radio" value="department" />
-                    <div>
-                      <div><strong>Phòng ban (DEPARTMENT)</strong><ShopOutlined /></div>
-                      <p>Chỉ những phòng ban được chọn mới có quyền truy cập.</p>
-                      <div className={styles.departmentTags}>
-                        <small>Chọn phòng ban được phép:</small>
-                        <div>
-                          <span>Phòng Pháp chế <button type="button"><CloseOutlined /></button></span>
-                          <span>Ban Giám đốc <button type="button"><CloseOutlined /></button></span>
-                          <input placeholder="Thêm phòng ban..." type="text" />
-                        </div>
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className={styles.aclOption}>
-                    <input name="acl_level" type="radio" value="restricted" />
-                    <div>
-                      <div><strong>Hạn chế (RESTRICTED)</strong><LockOutlined /></div>
-                      <p>Chỉ chủ sở hữu và những người dùng được chỉ định đích danh mới có quyền.</p>
-                    </div>
-                  </label>
-                </div>
-              </section>
-
               <footer className={styles.formFooter}>
-                <button className={styles.cancelButton} type="button">Hủy</button>
-                <button className={styles.saveButton} type="submit"><SaveOutlined />Lưu thay đổi</button>
+                <button className={styles.cancelButton} disabled={isSaving} onClick={() => navigate('/admin/documents-admin')} type="button">Hủy</button>
+                <button className={styles.saveButton} disabled={isSaving} type="submit"><SaveOutlined />{isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</button>
               </footer>
             </form>
           </div>

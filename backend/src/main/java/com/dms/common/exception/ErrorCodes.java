@@ -9,6 +9,7 @@ public final class ErrorCodes {
     public static final String DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY";
     public static final String DANGEROUS_FILE_TYPE = "DANGEROUS_FILE_TYPE";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
+    public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String INVALID_ACCESS_LEVEL = "INVALID_ACCESS_LEVEL";
     public static final String INVALID_ACL_RULE = "INVALID_ACL_RULE";
     public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";

@@ -32,8 +32,15 @@ public record DocumentDetailResponse(
         String downloadUrlEndpoint,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
+        List<TagResponse> tags,
         List<AuthorizedDepartmentResponse> authorizedDepartments
 ) {
+    public record TagResponse(
+            Long id,
+            String name
+    ) {
+    }
+
     public record AuthorizedDepartmentResponse(
             Long id,
             String name,
