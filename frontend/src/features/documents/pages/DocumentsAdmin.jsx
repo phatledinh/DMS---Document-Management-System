@@ -342,7 +342,7 @@ export default function DocumentsAdmin() {
           value={keyword}
           onChange={(event) => resetToFirstPage(() => setKeyword(event.target.value))}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => documentsQuery.refetch()}>
+        <Button icon={<ReloadOutlined />} onClick={() => documentsQuery.refetch()} loading={documentsQuery.isFetching}>
           Làm mới
         </Button>
       </div>
@@ -423,7 +423,7 @@ export default function DocumentsAdmin() {
       {documentsQuery.isError && <Alert className={styles.errorAlert} type="error" showIcon message={getApiErrorMessage(documentsQuery.error)} />}
 
       <section className={styles.tablePanel}>
-        <Spin spinning={documentsQuery.isLoading}>
+        <Spin spinning={documentsQuery.isFetching}>
           <Table
             rowKey="id"
             rowSelection={{ selectedRowKeys: selectedDocumentIds, onChange: setSelectedDocumentIds }}

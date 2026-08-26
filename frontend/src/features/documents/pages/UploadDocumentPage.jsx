@@ -159,13 +159,19 @@ export default function UploadDocumentPage() {
   }, [categoryList, allowedCategoryIds]);
 
   useEffect(() => {
+    let modal;
     if (userDashboardQuery.isSuccess && allowedCategoryIds.length === 0) {
-      Modal.warning({
+      modal = Modal.warning({
         title: "Không có quyền upload",
         content: "Bạn không có quyền upload tài liệu cho bất kỳ danh mục nào. Vui lòng liên hệ quản trị viên.",
         onOk: () => navigate("/documents"),
       });
     }
+    return () => {
+      if (modal) {
+        modal.destroy();
+      }
+    };
   }, [userDashboardQuery.isSuccess, allowedCategoryIds.length, navigate]);
 
   const tagOptions = useMemo(

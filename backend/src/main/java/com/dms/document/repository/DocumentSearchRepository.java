@@ -44,11 +44,11 @@ public class DocumentSearchRepository {
         MapSqlParameterSource parameters = parameters(user, request)
                 .addValue("limit", size(request))
                 .addValue("offset", page(request) * size(request));
-        return jdbcTemplate.query(searchSql(request), parameters, (rs, rowNum) -> searchRow(rs));
+        return jdbcTemplate.query(searchSql(user, request), parameters, (rs, rowNum) -> searchRow(rs));
     }
 
     public long count(User user, DocumentSearchRequest request) {
-        Long count = jdbcTemplate.queryForObject(baseSql(request) + "SELECT count(*) FROM matched", parameters(user, request), Long.class);
+        Long count = jdbcTemplate.queryForObject(baseSql(user, request) + "SELECT count(*) FROM matched", parameters(user, request), Long.class);
         return count == null ? 0 : count;
     }
 
@@ -90,7 +90,7 @@ public class DocumentSearchRepository {
             }
             default -> throw new IllegalArgumentException("Unsupported facet field: " + field);
         }
-        return jdbcTemplate.query(baseSql(request) + """
+        return jdbcTemplate.query(baseSql(user, request) + """
                 SELECT %s AS value, %s AS label, count(*) AS count
                 FROM matched m
                 %s
@@ -106,7 +106,7 @@ public class DocumentSearchRepository {
     }
 
     public List<SearchFacetValueResponse> tagFacets(User user, DocumentSearchRequest request) {
-        return jdbcTemplate.query(baseSql(request) + """
+        return jdbcTemplate.query(baseSql(user, request) + """
                 SELECT t.id::text AS value, t.name AS label, count(*) AS count
                 FROM matched m
                 JOIN document_tags dt ON dt.document_id = m.id
@@ -151,7 +151,7 @@ public class DocumentSearchRepository {
                 GROUP BY text, type
                 ORDER BY max(score) DESC, text ASC
                 LIMIT :limit
-                """.formatted(accessPredicate(user)), parameters, (rs, rowNum) -> new SearchSuggestionResponse(
+                """.formatted(accessPredicate(user, emptyRequest())), parameters, (rs, rowNum) -> new SearchSuggestionResponse(
                 rs.getString("text"),
                 rs.getString("type"),
                 rs.getObject("document_id", Long.class)
@@ -182,8 +182,8 @@ public class DocumentSearchRepository {
                 .addValue("latencyMs", Math.toIntExact(Math.min(latencyMs, Integer.MAX_VALUE))));
     }
 
-    private String searchSql(DocumentSearchRequest request) {
-        return baseSql(request) + """
+    private String searchSql(User user, DocumentSearchRequest request) {
+        return baseSql(user, request) + """
                 SELECT id, slug, title, document_code, file_type, file_size, status, version_number,
                        view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                        effective_date, expiry_date, created_at, updated_at, relevance_score, match_count,
@@ -194,7 +194,7 @@ public class DocumentSearchRepository {
                 """.formatted(orderBy(request));
     }
 
-    private String baseSql(DocumentSearchRequest request) {
+    private String baseSql(User user, DocumentSearchRequest request) {
         boolean hasQuery = hasQuery(request);
         String queryCte = hasQuery ? "query AS (SELECT websearch_to_tsquery('simple', unaccent(:query)) AS search_value, websearch_to_tsquery('simple', :query) AS highlight_value)," : "";
         String queryJoin = hasQuery ? "CROSS JOIN query q" : "";
@@ -224,6 +224,8 @@ public class DocumentSearchRepository {
         String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(d.title_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=15, HighlightAll=true')" : "NULL";
         String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(d.description_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=40, MinWords=20, HighlightAll=true')" : "NULL";
         String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=60, MinWords=30, MaxFragments=3, FragmentDelimiter=\" ... \"')" : "NULL";
+        
+        String userAcl = accessPredicate(user, request);
         return """
                 WITH %s visible AS (
                     SELECT d.*, si.search_vector, si.title_text, si.description_text, si.content_text, si.tag_text%s
@@ -245,10 +247,10 @@ public class DocumentSearchRepository {
                            tag_text
                     FROM visible d
                 )
-                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + DocumentAclSqlFragments.USER_VISIBLE_PREDICATE + "))", textPredicate, filterPredicate(request), rankExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
+                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + userAcl + "))", textPredicate, filterPredicate(user, request), rankExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
     }
 
-    private String filterPredicate(DocumentSearchRequest request) {
+    private String filterPredicate(User user, DocumentSearchRequest request) {
         StringBuilder filters = new StringBuilder();
         if (request.categoryId() != null) {
             filters.append(" AND d.category_id = :categoryId");
@@ -266,7 +268,13 @@ public class DocumentSearchRepository {
             filters.append(" AND d.uploaded_by = :uploadedBy");
         }
         if (request.status() != null) {
-            filters.append(" AND (:admin AND d.status = :status)");
+            boolean isMyDocuments = (request.ownerId() != null && request.ownerId().equals(user.getId())) ||
+                                    (request.uploadedBy() != null && request.uploadedBy().equals(user.getId()));
+            if (user.getRole() == Role.ADMIN || isMyDocuments || "INDEXED".equals(request.status().name())) {
+                filters.append(" AND d.status = :status");
+            } else {
+                filters.append(" AND 1 = 0");
+            }
         }
         if (request.resolvedDateFrom() != null) {
             filters.append(" AND d.effective_date >= :dateFrom");
@@ -280,8 +288,16 @@ public class DocumentSearchRepository {
         return filters.toString();
     }
 
-    private String accessPredicate(User user) {
-        return user.getRole() == Role.ADMIN ? DocumentAclSqlFragments.ADMIN_VISIBLE_PREDICATE : DocumentAclSqlFragments.USER_VISIBLE_PREDICATE;
+    private String accessPredicate(User user, DocumentSearchRequest request) {
+        if (user.getRole() == Role.ADMIN) {
+            return DocumentAclSqlFragments.ADMIN_VISIBLE_PREDICATE;
+        }
+        boolean isMyDocuments = (request.ownerId() != null && request.ownerId().equals(user.getId())) ||
+                                (request.uploadedBy() != null && request.uploadedBy().equals(user.getId()));
+        if (isMyDocuments) {
+            return DocumentAclSqlFragments.USER_VISIBLE_OWN_PREDICATE;
+        }
+        return DocumentAclSqlFragments.USER_VISIBLE_PREDICATE;
     }
 
     private MapSqlParameterSource parameters(User user, DocumentSearchRequest request) {

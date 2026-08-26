@@ -172,9 +172,9 @@ export default function DocumentTrashPage() {
           <Title level={3}>Thùng rác tài liệu</Title>
           <Text type="secondary">Tài liệu đã xóa tạm thời sẽ được purge tự động sau thời hạn lưu giữ.</Text>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => trashQuery.refetch()}>
-          Làm mới
-        </Button>
+          <Button icon={<ReloadOutlined />} onClick={() => trashQuery.refetch()} loading={trashQuery.isFetching}>
+            Làm mới
+          </Button>
       </Flex>
 
       <Space size="middle" wrap style={{ marginTop: 24, marginBottom: 16 }}>
@@ -222,9 +222,9 @@ export default function DocumentTrashPage() {
 
       {trashQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(trashQuery.error)} />}
 
-      <Spin spinning={trashQuery.isLoading}>
-        <Table
-          rowKey="id"
+        <Spin spinning={trashQuery.isFetching}>
+          <Table
+            rowKey="id"
           columns={columns}
           dataSource={documents}
           pagination={false}

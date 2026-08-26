@@ -199,10 +199,25 @@ public class DocumentMetadataService {
             } else if (admin) {
                 predicates.add(builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED)));
             } else {
-                predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
-                predicates.add(categoryViewPermissionPredicate(user, root, query, builder));
+                boolean isMyDocuments = (request.ownerId() != null && request.ownerId().equals(user.getId())) ||
+                                        (request.uploadedBy() != null && request.uploadedBy().equals(user.getId()));
+                
+                if (isMyDocuments) {
+                    Predicate indexedAndPermitted = builder.and(
+                            builder.equal(root.get("status"), DocumentStatus.INDEXED),
+                            categoryViewPermissionPredicate(user, root, query, builder)
+                    );
+                    Predicate ownDocuments = builder.and(
+                            builder.equal(root.get("uploadedBy"), user.getId()),
+                            builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED))
+                    );
+                    predicates.add(builder.or(indexedAndPermitted, ownDocuments));
+                } else {
+                    predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
+                    predicates.add(categoryViewPermissionPredicate(user, root, query, builder));
+                }
             }
-            applyFilters(request, root, builder, predicates, admin);
+            applyFilters(user, request, root, builder, predicates, admin);
             return builder.and(predicates.toArray(Predicate[]::new));
         };
     }
@@ -214,12 +229,21 @@ public class DocumentMetadataService {
             jakarta.persistence.criteria.CriteriaBuilder builder
     ) {
         Subquery<Long> departmentPermission = query.subquery(Long.class);
-        var userDepartmentRoot = departmentPermission.from(com.dms.identity.entity.UserDepartment.class);
         var departmentPermissionRoot = departmentPermission.from(com.dms.category.entity.CategoryDepartmentPermission.class);
         departmentPermission.select(departmentPermissionRoot.get("categoryId"));
+
+        Subquery<Long> userDeptSubquery = query.subquery(Long.class);
+        var userDeptRoot = userDeptSubquery.from(com.dms.identity.entity.UserDepartment.class);
+        userDeptSubquery.select(userDeptRoot.get("departmentId"));
+        userDeptSubquery.where(builder.equal(userDeptRoot.get("userId"), user.getId()));
+
+        Predicate departmentIdMatches = builder.or(
+                builder.in(departmentPermissionRoot.get("departmentId")).value(userDeptSubquery),
+                user.getDepartmentId() != null ? builder.equal(departmentPermissionRoot.get("departmentId"), user.getDepartmentId()) : builder.disjunction()
+        );
+
         departmentPermission.where(
-                builder.equal(userDepartmentRoot.get("userId"), user.getId()),
-                builder.equal(departmentPermissionRoot.get("departmentId"), userDepartmentRoot.get("departmentId")),
+                departmentIdMatches,
                 builder.equal(departmentPermissionRoot.get("categoryId"), root.get("categoryId")),
                 builder.equal(departmentPermissionRoot.get("permission"), CategoryPermission.VIEW)
         );
@@ -227,7 +251,7 @@ public class DocumentMetadataService {
         return builder.exists(departmentPermission);
     }
 
-    private void applyFilters(DocumentSearchRequest request, jakarta.persistence.criteria.Root<Document> root, jakarta.persistence.criteria.CriteriaBuilder builder, List<Predicate> predicates, boolean admin) {
+    private void applyFilters(User user, DocumentSearchRequest request, jakarta.persistence.criteria.Root<Document> root, jakarta.persistence.criteria.CriteriaBuilder builder, List<Predicate> predicates, boolean admin) {
         if (request.categoryId() != null) {
             predicates.add(builder.equal(root.get("categoryId"), request.categoryId()));
         }
@@ -243,8 +267,14 @@ public class DocumentMetadataService {
         if (request.uploadedBy() != null) {
             predicates.add(builder.equal(root.get("uploadedBy"), request.uploadedBy()));
         }
-        if (!admin && request.status() != null && request.status() != DocumentStatus.INDEXED) {
-            predicates.add(builder.disjunction());
+        if (request.status() != null) {
+            boolean isMyDocuments = (request.ownerId() != null && request.ownerId().equals(user.getId())) ||
+                                    (request.uploadedBy() != null && request.uploadedBy().equals(user.getId()));
+            if (admin || isMyDocuments || request.status() == DocumentStatus.INDEXED) {
+                predicates.add(builder.equal(root.get("status"), request.status()));
+            } else {
+                predicates.add(builder.disjunction());
+            }
         }
         LocalDate from = request.resolvedDateFrom();
         if (from != null) {

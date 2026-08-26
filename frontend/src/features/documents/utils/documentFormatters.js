@@ -3,8 +3,10 @@ import dayjs from 'dayjs';
 const STATUS_META = {
   AWAITING_UPLOAD: { label: 'Chờ upload', color: 'default' },
   PROCESSING: { label: 'Đang xử lý/OCR/preview', color: 'processing' },
+  PENDING_APPROVAL: { label: 'Chờ duyệt', color: 'gold' },
   INDEXED: { label: 'Sẵn sàng', color: 'success' },
   EXTRACTION_FAILED: { label: 'Lỗi xử lý/OCR/preview', color: 'error' },
+  REJECTED: { label: 'Bị từ chối', color: 'red' },
   ARCHIVED: { label: 'Lưu trữ', color: 'warning' },
   DELETED: { label: 'Đã xóa', color: 'default' },
 };

@@ -90,7 +90,12 @@ public class UserService {
         user.setEmail(request.email());
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setPhone(request.phone());
-        List<Long> departmentIds = normalizeDepartmentIds(request.departmentIds());
+        List<Long> departmentIds = new ArrayList<>();
+        if (request.departmentIds() != null && !request.departmentIds().isEmpty()) {
+            departmentIds = normalizeDepartmentIds(request.departmentIds());
+        } else if (request.departmentId() != null) {
+            departmentIds = List.of(request.departmentId());
+        }
         user.setDepartmentId(primaryDepartmentId(departmentIds));
         user.setRole(request.role());
         user.setStatus(request.status());

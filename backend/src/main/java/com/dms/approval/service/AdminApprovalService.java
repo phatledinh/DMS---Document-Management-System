@@ -80,9 +80,19 @@ public class AdminApprovalService {
     public ApprovalDecisionResponse reject(Long documentId, String reason, User admin) {
         Document document = findDocument(documentId);
         DocumentStatus previous = document.getStatus();
-        lifecycleService.forcePurgeDocument(documentId, admin);
-        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", documentId, Map.of("status", previous.name()), Map.of("status", "PURGED", "reason", reason == null ? "" : reason));
-        return new ApprovalDecisionResponse(documentId, "PURGED");
+        document.setStatus(DocumentStatus.REJECTED);
+        document.setUpdatedAt(OffsetDateTime.now());
+        Document saved = documentRepository.save(document);
+        
+        if (saved.getCurrentVersionId() != null) {
+            versionRepository.findById(saved.getCurrentVersionId()).ifPresent(version -> {
+                version.setStatus(DocumentStatus.REJECTED);
+                versionRepository.save(version);
+            });
+        }
+        
+        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", documentId, Map.of("status", previous.name()), Map.of("status", "REJECTED", "reason", reason == null ? "" : reason));
+        return new ApprovalDecisionResponse(documentId, "REJECTED");
     }
 
     private Document findDocument(Long documentId) {

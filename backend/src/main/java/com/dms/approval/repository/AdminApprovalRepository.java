@@ -46,7 +46,7 @@ public class AdminApprovalRepository {
         return jdbcTemplate.queryForObject("""
                 SELECT count(*) FILTER (WHERE status = 'PENDING_APPROVAL') AS pending,
                        count(*) FILTER (WHERE status = 'INDEXED') AS approved,
-                       count(*) FILTER (WHERE status IN ('EXTRACTION_FAILED', 'ARCHIVED', 'DELETED')) AS rejected
+                       count(*) FILTER (WHERE status IN ('EXTRACTION_FAILED', 'ARCHIVED', 'DELETED', 'REJECTED')) AS rejected
                 FROM documents
                 WHERE permanently_deleted_at IS NULL
                   AND status NOT IN ('AWAITING_UPLOAD', 'PROCESSING')
@@ -60,7 +60,7 @@ public class AdminApprovalRepository {
     private String baseSql() {
         return """
                 WITH approval_documents AS (
-                    SELECT d.id, d.document_code, d.title,
+                    SELECT d.id, d.document_code, d.title, d.slug,
                            CASE WHEN d.status = 'PENDING_APPROVAL' THEN 'PENDING'
                                 WHEN d.status = 'INDEXED' THEN 'APPROVED'
                                 ELSE 'REJECTED' END AS approval_status,
@@ -72,7 +72,9 @@ public class AdminApprovalRepository {
                            d.file_type,
                            d.file_size,
                            coalesce(string_agg(DISTINCT t.name, ','), '') AS tags,
-                           coalesce(dc.extracted_text, d.description, '') AS summary
+                           coalesce(dc.extracted_text, d.description, '') AS summary,
+                           d.effective_date,
+                           d.expiry_date
                     FROM documents d
                     LEFT JOIN users u ON u.id = d.uploaded_by
                     LEFT JOIN departments dep ON dep.id = d.department_id
@@ -88,7 +90,7 @@ public class AdminApprovalRepository {
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%') OR lower(d.document_code) LIKE concat('%', lower(:keyword), '%') OR lower(u.name) LIKE concat('%', lower(:keyword), '%'))
                       AND (:department IS NULL OR dep.name = :department OR dep.id::text = :department)
                       AND (:category IS NULL OR c.name = :category OR c.id::text = :category)
-                    GROUP BY d.id, d.document_code, d.title, d.status, u.name, d.created_at, dep.name, c.name, d.file_type, d.file_size, dc.extracted_text, d.description
+                    GROUP BY d.id, d.document_code, d.title, d.slug, d.status, u.name, d.created_at, dep.name, c.name, d.file_type, d.file_size, dc.extracted_text, d.description, d.effective_date, d.expiry_date
                 )
                 """;
     }
@@ -106,7 +108,10 @@ public class AdminApprovalRepository {
                 rs.getString("file_type"),
                 rs.getLong("file_size"),
                 split(rs.getString("tags")),
-                truncate(rs.getString("summary"))
+                truncate(rs.getString("summary")),
+                localDate(rs, "effective_date"),
+                localDate(rs, "expiry_date"),
+                rs.getString("slug")
         );
     }
 
@@ -140,5 +145,10 @@ public class AdminApprovalRepository {
     private OffsetDateTime offsetDateTime(ResultSet rs, String column) throws SQLException {
         Timestamp timestamp = rs.getTimestamp(column);
         return timestamp == null ? null : timestamp.toInstant().atOffset(ZoneOffset.UTC);
+    }
+
+    private java.time.LocalDate localDate(ResultSet rs, String column) throws SQLException {
+        java.sql.Date date = rs.getDate(column);
+        return date == null ? null : date.toLocalDate();
     }
 }

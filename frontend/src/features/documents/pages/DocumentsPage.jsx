@@ -350,7 +350,7 @@ export default function DocumentsPage() {
               { value: 'XLS', label: 'Excel (XLS)' },
             ]}
           />
-          <Button icon={<ReloadOutlined />} onClick={() => documentsQuery.refetch()}>
+          <Button icon={<ReloadOutlined />} onClick={() => documentsQuery.refetch()} loading={documentsQuery.isFetching}>
             Làm mới
           </Button>
         </Space>
@@ -376,7 +376,7 @@ export default function DocumentsPage() {
 
         {documentsQuery.isError && <Alert type="error" showIcon message={getApiErrorMessage(documentsQuery.error)} />}
 
-        <Spin spinning={documentsQuery.isLoading}>
+        <Spin spinning={documentsQuery.isFetching}>
           <Table
             rowKey="id"
             rowSelection={isAdmin ? { selectedRowKeys: selectedDocumentIds, onChange: setSelectedDocumentIds } : undefined}

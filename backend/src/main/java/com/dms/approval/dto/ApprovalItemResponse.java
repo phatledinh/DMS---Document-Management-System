@@ -1,6 +1,7 @@
 package com.dms.approval.dto;
 
 import java.time.OffsetDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 public record ApprovalItemResponse(
@@ -15,6 +16,9 @@ public record ApprovalItemResponse(
         String fileType,
         long fileSize,
         List<String> tags,
-        String summary
+        String summary,
+        LocalDate effectiveDate,
+        LocalDate expiryDate,
+        String slug
 ) {
 }

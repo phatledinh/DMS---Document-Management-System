@@ -235,6 +235,8 @@ export default function AdminApprovals() {
               <div><dt>Thời gian gửi</dt><dd>{formatDate(selectedItem.submittedAt)}</dd></div>
               <div><dt>Phòng ban</dt><dd>{selectedItem.department || '—'}</dd></div>
               <div><dt>Danh mục</dt><dd>{selectedItem.category || '—'}</dd></div>
+              <div><dt>Hiệu lực</dt><dd>{selectedItem.effectiveDate ? formatDate(selectedItem.effectiveDate).split(' ')[0] : '—'}</dd></div>
+              <div><dt>Hết hạn</dt><dd>{selectedItem.expiryDate ? formatDate(selectedItem.expiryDate).split(' ')[0] : '—'}</dd></div>
               <div><dt>Định dạng</dt><dd>{selectedItem.fileType} · {formatBytes(selectedItem.fileSize)}</dd></div>
               <div><dt>Tags</dt><dd>{selectedItem.tags?.join(', ') || '—'}</dd></div>
             </dl>
@@ -245,7 +247,7 @@ export default function AdminApprovals() {
             </section>
 
             <Space wrap className={styles.detailActions}>
-              <Link to={`/documents/`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
+              <Link to={`/documents/${selectedItem.slug}`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
               <Button danger disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={rejectMutation.isPending} onClick={rejectSelected}>Từ chối</Button>
               <Button type="primary" disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={approveMutation.isPending} onClick={approveSelected}>Phê duyệt</Button>
             </Space>

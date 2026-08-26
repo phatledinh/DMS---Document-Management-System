@@ -6,6 +6,7 @@ public enum DocumentStatus {
     PENDING_APPROVAL,
     INDEXED,
     EXTRACTION_FAILED,
+    REJECTED,
     ARCHIVED,
     DELETED
 }

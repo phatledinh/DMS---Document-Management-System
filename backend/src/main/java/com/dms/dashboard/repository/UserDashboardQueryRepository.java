@@ -71,11 +71,14 @@ public class UserDashboardQueryRepository {
                   AND d.permanently_deleted_at IS NULL
                   AND EXISTS (
                       SELECT 1
-                      FROM user_departments ud
-                      JOIN category_department_permissions cdp ON cdp.department_id = ud.department_id
-                      WHERE ud.user_id = :currentUserId
-                        AND cdp.category_id = d.category_id
+                      FROM category_department_permissions cdp
+                      WHERE cdp.category_id = d.category_id
                         AND cdp.permission = 'VIEW'
+                        AND cdp.department_id IN (
+                            SELECT department_id FROM user_departments WHERE user_id = :currentUserId
+                            UNION
+                            SELECT department_id FROM users WHERE id = :currentUserId AND department_id IS NOT NULL
+                        )
                   )
                 ORDER BY coalesce(d.updated_at, d.created_at) DESC
                 LIMIT :limit
@@ -91,12 +94,16 @@ public class UserDashboardQueryRepository {
 
     public List<UserPermissionGroupResponse> permissionGroups(Long userId) {
         return jdbcTemplate.query("""
+                WITH user_dept_ids AS (
+                    SELECT department_id FROM user_departments WHERE user_id = :currentUserId
+                    UNION
+                    SELECT department_id FROM users WHERE id = :currentUserId AND department_id IS NOT NULL
+                )
                 SELECT c.id AS category_id, c.name AS category_name, string_agg(DISTINCT cdp.permission, ',' ORDER BY cdp.permission) AS permissions
-                FROM user_departments ud
+                FROM user_dept_ids ud
                 JOIN category_department_permissions cdp ON cdp.department_id = ud.department_id
                 JOIN categories c ON c.id = cdp.category_id
-                WHERE ud.user_id = :currentUserId
-                  AND c.deleted_at IS NULL
+                WHERE c.deleted_at IS NULL
                 GROUP BY c.id, c.name
                 ORDER BY c.name
                 """, params(userId), (rs, rowNum) -> new UserPermissionGroupResponse(
