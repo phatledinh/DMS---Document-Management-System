@@ -303,9 +303,15 @@ public class DocumentVersionService {
         document.setFileSize(version.getFileSize());
         document.setStoragePath(version.getStoragePath());
         document.setPreviewObjectKey(previewObjectKey);
-        document.setStatus(DocumentStatus.INDEXED);
+        
+        boolean isAdmin = userRepository.findById(version.getUploadedBy())
+                .map(u -> u.getRole() == Role.ADMIN)
+                .orElse(false);
+        DocumentStatus newStatus = isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL;
+        
+        document.setStatus(newStatus);
         version.setPreviewObjectKey(previewObjectKey);
-        version.setStatus(DocumentStatus.INDEXED);
+        version.setStatus(newStatus);
         versionRepository.save(version);
         documentRepository.save(document);
     }

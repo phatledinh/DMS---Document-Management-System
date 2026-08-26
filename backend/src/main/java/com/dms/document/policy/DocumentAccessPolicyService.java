@@ -114,6 +114,9 @@ public class DocumentAccessPolicyService {
         if (document.getStatus() == DocumentStatus.INDEXED) {
             return true;
         }
+        if (document.getStatus() == DocumentStatus.PENDING_APPROVAL) {
+            return user.getRole() == Role.ADMIN || (document.getUploadedBy() != null && document.getUploadedBy().equals(user.getId()));
+        }
         return allowArchivedAdmin && user.getRole() == Role.ADMIN && document.getStatus() == DocumentStatus.ARCHIVED;
     }
 

@@ -11,6 +11,7 @@ import com.dms.document.dto.PageResponse;
 import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.repository.DocumentRepository;
+import com.dms.document.repository.DocumentVersionRepository;
 import com.dms.document.service.DocumentLifecycleService;
 import com.dms.identity.entity.User;
 import org.springframework.http.HttpStatus;
@@ -30,17 +31,20 @@ public class AdminApprovalService {
     private final DocumentRepository documentRepository;
     private final AuditLogService auditLogService;
     private final DocumentLifecycleService lifecycleService;
+    private final DocumentVersionRepository versionRepository;
 
     public AdminApprovalService(
             AdminApprovalRepository approvalRepository,
             DocumentRepository documentRepository,
             AuditLogService auditLogService,
-            DocumentLifecycleService lifecycleService
+            DocumentLifecycleService lifecycleService,
+            DocumentVersionRepository versionRepository
     ) {
         this.approvalRepository = approvalRepository;
         this.documentRepository = documentRepository;
         this.auditLogService = auditLogService;
         this.lifecycleService = lifecycleService;
+        this.versionRepository = versionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +64,14 @@ public class AdminApprovalService {
         document.setStatus(DocumentStatus.INDEXED);
         document.setUpdatedAt(OffsetDateTime.now());
         Document saved = documentRepository.save(document);
+        
+        if (saved.getCurrentVersionId() != null) {
+            versionRepository.findById(saved.getCurrentVersionId()).ifPresent(version -> {
+                version.setStatus(DocumentStatus.INDEXED);
+                versionRepository.save(version);
+            });
+        }
+        
         auditLogService.log(admin, "APPROVE_DOCUMENT", "DOCUMENT", saved.getId(), Map.of("status", previous.name()), Map.of("status", saved.getStatus().name()));
         return new ApprovalDecisionResponse(saved.getId(), saved.getStatus().name());
     }
