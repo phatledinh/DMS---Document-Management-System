@@ -1,15 +1,15 @@
 services:
-    # frontend:
-    #     build:
-    #         context: ./frontend
-    #         dockerfile: Dockerfile
-    #     ports:
-    #         - "3000:80"
-    #     depends_on:
-    #         backend:
-    #             condition: service_healthy
-    #     environment:
-    #         - VITE_API_URL=http://localhost:8080/api/v1
+    frontend:
+        build:
+            context: ./frontend
+            dockerfile: Dockerfile
+        ports:
+            - "3000:80"
+        depends_on:
+            backend:
+                condition: service_healthy
+        environment:
+            - VITE_API_URL=https://api.dms.io.vn/api/v1
 
 
     backend:
@@ -46,7 +46,7 @@ services:
             - STORAGE_REGION=auto
             - STORAGE_PATH_STYLE_ACCESS=true
             - FILE_MAX_SIZE=52428800
-            - CORS_ORIGINS=http://localhost:3000
+            - CORS_ORIGINS=http://localhost:3000,https://dms.io.vn
             - STORAGE_PRESIGNED_UPLOAD_TTL=PT5M
             - STORAGE_PRESIGNED_DOWNLOAD_TTL=PT5M
             - SPRING_RABBITMQ_HOST=rabbitmq
@@ -167,7 +167,7 @@ services:
         environment:
             - MINIO_ROOT_USER=dms_minio
             - MINIO_ROOT_PASSWORD=dms_minio_password
-            - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000,http://localhost:5173
+            - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000,http://localhost:5173,https://dms.io.vn
         volumes:
             - minio-data:/data
         healthcheck:
@@ -187,6 +187,17 @@ services:
             mc mb --ignore-existing local/dms-documents &&
             mc anonymous set none local/dms-documents
             "
+
+    nginx-proxy-manager:
+        image: 'jc21/nginx-proxy-manager:latest'
+        restart: unless-stopped
+        ports:
+            - '80:80'
+            - '81:81'
+            - '443:443'
+        volumes:
+            - ./data/nginx:/data
+            - ./data/letsencrypt:/etc/letsencrypt
 volumes:
     postgresql-data:
     redis-data:
