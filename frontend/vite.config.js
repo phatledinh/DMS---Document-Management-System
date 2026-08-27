@@ -11,6 +11,14 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/minio-api': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/minio-api/, ''),
+        headers: {
+          Host: 'localhost:9000'
+        }
+      },
     },
   },
   test: {
