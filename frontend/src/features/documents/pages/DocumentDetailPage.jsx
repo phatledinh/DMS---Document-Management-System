@@ -91,7 +91,7 @@ export default function DocumentDetailPage() {
     const [preview, setPreview] = useState(null);
     const document = normalizeDocument(documentQuery.data);
     const statusMeta = getDocumentStatusMeta(document?.status);
-    const isReady = document?.status === "INDEXED";
+    const isReady = document?.status === "INDEXED" || document?.status === "PENDING_APPROVAL";
     const tags = getTags(document);
     const authorizedDepartments = getAuthorizedDepartments(document);
 

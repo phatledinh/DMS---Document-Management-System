@@ -62,6 +62,11 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
 }
 
+function formatDateOnly(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(new Date(value));
+}
+
 function ApprovalListItem({ item, selected, onSelect }) {
   return (
     <button className={selected ? styles.approvalItemActive : styles.approvalItem} type="button" onClick={onSelect}>
@@ -235,8 +240,8 @@ export default function AdminApprovals() {
               <div><dt>Thời gian gửi</dt><dd>{formatDate(selectedItem.submittedAt)}</dd></div>
               <div><dt>Phòng ban</dt><dd>{selectedItem.department || '—'}</dd></div>
               <div><dt>Danh mục</dt><dd>{selectedItem.category || '—'}</dd></div>
-              <div><dt>Hiệu lực</dt><dd>{selectedItem.effectiveDate ? formatDate(selectedItem.effectiveDate).split(' ')[0] : '—'}</dd></div>
-              <div><dt>Hết hạn</dt><dd>{selectedItem.expiryDate ? formatDate(selectedItem.expiryDate).split(' ')[0] : '—'}</dd></div>
+              <div><dt>Hiệu lực</dt><dd>{selectedItem.effectiveDate ? formatDateOnly(selectedItem.effectiveDate) : '—'}</dd></div>
+              <div><dt>Hết hạn</dt><dd>{selectedItem.expiryDate ? formatDateOnly(selectedItem.expiryDate) : '—'}</dd></div>
               <div><dt>Định dạng</dt><dd>{selectedItem.fileType} · {formatBytes(selectedItem.fileSize)}</dd></div>
               <div><dt>Tags</dt><dd>{selectedItem.tags?.join(', ') || '—'}</dd></div>
             </dl>

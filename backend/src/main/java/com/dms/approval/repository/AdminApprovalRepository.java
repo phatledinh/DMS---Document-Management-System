@@ -67,7 +67,15 @@ public class AdminApprovalRepository {
                            d.status,
                            u.name AS submitter,
                            d.created_at AS submitted_at,
-                           dep.name AS department,
+                           (
+                               SELECT string_agg(dep.name, ', ')
+                               FROM user_departments ud
+                               JOIN category_department_permissions cdp ON cdp.department_id = ud.department_id
+                               JOIN departments dep ON dep.id = ud.department_id
+                               WHERE ud.user_id = d.uploaded_by
+                                 AND cdp.category_id = d.category_id
+                                 AND cdp.permission = 'UPLOAD'
+                           ) AS department,
                            c.name AS category,
                            d.file_type,
                            d.file_size,
@@ -77,7 +85,6 @@ public class AdminApprovalRepository {
                            d.expiry_date
                     FROM documents d
                     LEFT JOIN users u ON u.id = d.uploaded_by
-                    LEFT JOIN departments dep ON dep.id = d.department_id
                     LEFT JOIN categories c ON c.id = d.category_id
                     LEFT JOIN document_contents dc ON dc.document_id = d.id
                     LEFT JOIN document_tags dt ON dt.document_id = d.id
@@ -88,9 +95,17 @@ public class AdminApprovalRepository {
                                                    WHEN d.status = 'INDEXED' THEN 'APPROVED'
                                                    ELSE 'REJECTED' END = :status)
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%') OR lower(d.document_code) LIKE concat('%', lower(:keyword), '%') OR lower(u.name) LIKE concat('%', lower(:keyword), '%'))
-                      AND (:department IS NULL OR dep.name = :department OR dep.id::text = :department)
+                      AND (:department IS NULL OR EXISTS (
+                          SELECT 1 FROM user_departments ud2
+                          JOIN category_department_permissions cdp2 ON cdp2.department_id = ud2.department_id
+                          JOIN departments dep2 ON dep2.id = ud2.department_id
+                          WHERE ud2.user_id = d.uploaded_by
+                            AND cdp2.category_id = d.category_id
+                            AND cdp2.permission = 'UPLOAD'
+                            AND (dep2.name = :department OR dep2.id::text = :department)
+                      ))
                       AND (:category IS NULL OR c.name = :category OR c.id::text = :category)
-                    GROUP BY d.id, d.document_code, d.title, d.slug, d.status, u.name, d.created_at, dep.name, c.name, d.file_type, d.file_size, dc.extracted_text, d.description, d.effective_date, d.expiry_date
+                    GROUP BY d.id, d.document_code, d.title, d.slug, d.status, u.name, d.created_at, c.name, d.file_type, d.file_size, dc.extracted_text, d.description, d.effective_date, d.expiry_date
                 )
                 """;
     }
