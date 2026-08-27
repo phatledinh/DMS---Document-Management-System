@@ -186,7 +186,7 @@ public class DocumentSearchRepository {
         return baseSql(user, request) + """
                 SELECT id, slug, title, document_code, file_type, file_size, status, version_number,
                        view_count, download_count, category_id, department_id, owner_id, uploaded_by,
-                       effective_date, expiry_date, created_at, updated_at, relevance_score, match_count,
+                       effective_date, expiry_date, created_at, updated_at, relevance_score, exact_code_match, match_count,
                        title_highlight, description_highlight, content_highlight, tag_text AS tags
                 FROM matched
                 ORDER BY %s
@@ -196,7 +196,7 @@ public class DocumentSearchRepository {
 
     private String baseSql(User user, DocumentSearchRequest request) {
         boolean hasQuery = hasQuery(request);
-        String queryCte = hasQuery ? "query AS (SELECT websearch_to_tsquery('simple', unaccent(:query)) AS search_value, websearch_to_tsquery('simple', :query) AS highlight_value)," : "";
+        String queryCte = hasQuery ? "query AS (SELECT websearch_to_tsquery('vietnamese', :query) AS search_value, websearch_to_tsquery('vietnamese', :query) AS highlight_value)," : "";
         String queryJoin = hasQuery ? "CROSS JOIN query q" : "";
         String textPredicate = hasQuery ? "AND si.search_vector @@ q.search_value" : "";
         String queryValueSelect = hasQuery ? ", q.search_value AS query_value, q.highlight_value AS highlight_query_value" : "";
@@ -206,12 +206,12 @@ public class DocumentSearchRepository {
         String matchCountExpression = hasQuery
                 ? """
                 coalesce((
-                    SELECT sum(s.nentry)::int
+                    SELECT count(distinct s.word)::int
                     FROM ts_stat(format(
                         'SELECT %L::tsvector',
-                        (to_tsvector('simple', unaccent(coalesce(d.title_text, ''))) ||
-                         to_tsvector('simple', unaccent(coalesce(d.description_text, ''))) ||
-                         to_tsvector('simple', unaccent(coalesce(d.content_text, ''))))::text
+                        (to_tsvector('vietnamese', coalesce(d.title_text, '')) ||
+                         to_tsvector('vietnamese', coalesce(d.description_text, '')) ||
+                         to_tsvector('vietnamese', coalesce(d.content_text, '')))::text
                     )) s
                     WHERE s.word IN (
                         SELECT term
@@ -221,9 +221,10 @@ public class DocumentSearchRepository {
                 ), 0)
                 """
                 : "0";
-        String titleHighlight = hasQuery ? "ts_headline('simple', coalesce(d.title_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=15, HighlightAll=true')" : "NULL";
-        String descriptionHighlight = hasQuery ? "ts_headline('simple', coalesce(d.description_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=40, MinWords=20, HighlightAll=true')" : "NULL";
-        String contentHighlight = hasQuery ? "ts_headline('simple', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=60, MinWords=30, MaxFragments=3, FragmentDelimiter=\" ... \"')" : "NULL";
+        String titleHighlight = hasQuery ? "ts_headline('vietnamese', coalesce(d.title_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=30, MinWords=15, HighlightAll=true')" : "NULL";
+        String descriptionHighlight = hasQuery ? "ts_headline('vietnamese', coalesce(d.description_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=40, MinWords=20, HighlightAll=true')" : "NULL";
+        String contentHighlight = hasQuery ? "ts_headline('vietnamese', coalesce(d.content_text, ''), d.highlight_query_value, 'StartSel=<em>, StopSel=</em>, MaxWords=60, MinWords=30, MaxFragments=3, FragmentDelimiter=\" ... \"')" : "NULL";
+        String exactCodeMatchExpression = hasQuery ? "CASE WHEN lower(coalesce(d.document_code, '')) = lower(:query) THEN true ELSE false END" : "false";
         
         String userAcl = accessPredicate(user, request);
         return """
@@ -240,6 +241,7 @@ public class DocumentSearchRepository {
                            view_count, download_count, category_id, department_id, owner_id, uploaded_by,
                            effective_date, expiry_date, created_at, updated_at,
                            %s AS relevance_score,
+                           %s AS exact_code_match,
                            %s AS match_count,
                            %s AS title_highlight,
                            %s AS description_highlight,
@@ -247,7 +249,7 @@ public class DocumentSearchRepository {
                            tag_text
                     FROM visible d
                 )
-                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + userAcl + "))", textPredicate, filterPredicate(user, request), rankExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
+                """.formatted(queryCte, queryValueSelect, queryJoin, "(:admin OR (" + userAcl + "))", textPredicate, filterPredicate(user, request), rankExpression, exactCodeMatchExpression, matchCountExpression, titleHighlight, descriptionHighlight, contentHighlight);
     }
 
     private String filterPredicate(User user, DocumentSearchRequest request) {
@@ -361,6 +363,7 @@ public class DocumentSearchRepository {
                 offsetDateTime(rs, "created_at"),
                 offsetDateTime(rs, "updated_at"),
                 rs.getDouble("relevance_score"),
+                rs.getBoolean("exact_code_match"),
                 rs.getInt("match_count"),
                 rs.getString("title_highlight"),
                 rs.getString("description_highlight"),

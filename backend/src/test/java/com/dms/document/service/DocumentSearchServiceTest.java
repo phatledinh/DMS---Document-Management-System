@@ -111,6 +111,7 @@ class DocumentSearchServiceTest {
                 OffsetDateTime.now(),
                 OffsetDateTime.now(),
                 1.5,
+                false,
                 4,
                 "<em>Quy chế</em>",
                 null,

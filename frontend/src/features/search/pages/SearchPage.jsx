@@ -51,12 +51,16 @@ function getHighlightSections(result) {
   });
 }
 
-function relevanceMeta(score, matchCount) {
+function relevanceMeta(score, maxScore, exactCodeMatch) {
+  if (exactCodeMatch) return { label: 'Trùng mã tài liệu', cls: styles.relevanceHigh };
+
   const safeScore = Number(score) || 0;
-  if (safeScore >= 1 || matchCount >= 8) return { label: 'Độ trùng cao', cls: styles.relevanceHigh };
-  if (safeScore >= 0.25 || matchCount >= 3) return { label: 'Độ trùng vừa', cls: styles.relevanceMedium };
-  if (safeScore > 0 || matchCount > 0) return { label: 'Độ trùng thấp', cls: styles.relevanceLow };
-  return null;
+  if (safeScore <= 0) return null;
+  
+  const ratio = safeScore / (Number(maxScore) || 1);
+  if (ratio >= 0.7) return { label: 'Độ trùng cao', cls: styles.relevanceHigh };
+  if (ratio >= 0.3) return { label: 'Độ trùng vừa', cls: styles.relevanceMedium };
+  return { label: 'Độ trùng thấp', cls: styles.relevanceLow };
 }
 
 function getFacetLabel(items, value) {
@@ -196,6 +200,8 @@ export default function SearchPage() {
   const totalElements = searchQuery.data?.totalElements ?? searchQuery.data?.total ?? results.length;
   const searchTime = searchQuery.data?.searchTimeMs ?? searchQuery.data?.searchTime;
   const facets = searchQuery.data?.facets || EMPTY_FACETS;
+  
+  const maxScore = useMemo(() => Math.max(1, ...results.map(r => r.relevanceScore || 0)), [results]);
 
   const updateParams = useCallback((next) => {
     const p = new URLSearchParams(searchParams);
@@ -310,7 +316,7 @@ export default function SearchPage() {
                   const highlightSections = getHighlightSections(r);
                   const desc = cleanSnippet(r.description || '');
                   const mc = r.matchCount || 0;
-                  const relevance = relevanceMeta(r.relevanceScore, mc);
+                  const relevance = relevanceMeta(r.relevanceScore, maxScore, r.exactCodeMatch);
 
                   return (
                     <article key={r.id} className={styles.card} onClick={() => r.slug && navigate(`/documents/${r.slug}`)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && r.slug && navigate(`/documents/${r.slug}`)}>
@@ -325,7 +331,7 @@ export default function SearchPage() {
                             <h3 className={styles.cardTitle}>{r.title || r.fileName}</h3>
                             <div className={styles.badgeRow}>
                               <span className={styles.codeBadge}>{r.documentCode || r.fileName || '—'}</span>
-                              {mc > 0 && <span className={styles.matchBadge}><MI name="join" size={12} /> Trùng {mc} chỗ</span>}
+                              {mc > 0 && <span className={styles.matchBadge}><MI name="join" size={12} /> Khớp {mc} từ khóa</span>}
                               {relevance && <span className={`${styles.relevanceBadge} ${relevance.cls}`}><MI name="equalizer" size={12} /> {relevance.label}</span>}
                             </div>
                           </div>

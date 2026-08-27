@@ -23,6 +23,7 @@ public record DocumentSearchRow(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         double relevanceScore,
+        boolean exactCodeMatch,
         int matchCount,
         String titleHighlight,
         String descriptionHighlight,

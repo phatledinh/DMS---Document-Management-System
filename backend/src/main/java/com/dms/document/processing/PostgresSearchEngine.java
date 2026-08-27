@@ -46,11 +46,11 @@ public class PostgresSearchEngine {
                 )
                 SELECT
                     document_id,
-                    setweight(to_tsvector('simple', unaccent(coalesce(document_code, ''))), 'A') ||
-                    setweight(to_tsvector('simple', unaccent(coalesce(title, ''))), 'A') ||
-                    setweight(to_tsvector('simple', unaccent(coalesce(tag_text, ''))), 'B') ||
-                    setweight(to_tsvector('simple', unaccent(coalesce(description, ''))), 'C') ||
-                    setweight(to_tsvector('simple', unaccent(coalesce(content_text, ''))), 'D'),
+                    setweight(to_tsvector('vietnamese', coalesce(document_code, '')), 'A') ||
+                    setweight(to_tsvector('vietnamese', coalesce(title, '')), 'A') ||
+                    setweight(to_tsvector('vietnamese', coalesce(tag_text, '')), 'B') ||
+                    setweight(to_tsvector('vietnamese', coalesce(description, '')), 'C') ||
+                    setweight(to_tsvector('vietnamese', coalesce(content_text, '')), 'D'),
                     title,
                     description,
                     content_text,
@@ -72,8 +72,7 @@ public class PostgresSearchEngine {
                     refreshed_at = now()
                 """,
                 extractedText,
-                document.getId()
-        );
+                document.getId());
     }
 
     public void removeIndex(Long documentId) {

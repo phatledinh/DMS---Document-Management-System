@@ -7,7 +7,7 @@ public final class DocumentAclSqlFragments {
             AND EXISTS (
                 SELECT 1
                 FROM category_department_permissions cdp
-                WHERE cdp.category_id = {alias}.category_id
+                WHERE cdp.category_id = d.category_id
                   AND cdp.permission = 'VIEW'
                   AND cdp.department_id IN (
                       SELECT department_id FROM user_departments WHERE user_id = :currentUserId
@@ -28,7 +28,7 @@ public final class DocumentAclSqlFragments {
                 (d.status = 'INDEXED' AND EXISTS (
                     SELECT 1
                     FROM category_department_permissions cdp
-                    WHERE cdp.category_id = {alias}.category_id
+                    WHERE cdp.category_id = d.category_id
                       AND cdp.permission = 'VIEW'
                       AND cdp.department_id IN (
                           SELECT department_id FROM user_departments WHERE user_id = :currentUserId

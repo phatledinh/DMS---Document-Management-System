@@ -46,14 +46,14 @@ class DocumentSearchRepositoryTest {
 
         verify(jdbcTemplate).query(sqlCaptor.capture(), any(MapSqlParameterSource.class), any(RowMapper.class));
         String sql = sqlCaptor.getValue();
-        assertThat(sql).contains("websearch_to_tsquery('simple', unaccent(:query)) AS search_value");
-        assertThat(sql).contains("websearch_to_tsquery('simple', :query) AS highlight_value");
+        assertThat(sql).contains("websearch_to_tsquery('vietnamese', :query) AS search_value");
+        assertThat(sql).contains("websearch_to_tsquery('vietnamese', :query) AS highlight_value");
         assertThat(sql).contains("si.search_vector @@ q.search_value");
         assertThat(sql).contains("d.highlight_query_value");
         assertThat(sql).contains("AS match_count");
-        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.title_text, '')))");
-        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.description_text, '')))");
-        assertThat(sql).contains("to_tsvector('simple', unaccent(coalesce(d.content_text, '')))");
+        assertThat(sql).contains("to_tsvector('vietnamese', coalesce(d.title_text, ''))");
+        assertThat(sql).contains("to_tsvector('vietnamese', coalesce(d.description_text, ''))");
+        assertThat(sql).contains("to_tsvector('vietnamese', coalesce(d.content_text, ''))");
         assertThat(sql).contains("d.status = 'INDEXED'");
         assertThat(sql).doesNotContain("category_user_permissions");
         assertThat(sql).contains("category_department_permissions");

@@ -149,6 +149,7 @@ public class DocumentSearchService {
         return new DocumentSearchResultResponse(
                 document,
                 row.relevanceScore(),
+                row.exactCodeMatch(),
                 row.matchCount(),
                 new DocumentSearchHighlightResponse(
                         sanitize(row.titleHighlight()),
