@@ -171,7 +171,11 @@ public class UserDashboardQueryRepository {
                       AND d.permanently_deleted_at IS NULL
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%') OR lower(d.document_code) LIKE concat('%', lower(:keyword), '%'))
                       AND (:category IS NULL OR c.name = :category OR c.id::text = :category)
-                      AND (:status IS NULL OR dv.status = :status OR d.status = :status)
+                      AND (
+                          (:status IS NULL AND dv.status <> 'AWAITING_UPLOAD' AND d.status <> 'AWAITING_UPLOAD') 
+                          OR dv.status = :status 
+                          OR d.status = :status
+                      )
                       AND (CAST(:dateFrom AS timestamptz) IS NULL OR dv.created_at >= :dateFrom)
                       AND (CAST(:dateTo AS timestamptz) IS NULL OR dv.created_at <= :dateTo)
                 )

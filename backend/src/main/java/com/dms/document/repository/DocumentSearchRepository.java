@@ -277,6 +277,8 @@ public class DocumentSearchRepository {
             } else {
                 filters.append(" AND 1 = 0");
             }
+        } else {
+            filters.append(" AND d.status <> 'AWAITING_UPLOAD'");
         }
         if (request.resolvedDateFrom() != null) {
             filters.append(" AND d.effective_date >= :dateFrom");
