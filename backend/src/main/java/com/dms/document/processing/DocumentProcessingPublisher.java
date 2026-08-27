@@ -2,6 +2,7 @@ package com.dms.document.processing;
 
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -9,9 +10,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Component
 public class DocumentProcessingPublisher {
     private final RabbitTemplate rabbitTemplate;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
-    public DocumentProcessingPublisher(RabbitTemplate rabbitTemplate) {
+    public DocumentProcessingPublisher(RabbitTemplate rabbitTemplate, ApplicationEventPublisher applicationEventPublisher) {
         this.rabbitTemplate = rabbitTemplate;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -26,7 +29,12 @@ public class DocumentProcessingPublisher {
     }
 
     public void publishPreview(Long documentId, Long versionId, String objectKey, String mimeType) {
-        publish(DocumentProcessingRabbitConfig.PREVIEW_ROUTING_KEY, DocumentProcessingMessage.preview(documentId, versionId, objectKey, mimeType));
+        applicationEventPublisher.publishEvent(new DocumentPreviewRequestedEvent(documentId, versionId, objectKey, mimeType));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void handlePreviewRequest(DocumentPreviewRequestedEvent event) {
+        publish(DocumentProcessingRabbitConfig.PREVIEW_ROUTING_KEY, DocumentProcessingMessage.preview(event.documentId(), event.versionId(), event.objectKey(), event.mimeType()));
     }
 
     public void publish(String routingKey, DocumentProcessingMessage message) {

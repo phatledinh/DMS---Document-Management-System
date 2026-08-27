@@ -14,6 +14,8 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
 
     boolean existsByDocumentIdAndVersionNumber(Long documentId, String versionNumber);
 
+    boolean existsByDocumentIdAndStatus(Long documentId, DocumentStatus status);
+
     Optional<DocumentVersion> findFirstByDocumentIdAndVersionNumberAndStatus(Long documentId, String versionNumber, DocumentStatus status);
 
     List<DocumentVersion> findByDocumentId(Long documentId);

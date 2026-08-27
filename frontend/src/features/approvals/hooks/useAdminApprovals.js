@@ -24,7 +24,7 @@ export function useAdminApprovalSummary() {
 export function useApproveDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: approveDocument,
+    mutationFn: ({ documentId, versionId }) => approveDocument(documentId, versionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['admin-logs'] });
@@ -35,7 +35,7 @@ export function useApproveDocument() {
 export function useRejectDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ documentId, reason }) => rejectDocument(documentId, reason),
+    mutationFn: ({ documentId, versionId, reason }) => rejectDocument(documentId, versionId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['admin-logs'] });

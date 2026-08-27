@@ -22,7 +22,7 @@ import {
   EyeOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import { Alert, Modal, Spin, Form, Input } from 'antd';
+import { Alert, Modal, Spin, Form, Input, Tag } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -103,11 +103,15 @@ export default function DocumentHistoryPage() {
   const versions = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     const rows = Array.isArray(versionsQuery.data) ? versionsQuery.data : [];
-    const validRows = rows.filter(item => item.status !== 'AWAITING_UPLOAD');
+    const validRows = rows;
     if (!term) return validRows;
     return validRows.filter((item) => [item.versionNumber, item.fileName, item.changelog, item.uploadedBy]
       .some((value) => String(value || '').toLowerCase().includes(term)));
   }, [searchTerm, versionsQuery.data]);
+
+  const hasPendingVersion = useMemo(() => {
+    return Array.isArray(versionsQuery.data) && versionsQuery.data.some((v) => v.status === 'PENDING_APPROVAL');
+  }, [versionsQuery.data]);
 
   async function refreshVersions() {
     await Promise.all([
@@ -240,7 +244,7 @@ export default function DocumentHistoryPage() {
         <div className={styles.canvas}>
           <div className={styles.container}>
             <nav className={styles.breadcrumbs}>
-              <Link to="/">Home</Link><span>›</span><Link to="/documents">Tài liệu</Link><span>›</span><Link to={`/documents/`}>{document?.title || document?.fileName || 'Chi tiết'}</Link><span>›</span><strong>Lịch sử phiên bản</strong>
+              <Link to="/">Home</Link><span>›</span><Link to="/documents">Tài liệu</Link><span>›</span><Link to={`/documents/${id}`}>{document?.title || document?.fileName || 'Chi tiết'}</Link><span>›</span><strong>Lịch sử phiên bản</strong>
             </nav>
 
             <section className={styles.documentHeader}>
@@ -252,7 +256,19 @@ export default function DocumentHistoryPage() {
                 <h2>{document?.title || document?.fileName || 'Tài liệu'}</h2>
                 <p>Lịch sử phiên bản</p>
               </div>
-              <button className={styles.primaryButton} type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+              <button 
+                className={styles.primaryButton} 
+                type="button" 
+                onClick={() => {
+                  if (hasPendingVersion) {
+                    toast.info('Không thể tải lên khi đang có phiên bản chờ duyệt.');
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }} 
+                disabled={isUploading}
+                title={hasPendingVersion ? 'Không thể tải lên khi đang có phiên bản chờ duyệt' : ''}
+              >
                 <UploadOutlined />Tải lên phiên bản mới
               </button>
             </section>
@@ -285,6 +301,12 @@ export default function DocumentHistoryPage() {
                           <div className={styles.versionCell}>
                             <strong>{item.versionNumber}</strong>
                             {item.current && <span><StarFilled />Hiện tại</span>}
+                            {item.status === 'AWAITING_UPLOAD' && <Tag color="warning" style={{marginLeft: 8}}>Chờ tải lên</Tag>}
+                            {item.status === 'PROCESSING' && <Tag color="blue" style={{marginLeft: 8}}>Đang xử lý</Tag>}
+                            {item.status === 'EXTRACTION_FAILED' && <Tag color="error" style={{marginLeft: 8}}>Lỗi xử lý</Tag>}
+                            {item.status === 'PENDING_APPROVAL' && <Tag color="gold" style={{marginLeft: 8}}>Chờ duyệt</Tag>}
+                            {item.status === 'REJECTED' && <Tag color="red" style={{marginLeft: 8}}>Từ chối</Tag>}
+                            {item.status === 'INDEXED' && <Tag color="green" style={{marginLeft: 8}}>Đã duyệt</Tag>}
                           </div>
                         </td>
                         <td>
@@ -294,7 +316,14 @@ export default function DocumentHistoryPage() {
                           </div>
                         </td>
                         <td className={styles.mutedCell}>{formatDateTime(item.createdAt)}</td>
-                        <td className={styles.noteCell}>{item.changelog || '—'}</td>
+                        <td className={styles.noteCell}>
+                          {item.changelog || '—'}
+                          {item.status === 'REJECTED' && item.rejectReason && (
+                            <div style={{ color: 'red', marginTop: 4 }}>
+                              <strong>Lý do từ chối:</strong> {item.rejectReason}
+                            </div>
+                          )}
+                        </td>
                         <td className={styles.mutedCell}>{item.fileName || '—'} · {formatFileSize(item.fileSize)}</td>
                         <td>
                           <div className={styles.actionsCell}>

@@ -11,12 +11,12 @@ export async function getAdminApprovalSummary() {
   return unwrapApiResponse(response);
 }
 
-export async function approveDocument(documentId) {
-  const response = await axiosClient.post(`/admin/approvals/${documentId}/approve`);
+export async function approveDocument(documentId, versionId) {
+  const response = await axiosClient.post(`/admin/approvals/${documentId}/versions/${versionId}/approve`);
   return unwrapApiResponse(response);
 }
 
-export async function rejectDocument(documentId, reason) {
-  const response = await axiosClient.post(`/admin/approvals/${documentId}/reject`, { reason });
+export async function rejectDocument(documentId, versionId, reason) {
+  const response = await axiosClient.post(`/admin/approvals/${documentId}/versions/${versionId}/reject`, { reason });
   return unwrapApiResponse(response);
 }

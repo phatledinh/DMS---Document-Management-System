@@ -55,12 +55,14 @@ public class DocumentExtractWorker {
         if (document == null || document.getStatus() == DocumentStatus.DELETED) {
             return true;
         }
-        if (document.getStatus() != DocumentStatus.PROCESSING) {
-            return true;
-        }
         if (message.versionId() == null) {
+            // Initial document upload: document itself must be PROCESSING
+            if (document.getStatus() != DocumentStatus.PROCESSING) {
+                return true;
+            }
             return !message.objectKey().equals(document.getStoragePath());
         }
+        // Version upload: check the version status, not the document status
         return versionRepository.findByIdAndDocumentId(message.versionId(), document.getId())
                 .filter(version -> version.getStatus() == DocumentStatus.PROCESSING)
                 .filter(version -> message.objectKey().equals(version.getStoragePath()))

@@ -114,6 +114,19 @@ public class DocumentVersionService {
         if (document.getStatus() == DocumentStatus.PROCESSING) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Document is currently processing another version", HttpStatus.CONFLICT);
         }
+        if (versionRepository.existsByDocumentIdAndStatus(documentId, DocumentStatus.PENDING_APPROVAL)) {
+            throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "A version is currently pending approval", HttpStatus.CONFLICT);
+        }
+        
+        List<DocumentVersion> existingVersions = versionRepository.findByDocumentIdOrderByCreatedAtDesc(documentId);
+        if (!existingVersions.isEmpty()) {
+            DocumentVersion latestVersion = existingVersions.get(0);
+            if (latestVersion.getStatus() == DocumentStatus.PENDING_APPROVAL || latestVersion.getStatus() == DocumentStatus.REJECTED) {
+                if (currentUser.getRole() == Role.ADMIN && !currentUser.getId().equals(document.getUploadedBy())) {
+                    throw new AppException(ErrorCodes.ACCESS_DENIED, "Admin cannot upload versions while the latest version is pending or rejected", HttpStatus.FORBIDDEN);
+                }
+            }
+        }
         String versionNumber = request.versionNumber().trim();
         if (versionRepository.existsByDocumentIdAndVersionNumber(documentId, versionNumber)) {
             throw new AppException(ErrorCodes.VERSION_DUPLICATE, "Version number already exists", HttpStatus.CONFLICT);
@@ -178,9 +191,7 @@ public class DocumentVersionService {
         version.setMimeType(detectedMimeType);
         version.setStatus(DocumentStatus.PROCESSING);
         version.setUploadExpiresAt(null);
-        document.setStatus(DocumentStatus.PROCESSING);
         versionRepository.save(version);
-        documentRepository.save(document);
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), version.getId(), version.getStoragePath(), version.getMimeType()));
         logAction(currentUser, document, AccessLogAction.VERSION_UPLOAD);
         enforceMaxVersions(document.getId());
@@ -351,7 +362,8 @@ public class DocumentVersionService {
                 version.getId().equals(document.getCurrentVersionId()) && version.getStatus() == DocumentStatus.INDEXED,
                 version.getUploadedBy(),
                 uploadedByName,
-                version.getCreatedAt()
+                version.getCreatedAt(),
+                version.getRejectReason()
         );
     }
 

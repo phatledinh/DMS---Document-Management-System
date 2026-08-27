@@ -7,7 +7,8 @@ const POLL_TIMEOUT_MS = 120000;
 const PROCESSING_STATUS = 'PROCESSING';
 const READY_STATUS = 'INDEXED';
 const FAILED_STATUS = 'EXTRACTION_FAILED';
-const TERMINAL_PROCESSING_STATUSES = new Set([READY_STATUS, FAILED_STATUS]);
+const PENDING_APPROVAL_STATUS = 'PENDING_APPROVAL';
+const TERMINAL_PROCESSING_STATUSES = new Set([READY_STATUS, FAILED_STATUS, PENDING_APPROVAL_STATUS]);
 
 async function runWithConcurrency(items, worker) {
   const results = [];
@@ -34,6 +35,7 @@ function delay(ms) {
 function normalizeProcessingStatus(status) {
   if (status === READY_STATUS) return 'indexed';
   if (status === FAILED_STATUS) return 'extraction_failed';
+  if (status === PENDING_APPROVAL_STATUS) return 'pending_approval';
   if (status === PROCESSING_STATUS) return 'processing';
   return status?.toLowerCase() || 'processing';
 }

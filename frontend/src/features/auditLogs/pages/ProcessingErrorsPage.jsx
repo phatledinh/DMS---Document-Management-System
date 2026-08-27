@@ -124,7 +124,7 @@ export default function ProcessingErrorsPage() {
           >
             {record.status === 'PROCESSING' ? 'Đang xử lý' : 'Thử lại'}
           </Button>
-          <Link to={`/documents/`}>
+          <Link to={`/documents/${record.slug || record.documentId}`}>
             <Button size="small" icon={<EyeOutlined />} title="Chi tiết" />
           </Link>
         </Space>

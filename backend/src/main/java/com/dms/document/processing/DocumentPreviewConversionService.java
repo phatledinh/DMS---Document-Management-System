@@ -75,7 +75,21 @@ public class DocumentPreviewConversionService {
                 document.setStatus(isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL);
                 documentRepository.save(document);
             } else {
-                versionService.publishVersionAsCurrent(document, version, existingPreviewObjectKey);
+                boolean isAdmin = userRepository.findById(version.getUploadedBy())
+                        .map(u -> u.getRole() == Role.ADMIN)
+                        .orElse(false);
+                if (isAdmin) {
+                    versionService.publishVersionAsCurrent(document, version, existingPreviewObjectKey);
+                } else {
+                    version.setPreviewObjectKey(existingPreviewObjectKey);
+                    version.setStatus(DocumentStatus.PENDING_APPROVAL);
+                    versionRepository.save(version);
+                    if (document.getCurrentVersionId() == null) {
+                        document.setStatus(DocumentStatus.PENDING_APPROVAL);
+                        document.setPreviewObjectKey(existingPreviewObjectKey);
+                        documentRepository.save(document);
+                    }
+                }
             }
             return;
         }
@@ -98,7 +112,21 @@ public class DocumentPreviewConversionService {
                 document.setStatus(isAdmin ? DocumentStatus.INDEXED : DocumentStatus.PENDING_APPROVAL);
                 documentRepository.save(document);
             } else {
-                versionService.publishVersionAsCurrent(document, version, previewObjectKey);
+                boolean isAdmin = userRepository.findById(version.getUploadedBy())
+                        .map(u -> u.getRole() == Role.ADMIN)
+                        .orElse(false);
+                if (isAdmin) {
+                    versionService.publishVersionAsCurrent(document, version, previewObjectKey);
+                } else {
+                    version.setPreviewObjectKey(previewObjectKey);
+                    version.setStatus(DocumentStatus.PENDING_APPROVAL);
+                    versionRepository.save(version);
+                    if (document.getCurrentVersionId() == null) {
+                        document.setStatus(DocumentStatus.PENDING_APPROVAL);
+                        document.setPreviewObjectKey(previewObjectKey);
+                        documentRepository.save(document);
+                    }
+                }
             }
         } catch (IOException | OfficeException exception) {
             throw new IllegalStateException("Could not create preview artifact", exception);

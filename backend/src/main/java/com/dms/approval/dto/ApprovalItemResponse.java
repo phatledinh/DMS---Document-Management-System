@@ -5,7 +5,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record ApprovalItemResponse(
-        Long id,
+        Long id, // documentId
+        Long versionId,
+        String versionNumber,
         String documentCode,
         String title,
         String status,
@@ -19,6 +21,7 @@ public record ApprovalItemResponse(
         String summary,
         LocalDate effectiveDate,
         LocalDate expiryDate,
-        String slug
+        String slug,
+        String reason
 ) {
 }

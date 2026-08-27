@@ -140,12 +140,6 @@ export default function AppLayout({ children }) {
             path: "/documents/upload",
         },
         {
-            key: "my-versions",
-            label: "Version của tôi",
-            icon: <FileDoneOutlined />,
-            path: "/versions",
-        },
-        {
             key: "my-categories",
             label: "Danh mục của tôi",
             icon: <TagsOutlined />,

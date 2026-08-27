@@ -12,7 +12,6 @@ import com.dms.document.entity.Document;
 import com.dms.document.entity.DocumentStatus;
 import com.dms.document.repository.DocumentRepository;
 import com.dms.document.repository.DocumentVersionRepository;
-import com.dms.document.service.DocumentLifecycleService;
 import com.dms.identity.entity.User;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,6 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
+
+import com.dms.document.processing.DocumentContentService;
+import com.dms.document.processing.PostgresSearchEngine;
+import com.dms.document.processing.ExtractedDocumentText;
+import com.dms.document.entity.DocumentVersion;
 
 @Service
 public class AdminApprovalService {
@@ -30,21 +34,24 @@ public class AdminApprovalService {
     private final AdminApprovalRepository approvalRepository;
     private final DocumentRepository documentRepository;
     private final AuditLogService auditLogService;
-    private final DocumentLifecycleService lifecycleService;
     private final DocumentVersionRepository versionRepository;
+    private final DocumentContentService contentService;
+    private final PostgresSearchEngine searchEngine;
 
     public AdminApprovalService(
             AdminApprovalRepository approvalRepository,
             DocumentRepository documentRepository,
             AuditLogService auditLogService,
-            DocumentLifecycleService lifecycleService,
-            DocumentVersionRepository versionRepository
+            DocumentVersionRepository versionRepository,
+            DocumentContentService contentService,
+            PostgresSearchEngine searchEngine
     ) {
         this.approvalRepository = approvalRepository;
         this.documentRepository = documentRepository;
         this.auditLogService = auditLogService;
-        this.lifecycleService = lifecycleService;
         this.versionRepository = versionRepository;
+        this.contentService = contentService;
+        this.searchEngine = searchEngine;
     }
 
     @Transactional(readOnly = true)
@@ -58,41 +65,65 @@ public class AdminApprovalService {
     }
 
     @Transactional
-    public ApprovalDecisionResponse approve(Long documentId, User admin) {
+    public ApprovalDecisionResponse approve(Long documentId, Long versionId, User admin) {
         Document document = findDocument(documentId);
+        DocumentVersion version = versionRepository.findByIdAndDocumentId(versionId, documentId)
+                .orElseThrow(() -> new AppException(ErrorCodes.VERSION_NOT_FOUND, "Version not found", HttpStatus.NOT_FOUND));
+
+        if (version.getStatus() != DocumentStatus.PENDING_APPROVAL) {
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Version is not pending approval", HttpStatus.BAD_REQUEST);
+        }
+
         DocumentStatus previous = document.getStatus();
+        
+        version.setStatus(DocumentStatus.INDEXED);
+        versionRepository.save(version);
+        
         document.setStatus(DocumentStatus.INDEXED);
+        document.setCurrentVersionId(version.getId());
+        document.setVersionNumber(version.getVersionNumber());
+        document.setFileName(version.getFileName());
+        document.setFileType(version.getFileName().substring(version.getFileName().lastIndexOf('.') + 1).toUpperCase());
+        document.setMimeType(version.getMimeType());
+        document.setFileSize(version.getFileSize());
+        document.setStoragePath(version.getStoragePath());
+        document.setPreviewObjectKey(version.getPreviewObjectKey());
         document.setUpdatedAt(OffsetDateTime.now());
         Document saved = documentRepository.save(document);
-        
-        if (saved.getCurrentVersionId() != null) {
-            versionRepository.findById(saved.getCurrentVersionId()).ifPresent(version -> {
-                version.setStatus(DocumentStatus.INDEXED);
-                versionRepository.save(version);
-            });
+
+        if (version.getExtractedText() != null) {
+            ExtractedDocumentText extractedText = new ExtractedDocumentText(version.getExtractedText(), "MANUAL", "vi");
+            contentService.saveSuccess(document.getId(), extractedText, 1);
+            searchEngine.refreshIndex(document, version.getExtractedText());
         }
-        
-        auditLogService.log(admin, "APPROVE_DOCUMENT", "DOCUMENT", saved.getId(), Map.of("status", previous.name()), Map.of("status", saved.getStatus().name()));
-        return new ApprovalDecisionResponse(saved.getId(), saved.getStatus().name());
+
+        auditLogService.log(admin, "APPROVE_DOCUMENT", "DOCUMENT", saved.getId(), Map.of("status", previous.name()), Map.of("status", saved.getStatus().name(), "versionId", versionId));
+        return new ApprovalDecisionResponse(saved.getId(), version.getId(), saved.getStatus().name());
     }
 
     @Transactional
-    public ApprovalDecisionResponse reject(Long documentId, String reason, User admin) {
-        Document document = findDocument(documentId);
-        DocumentStatus previous = document.getStatus();
-        document.setStatus(DocumentStatus.REJECTED);
-        document.setUpdatedAt(OffsetDateTime.now());
-        Document saved = documentRepository.save(document);
+    public ApprovalDecisionResponse reject(Long documentId, Long versionId, String reason, User admin) {
+        Document document = findDocument(documentId); // ensure document exists and is not deleted
+        DocumentVersion version = versionRepository.findByIdAndDocumentId(versionId, documentId)
+                .orElseThrow(() -> new AppException(ErrorCodes.VERSION_NOT_FOUND, "Version not found", HttpStatus.NOT_FOUND));
+
+        if (version.getStatus() != DocumentStatus.PENDING_APPROVAL) {
+            throw new AppException(ErrorCodes.VALIDATION_ERROR, "Version is not pending approval", HttpStatus.BAD_REQUEST);
+        }
+
+        DocumentStatus previous = version.getStatus();
+        version.setStatus(DocumentStatus.REJECTED);
+        version.setRejectReason(reason);
+        versionRepository.save(version);
         
-        if (saved.getCurrentVersionId() != null) {
-            versionRepository.findById(saved.getCurrentVersionId()).ifPresent(version -> {
-                version.setStatus(DocumentStatus.REJECTED);
-                versionRepository.save(version);
-            });
+        if (document.getCurrentVersionId() == null) {
+            document.setStatus(DocumentStatus.REJECTED);
+            document.setUpdatedAt(OffsetDateTime.now());
+            documentRepository.save(document);
         }
         
-        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", documentId, Map.of("status", previous.name()), Map.of("status", "REJECTED", "reason", reason == null ? "" : reason));
-        return new ApprovalDecisionResponse(documentId, "REJECTED");
+        auditLogService.log(admin, "REJECT_DOCUMENT", "DOCUMENT", documentId, Map.of("status", previous.name()), Map.of("status", "REJECTED", "reason", reason == null ? "" : reason, "versionId", versionId));
+        return new ApprovalDecisionResponse(documentId, version.getId(), "REJECTED");
     }
 
     private Document findDocument(Long documentId) {

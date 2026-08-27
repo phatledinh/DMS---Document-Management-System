@@ -70,11 +70,32 @@ public class DocumentExtractionPipeline {
                     publisher.publishPreview(document.getId(), null, objectKey, document.getMimeType());
                 }
             } else {
-                contentService.saveSuccess(document.getId(), extractedText, message.attempt());
-                searchEngine.refreshIndex(document, extractedText.text());
-                if (!requiresPreviewConversion) {
-                    versionService.publishVersionAsCurrent(document, version, null);
+                version.setExtractedText(extractedText.text());
+                
+                boolean isAdmin = userRepository.findById(version.getUploadedBy())
+                        .map(u -> u.getRole() == Role.ADMIN)
+                        .orElse(false);
+                        
+                if (isAdmin) {
+                    contentService.saveSuccess(document.getId(), extractedText, message.attempt());
+                    searchEngine.refreshIndex(document, extractedText.text());
                 }
+
+                if (!requiresPreviewConversion) {
+                    if (isAdmin) {
+                        versionService.publishVersionAsCurrent(document, version, null);
+                    } else {
+                        version.setStatus(DocumentStatus.PENDING_APPROVAL);
+                        versionRepository.save(version);
+                        if (document.getCurrentVersionId() == null) {
+                            document.setStatus(DocumentStatus.PENDING_APPROVAL);
+                            documentRepository.save(document);
+                        }
+                    }
+                } else {
+                    versionRepository.save(version);
+                }
+                
                 if (requiresPreviewConversion) {
                     publisher.publishPreview(document.getId(), message.versionId(), objectKey, version.getMimeType());
                 }

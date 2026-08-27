@@ -47,15 +47,15 @@ public class AdminApprovalController {
         return ApiResponse.success(approvalService.summary());
     }
 
-    @PostMapping("/{documentId}/approve")
-    public ApiResponse<ApprovalDecisionResponse> approve(@PathVariable Long documentId) {
+    @PostMapping("/{documentId}/versions/{versionId}/approve")
+    public ApiResponse<ApprovalDecisionResponse> approve(@PathVariable Long documentId, @PathVariable Long versionId) {
         User admin = currentUserProvider.getRequiredUser();
-        return ApiResponse.success("Document approved", approvalService.approve(documentId, admin));
+        return ApiResponse.success("Version approved", approvalService.approve(documentId, versionId, admin));
     }
 
-    @PostMapping("/{documentId}/reject")
-    public ApiResponse<ApprovalDecisionResponse> reject(@PathVariable Long documentId, @RequestBody(required = false) ApprovalDecisionRequest request) {
+    @PostMapping("/{documentId}/versions/{versionId}/reject")
+    public ApiResponse<ApprovalDecisionResponse> reject(@PathVariable Long documentId, @PathVariable Long versionId, @RequestBody(required = false) ApprovalDecisionRequest request) {
         User admin = currentUserProvider.getRequiredUser();
-        return ApiResponse.success("Document rejected", approvalService.reject(documentId, request == null ? null : request.reason(), admin));
+        return ApiResponse.success("Version rejected", approvalService.reject(documentId, versionId, request == null ? null : request.reason(), admin));
     }
 }

@@ -6,7 +6,7 @@ import {
   FileTextOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Input, Pagination, Select, Skeleton, Space, Tag } from 'antd';
+import { Alert, Button, Input, Modal, Pagination, Select, Skeleton, Space, Tag } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -73,7 +73,7 @@ function ApprovalListItem({ item, selected, onSelect }) {
       <span className={styles.fileIcon}><FileTextOutlined /></span>
       <span className={styles.itemContent}>
         <span className={styles.itemTitleRow}>
-          <strong>{item.title}</strong>
+          <strong>{item.title} (v{item.versionNumber || '1.0'})</strong>
           <StatusTag status={item.status} />
         </span>
         <span>{item.documentCode || `#${item.id}`} · {item.department || '—'} · {formatBytes(item.fileSize)}</span>
@@ -88,9 +88,12 @@ export default function AdminApprovals() {
   const [keyword, setKeyword] = useState('');
   const [department, setDepartment] = useState();
   const [category, setCategory] = useState();
-  const [selectedId, setSelectedId] = useState();
+  const [selectedId, setSelectedId] = useState(); // documentId
+  const [selectedVersionId, setSelectedVersionId] = useState(); // versionId
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const params = useMemo(() => ({
     status: activeStatus,
     keyword: keyword || undefined,
@@ -106,33 +109,41 @@ export default function AdminApprovals() {
   const approvalItems = useMemo(() => approvalsQuery.data?.content || [], [approvalsQuery.data?.content]);
 
   useEffect(() => {
-    if (!selectedId && approvalItems.length) {
+    if (!selectedVersionId && approvalItems.length) {
       setSelectedId(approvalItems[0].id);
+      setSelectedVersionId(approvalItems[0].versionId);
     }
-    if (selectedId && approvalItems.length && !approvalItems.some((item) => item.id === selectedId)) {
+    if (selectedVersionId && approvalItems.length && !approvalItems.some((item) => item.versionId === selectedVersionId)) {
       setSelectedId(approvalItems[0].id);
+      setSelectedVersionId(approvalItems[0].versionId);
     }
-  }, [approvalItems, selectedId]);
+  }, [approvalItems, selectedVersionId]);
 
   const departments = useMemo(() => [...new Set(approvalItems.map((item) => item.department).filter(Boolean))], [approvalItems]);
   const categories = useMemo(() => [...new Set(approvalItems.map((item) => item.category).filter(Boolean))], [approvalItems]);
-  const selectedItem = approvalItems.find((item) => item.id === selectedId) || approvalItems[0];
+  const selectedItem = approvalItems.find((item) => item.versionId === selectedVersionId) || approvalItems[0];
   const stats = summaryQuery.data || { pending: 0, approved: 0, rejected: 0 };
   const decisionPending = approveMutation.isPending || rejectMutation.isPending;
 
   async function approveSelected() {
     try {
-      await approveMutation.mutateAsync(selectedItem.id);
+      await approveMutation.mutateAsync({ documentId: selectedItem.id, versionId: selectedItem.versionId });
       toast.success('Đã phê duyệt tài liệu.');
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     }
   }
 
-  async function rejectSelected() {
+  async function handleRejectConfirm() {
+    if (!rejectReason.trim()) {
+      toast.error('Vui lòng nhập lý do từ chối.');
+      return;
+    }
     try {
-      await rejectMutation.mutateAsync({ documentId: selectedItem.id, reason: 'Rejected from approvals page' });
+      await rejectMutation.mutateAsync({ documentId: selectedItem.id, versionId: selectedItem.versionId, reason: rejectReason.trim() });
       toast.success('Đã từ chối tài liệu.');
+      setRejectModalVisible(false);
+      setRejectReason('');
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     }
@@ -163,7 +174,7 @@ export default function AdminApprovals() {
             key={option.value}
             className={activeStatus === option.value ? styles.tabActive : styles.tab}
             type="button"
-            onClick={() => { setActiveStatus(option.value); setPage(0); setSelectedId(undefined); }}
+            onClick={() => { setActiveStatus(option.value); setPage(0); setSelectedVersionId(undefined); }}
           >
             {option.label}
           </button>
@@ -204,8 +215,8 @@ export default function AdminApprovals() {
                 <ApprovalListItem
                   key={item.id}
                   item={item}
-                  selected={selectedItem?.id === item.id}
-                  onSelect={() => setSelectedId(item.id)}
+                  selected={selectedItem?.versionId === item.versionId}
+                  onSelect={() => setSelectedVersionId(item.versionId)}
                 />
               ))}
               <Pagination
@@ -216,7 +227,7 @@ export default function AdminApprovals() {
                 onChange={(nextPage, nextSize) => {
                   setPage(nextPage - 1);
                   setSize(nextSize);
-                  setSelectedId(undefined);
+                  setSelectedVersionId(undefined);
                 }}
               />
             </>
@@ -246,6 +257,10 @@ export default function AdminApprovals() {
               <div><dt>Tags</dt><dd>{selectedItem.tags?.join(', ') || '—'}</dd></div>
             </dl>
 
+            {selectedItem.status === 'REJECTED' && selectedItem.reason && (
+              <Alert type="error" showIcon message="Lý do từ chối" description={selectedItem.reason} className={styles.reasonAlert} />
+            )}
+
             <section className={styles.extractBox}>
               <h3>Nội dung trích xuất</h3>
               <p>{selectedItem.summary || 'Chưa có nội dung trích xuất.'}</p>
@@ -253,12 +268,35 @@ export default function AdminApprovals() {
 
             <Space wrap className={styles.detailActions}>
               <Link to={`/documents/${selectedItem.slug}`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
-              <Button danger disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={rejectMutation.isPending} onClick={rejectSelected}>Từ chối</Button>
+              <Button danger disabled={selectedItem.status !== 'PENDING' || decisionPending} onClick={() => setRejectModalVisible(true)}>Từ chối</Button>
               <Button type="primary" disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={approveMutation.isPending} onClick={approveSelected}>Phê duyệt</Button>
             </Space>
           </aside>
         )}
       </section>
+
+      <Modal
+        title="Từ chối phiên bản"
+        open={rejectModalVisible}
+        onOk={handleRejectConfirm}
+        confirmLoading={rejectMutation.isPending}
+        onCancel={() => {
+          setRejectModalVisible(false);
+          setRejectReason('');
+        }}
+        okText="Từ chối"
+        okButtonProps={{ danger: true }}
+        cancelText="Hủy"
+      >
+        <p style={{ marginBottom: 8 }}>Vui lòng nhập lý do từ chối tài liệu <strong>{selectedItem?.title} (v{selectedItem?.versionNumber})</strong>:</p>
+        <Input.TextArea
+          rows={4}
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
+          placeholder="Ví dụ: Nội dung không phù hợp, thiếu thông tin..."
+          autoFocus
+        />
+      </Modal>
     </main>
   );
 }

@@ -46,6 +46,12 @@ public class DocumentVersion {
     @Column(name = "upload_expires_at")
     private OffsetDateTime uploadExpiresAt;
 
+    @Column(name = "extracted_text", columnDefinition = "TEXT")
+    private String extractedText;
+
+    @Column(name = "reject_reason", columnDefinition = "TEXT")
+    private String rejectReason;
+
     private String changelog;
 
     @Column(name = "uploaded_by", nullable = false)
@@ -132,6 +138,22 @@ public class DocumentVersion {
 
     public void setUploadExpiresAt(OffsetDateTime uploadExpiresAt) {
         this.uploadExpiresAt = uploadExpiresAt;
+    }
+
+    public String getExtractedText() {
+        return extractedText;
+    }
+
+    public void setExtractedText(String extractedText) {
+        this.extractedText = extractedText;
+    }
+
+    public String getRejectReason() {
+        return rejectReason;
+    }
+
+    public void setRejectReason(String rejectReason) {
+        this.rejectReason = rejectReason;
     }
 
     public String getChangelog() {

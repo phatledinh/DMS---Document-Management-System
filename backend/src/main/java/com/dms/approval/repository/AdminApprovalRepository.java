@@ -33,23 +33,24 @@ public class AdminApprovalRepository {
                 .addValue("offset", page * size);
         String baseSql = baseSql();
         List<ApprovalItemResponse> content = jdbcTemplate.query(baseSql + """
-                SELECT * FROM approval_documents
-                ORDER BY submitted_at DESC, id DESC
+                SELECT * FROM approval_versions
+                ORDER BY submitted_at DESC, version_id DESC
                 LIMIT :limit OFFSET :offset
                 """, parameters, (rs, rowNum) -> mapItem(rs));
-        Long total = jdbcTemplate.queryForObject(baseSql + "SELECT count(*) FROM approval_documents", parameters, Long.class);
+        Long total = jdbcTemplate.queryForObject(baseSql + "SELECT count(*) FROM approval_versions", parameters, Long.class);
         long totalElements = total == null ? 0 : total;
         return new PageResponse<>(content, page, size, totalElements, totalPages(totalElements, size));
     }
 
     public ApprovalSummaryResponse summary() {
         return jdbcTemplate.queryForObject("""
-                SELECT count(*) FILTER (WHERE status = 'PENDING_APPROVAL') AS pending,
-                       count(*) FILTER (WHERE status = 'INDEXED') AS approved,
-                       count(*) FILTER (WHERE status IN ('EXTRACTION_FAILED', 'ARCHIVED', 'DELETED', 'REJECTED')) AS rejected
-                FROM documents
-                WHERE permanently_deleted_at IS NULL
-                  AND status NOT IN ('AWAITING_UPLOAD', 'PROCESSING')
+                SELECT count(*) FILTER (WHERE v.status = 'PENDING_APPROVAL') AS pending,
+                       count(*) FILTER (WHERE v.status = 'INDEXED') AS approved,
+                       count(*) FILTER (WHERE v.status = 'REJECTED') AS rejected
+                FROM document_versions v
+                JOIN documents d ON d.id = v.document_id
+                WHERE d.permanently_deleted_at IS NULL
+                  AND v.status IN ('PENDING_APPROVAL', 'INDEXED', 'REJECTED')
                 """, new MapSqlParameterSource(), (rs, rowNum) -> new ApprovalSummaryResponse(
                 rs.getLong("pending"),
                 rs.getLong("approved"),
@@ -59,60 +60,70 @@ public class AdminApprovalRepository {
 
     private String baseSql() {
         return """
-                WITH approval_documents AS (
-                    SELECT d.id, d.document_code, d.title, d.slug,
-                           CASE WHEN d.status = 'PENDING_APPROVAL' THEN 'PENDING'
-                                WHEN d.status = 'INDEXED' THEN 'APPROVED'
+                WITH approval_versions AS (
+                    SELECT v.id AS version_id,
+                           v.version_number,
+                           d.id AS document_id,
+                           d.document_code,
+                           d.title,
+                           d.slug,
+                           CASE WHEN v.status = 'PENDING_APPROVAL' THEN 'PENDING'
+                                WHEN v.status = 'INDEXED' THEN 'APPROVED'
                                 ELSE 'REJECTED' END AS approval_status,
-                           d.status,
+                           v.status,
                            u.name AS submitter,
-                           d.created_at AS submitted_at,
+                           v.created_at AS submitted_at,
                            (
                                SELECT string_agg(dep.name, ', ')
                                FROM user_departments ud
                                JOIN category_department_permissions cdp ON cdp.department_id = ud.department_id
                                JOIN departments dep ON dep.id = ud.department_id
-                               WHERE ud.user_id = d.uploaded_by
+                               WHERE ud.user_id = v.uploaded_by
                                  AND cdp.category_id = d.category_id
                                  AND cdp.permission = 'UPLOAD'
                            ) AS department,
                            c.name AS category,
-                           d.file_type,
-                           d.file_size,
+                           v.file_name,
+                           v.file_size,
                            coalesce(string_agg(DISTINCT t.name, ','), '') AS tags,
-                           coalesce(dc.extracted_text, d.description, '') AS summary,
+                           coalesce(v.extracted_text, d.description, '') AS summary,
                            d.effective_date,
-                           d.expiry_date
-                    FROM documents d
-                    LEFT JOIN users u ON u.id = d.uploaded_by
+                           d.expiry_date,
+                           v.reject_reason AS reason
+                    FROM document_versions v
+                    JOIN documents d ON d.id = v.document_id
+                    LEFT JOIN users u ON u.id = v.uploaded_by
                     LEFT JOIN categories c ON c.id = d.category_id
-                    LEFT JOIN document_contents dc ON dc.document_id = d.id
                     LEFT JOIN document_tags dt ON dt.document_id = d.id
                     LEFT JOIN tags t ON t.id = dt.tag_id
                     WHERE d.permanently_deleted_at IS NULL
-                      AND d.status NOT IN ('AWAITING_UPLOAD', 'PROCESSING')
-                      AND (:status IS NULL OR CASE WHEN d.status = 'PENDING_APPROVAL' THEN 'PENDING'
-                                                   WHEN d.status = 'INDEXED' THEN 'APPROVED'
+                      AND v.status IN ('PENDING_APPROVAL', 'INDEXED', 'REJECTED')
+                      AND (:status IS NULL OR CASE WHEN v.status = 'PENDING_APPROVAL' THEN 'PENDING'
+                                                   WHEN v.status = 'INDEXED' THEN 'APPROVED'
                                                    ELSE 'REJECTED' END = :status)
                       AND (:keyword IS NULL OR lower(d.title) LIKE concat('%', lower(:keyword), '%') OR lower(d.document_code) LIKE concat('%', lower(:keyword), '%') OR lower(u.name) LIKE concat('%', lower(:keyword), '%'))
                       AND (:department IS NULL OR EXISTS (
                           SELECT 1 FROM user_departments ud2
                           JOIN category_department_permissions cdp2 ON cdp2.department_id = ud2.department_id
                           JOIN departments dep2 ON dep2.id = ud2.department_id
-                          WHERE ud2.user_id = d.uploaded_by
+                          WHERE ud2.user_id = v.uploaded_by
                             AND cdp2.category_id = d.category_id
                             AND cdp2.permission = 'UPLOAD'
                             AND (dep2.name = :department OR dep2.id::text = :department)
                       ))
                       AND (:category IS NULL OR c.name = :category OR c.id::text = :category)
-                    GROUP BY d.id, d.document_code, d.title, d.slug, d.status, u.name, d.created_at, c.name, d.file_type, d.file_size, dc.extracted_text, d.description, d.effective_date, d.expiry_date
+                    GROUP BY v.id, v.version_number, d.id, d.document_code, d.title, d.slug, v.status, u.name, v.created_at, c.name, v.file_name, v.file_size, v.extracted_text, v.reject_reason, d.description, d.effective_date, d.expiry_date
                 )
                 """;
     }
 
     private ApprovalItemResponse mapItem(ResultSet rs) throws SQLException {
+        String fileName = rs.getString("file_name");
+        String fileType = fileName != null && fileName.contains(".") ? fileName.substring(fileName.lastIndexOf('.') + 1).toUpperCase() : "";
         return new ApprovalItemResponse(
-                rs.getLong("id"),
+                rs.getLong("document_id"),
+                rs.getLong("version_id"),
+                rs.getString("version_number"),
                 rs.getString("document_code"),
                 rs.getString("title"),
                 rs.getString("approval_status"),
@@ -120,13 +131,14 @@ public class AdminApprovalRepository {
                 offsetDateTime(rs, "submitted_at"),
                 rs.getString("department"),
                 rs.getString("category"),
-                rs.getString("file_type"),
+                fileType,
                 rs.getLong("file_size"),
                 split(rs.getString("tags")),
                 truncate(rs.getString("summary")),
                 localDate(rs, "effective_date"),
                 localDate(rs, "expiry_date"),
-                rs.getString("slug")
+                rs.getString("slug"),
+                rs.getString("reason")
         );
     }
 

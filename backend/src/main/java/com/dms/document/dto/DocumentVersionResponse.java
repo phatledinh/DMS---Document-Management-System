@@ -14,6 +14,7 @@ public record DocumentVersionResponse(
         boolean current,
         Long uploadedBy,
         String uploadedByName,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        String rejectReason
 ) {
 }
