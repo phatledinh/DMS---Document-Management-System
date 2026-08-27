@@ -59,14 +59,28 @@ export async function uploadToPresignedUrl({ uploadUrl, file, requiredHeaders = 
   });
 }
 
+function rewritePresignedUrl(url) {
+  if (!url) return url;
+  try {
+    const originalUrl = new URL(url);
+    return `/minio-api${originalUrl.pathname}${originalUrl.search}`;
+  } catch (e) {
+    return url;
+  }
+}
+
 export async function getPreviewUrl(documentId) {
   const response = await axiosClient.get(`/documents/${documentId}/preview-url`);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  if (data?.url) data.url = rewritePresignedUrl(data.url);
+  return data;
 }
 
 export async function getDownloadUrl(documentId) {
   const response = await axiosClient.get(`/documents/${documentId}/download-url`);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  if (data?.url) data.url = rewritePresignedUrl(data.url);
+  return data;
 }
 
 export async function getDocumentVersions(documentId) {
@@ -86,7 +100,9 @@ export async function completeDocumentVersionUpload(documentId, versionId) {
 
 export async function getDocumentVersionDownloadUrl(documentId, versionId) {
   const response = await axiosClient.get(`/documents/${documentId}/versions/${versionId}/download-url`);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  if (data?.url) data.url = rewritePresignedUrl(data.url);
+  return data;
 }
 
 export async function restoreDocumentVersion(documentId, versionId) {
@@ -136,7 +152,9 @@ export async function permanentDeleteTrashDocuments(documentIds) {
 
 export async function getDocumentVersionPreviewUrl(id, versionId) {
   const response = await axiosClient.get(`/documents/${id}/versions/${versionId}/preview-url`);
-  return unwrapApiResponse(response);
+  const data = unwrapApiResponse(response);
+  if (data?.url) data.url = rewritePresignedUrl(data.url);
+  return data;
 }
 
 export async function deleteDocumentVersion(id, versionId) {
