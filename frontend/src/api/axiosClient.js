@@ -2,7 +2,7 @@ import axios from 'axios';
 import { getAccessToken, useAuthStore } from '../store/authStore.js';
 import { unwrapApiResponse } from '../utils/response.js';
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
+const baseURL = import.meta.env.VITE_API_URL || '/api/v1';
 
 const axiosClient = axios.create({
   baseURL,
