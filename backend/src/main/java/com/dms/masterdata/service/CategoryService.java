@@ -164,6 +164,13 @@ public class CategoryService {
             if (entry == null || entry.departmentId() == null || entry.permissions() == null || entry.permissions().isEmpty()) {
                 continue;
             }
+            if (normalized.containsKey(entry.departmentId())) {
+                throw new AppException(
+                        ErrorCodes.VALIDATION_ERROR,
+                        "Moi phong ban chi duoc them mot lan trong danh muc",
+                        HttpStatus.BAD_REQUEST
+                );
+            }
             if (departmentRepository.findByIdAndDeletedAtIsNull(entry.departmentId()).isEmpty()) {
                 throw new AppException(ErrorCodes.NOT_FOUND, "Phong ban khong ton tai", HttpStatus.NOT_FOUND);
             }

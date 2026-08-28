@@ -47,6 +47,13 @@ const CATEGORY_PERMISSIONS = [
     { label: "Xóa", value: "DELETE" },
 ];
 
+const VIEW_DEPENDENT_PERMISSIONS = ["EDIT", "DOWNLOAD", "DELETE"];
+
+function hasViewDependencyViolation(permissions = []) {
+    return !permissions.includes("VIEW")
+        && permissions.some((permission) => VIEW_DEPENDENT_PERMISSIONS.includes(permission));
+}
+
 function normalizeDepartmentPermissions(value) {
     if (!Array.isArray(value)) return [];
     return value
@@ -468,9 +475,12 @@ export default function CategoriesPage() {
 
     function toPayload(values) {
         const departmentPermissions = normalizeDepartmentPermissions(values.departmentPermissions);
+        const departmentIds = departmentPermissions.map((entry) => entry.departmentId);
+        if (new Set(departmentIds).size !== departmentIds.length) {
+            throw new Error("Không thể lưu: mỗi phòng ban chỉ được thêm một lần trong danh mục.");
+        }
         const invalidDepartment = departmentPermissions.find(
-            (entry) => !entry.permissions.includes("VIEW")
-                && entry.permissions.some((permission) => ["EDIT", "DOWNLOAD", "DELETE"].includes(permission)),
+            (entry) => hasViewDependencyViolation(entry.permissions),
         );
         if (invalidDepartment) {
             throw new Error("Không thể lưu: quyền Sửa, Download và Xóa chỉ có hiệu lực khi phòng ban có quyền Xem. Vui lòng bật Xem hoặc bỏ các quyền phụ thuộc.");
@@ -602,9 +612,34 @@ export default function CategoriesPage() {
                         </div>
                     </div>
                     <Form.List name="departmentPermissions">
-                        {(fields, { add, remove }) => (
+                        {(fields, { add, remove }) => {
+                            const currentPermissions = targetForm.getFieldValue("departmentPermissions") || [];
+                            const selectedDepartmentIds = new Set(
+                                currentPermissions.map((entry) => entry?.departmentId).filter(Boolean),
+                            );
+                            const addDepartment = () => {
+                                const available = departments.find((department) => !selectedDepartmentIds.has(department.id));
+                                if (!available) {
+                                    Modal.warning({
+                                        title: "Không còn phòng ban để thêm",
+                                        content: "Mỗi phòng ban chỉ được thêm một lần trong danh mục.",
+                                    });
+                                    return;
+                                }
+                                add({ departmentId: available.id, permissions: ["VIEW"] });
+                            };
+
+                            return (
                             <div className={styles.permissionRows}>
-                                {fields.map(({ key, name, ...restField }) => (
+                                {fields.map(({ key, name, ...restField }) => {
+                                    const currentDepartmentId = targetForm.getFieldValue(["departmentPermissions", name, "departmentId"]);
+                                    const otherSelectedIds = new Set(
+                                        currentPermissions
+                                            .filter((_, index) => index !== name)
+                                            .map((entry) => entry?.departmentId)
+                                            .filter(Boolean),
+                                    );
+                                    return (
                                     <div className={styles.permissionRow} key={key}>
                                         <Form.Item
                                             {...restField}
@@ -614,7 +649,10 @@ export default function CategoriesPage() {
                                             <Select
                                                 showSearch
                                                 placeholder="Chọn phòng ban"
-                                                options={departmentOptions}
+                                                options={departmentOptions.map((option) => ({
+                                                    ...option,
+                                                    disabled: option.value !== currentDepartmentId && otherSelectedIds.has(option.value),
+                                                }))}
                                                 optionFilterProp="label"
                                             />
                                         </Form.Item>
@@ -623,18 +661,30 @@ export default function CategoriesPage() {
                                             name={[name, "permissions"]}
                                             rules={[{ required: true, message: "Chọn quyền" }]}
                                         >
-                                            <Checkbox.Group options={CATEGORY_PERMISSIONS} />
+                                            <Checkbox.Group
+                                                options={CATEGORY_PERMISSIONS}
+                                                onChange={(permissions) => {
+                                                    if (hasViewDependencyViolation(permissions)) {
+                                                        Modal.warning({
+                                                            title: "Quyền chưa hợp lệ",
+                                                            content: "Quyền Sửa, Download và Xóa chỉ có hiệu lực khi phòng ban có quyền Xem.",
+                                                        });
+                                                    }
+                                                }}
+                                            />
                                         </Form.Item>
                                         <Button danger onClick={() => remove(name)}>
                                             Xóa
                                         </Button>
                                     </div>
-                                ))}
-                                <Button type="dashed" onClick={() => add({ permissions: ["VIEW"] })}>
+                                    );
+                                })}
+                                <Button type="dashed" onClick={addDepartment}>
                                     Thêm phòng ban
                                 </Button>
                             </div>
-                        )}
+                            );
+                        }}
                     </Form.List>
                 </div>
                 <div className={styles.modalActions}>
