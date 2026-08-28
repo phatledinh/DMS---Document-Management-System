@@ -8,9 +8,9 @@ import {
 } from '@ant-design/icons';
 import { Alert, Button, Input, Modal, Pagination, Select, Skeleton, Space, Tag } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { getApiErrorMessage } from '../../../utils/response.js';
+import { getDocumentVersionPreviewUrl } from '../../../api/documentApi.js';
 import {
   useAdminApprovalSummary,
   useAdminApprovals,
@@ -94,6 +94,7 @@ export default function AdminApprovals() {
   const [size, setSize] = useState(10);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [preview, setPreview] = useState(null);
   const params = useMemo(() => ({
     status: activeStatus,
     keyword: keyword || undefined,
@@ -125,6 +126,16 @@ export default function AdminApprovals() {
   const stats = summaryQuery.data || { pending: 0, approved: 0, rejected: 0 };
   const decisionPending = approveMutation.isPending || rejectMutation.isPending;
 
+  async function previewSelected() {
+    if (!selectedItem) return;
+    try {
+      const data = await getDocumentVersionPreviewUrl(selectedItem.id, selectedItem.versionId);
+      if (!data?.url) throw new Error('Backend không trả về URL xem trước.');
+      setPreview(data);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    }
+  }
   async function approveSelected() {
     try {
       await approveMutation.mutateAsync({ documentId: selectedItem.id, versionId: selectedItem.versionId });
@@ -267,13 +278,27 @@ export default function AdminApprovals() {
             </section>
 
             <Space wrap className={styles.detailActions}>
-              <Link to={`/documents/${selectedItem.slug}`}><Button icon={<EyeOutlined />}>Xem trước</Button></Link>
+              <Button icon={<EyeOutlined />} onClick={previewSelected}>Xem trước</Button>
               <Button danger disabled={selectedItem.status !== 'PENDING' || decisionPending} onClick={() => setRejectModalVisible(true)}>Từ chối</Button>
               <Button type="primary" disabled={selectedItem.status !== 'PENDING' || decisionPending} loading={approveMutation.isPending} onClick={approveSelected}>Phê duyệt</Button>
             </Space>
           </aside>
         )}
       </section>
+
+      <Modal
+        title={`Xem trước ${selectedItem?.title || ''} (v${selectedItem?.versionNumber || ''})`}
+        open={Boolean(preview)}
+        onCancel={() => setPreview(null)}
+        footer={null}
+        width={900}
+      >
+        {preview?.contentType?.includes('html') ? (
+          <div dangerouslySetInnerHTML={{ __html: preview.html || '' }} />
+        ) : (
+          <iframe title="Xem trước tài liệu" src={preview?.url} style={{ width: '100%', height: '70vh', border: 0 }} />
+        )}
+      </Modal>
 
       <Modal
         title="Từ chối phiên bản"

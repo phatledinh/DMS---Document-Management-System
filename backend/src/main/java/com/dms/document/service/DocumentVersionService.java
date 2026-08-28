@@ -226,7 +226,9 @@ public class DocumentVersionService {
             logAccess(user, document, AccessLogAction.VERSION_PREVIEW, false, decision.denialReason(), request);
             throw denied(decision);
         }
-        if (version.getStatus() != DocumentStatus.INDEXED) {
+        if (version.getStatus() != DocumentStatus.INDEXED
+                && !(version.getStatus() == DocumentStatus.PENDING_APPROVAL
+                && user.getRole() == Role.ADMIN)) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Version is not ready", HttpStatus.CONFLICT);
         }
         String key = previewKey(document, version);
