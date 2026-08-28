@@ -221,15 +221,10 @@ public class DocumentVersionService {
         User user = currentUserProvider.getRequiredUser();
         Document document = findDocument(documentId);
         DocumentVersion version = findVersion(documentId, versionId);
-        AccessDecision decision = accessPolicyService.canPreview(user, document);
+        AccessDecision decision = accessPolicyService.canPreviewVersion(user, document, version);
         if (!decision.granted()) {
             logAccess(user, document, AccessLogAction.VERSION_PREVIEW, false, decision.denialReason(), request);
             throw denied(decision);
-        }
-        if (version.getStatus() != DocumentStatus.INDEXED
-                && !(version.getStatus() == DocumentStatus.PENDING_APPROVAL
-                && user.getRole() == Role.ADMIN)) {
-            throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Version is not ready", HttpStatus.CONFLICT);
         }
         String key = previewKey(document, version);
         String fileName = previewFileName(version.getFileName(), document.getFileType());

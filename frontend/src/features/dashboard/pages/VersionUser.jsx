@@ -24,6 +24,17 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short' }).format(new Date(value));
 }
 
+function getVersionStatusMessage(status) {
+  switch (status) {
+    case 'PROCESSING': return 'Đang xử lý, không thể khôi phục thêm.';
+    case 'PENDING_APPROVAL': return 'Đã gửi yêu cầu khôi phục, đang chờ admin duyệt.';
+    case 'REJECTED': return 'Phiên bản đã bị từ chối, không thể khôi phục.';
+    case 'AWAITING_UPLOAD': return 'Phiên bản chưa tải lên hoàn tất.';
+    case 'EXTRACTION_FAILED': return 'Phiên bản xử lý thất bại, không thể khôi phục.';
+    default: return '';
+  }
+}
+
 function getDateRange(value) {
   if (!value) return {};
   const dateTo = new Date();
@@ -78,7 +89,7 @@ export default function VersionUser() {
         setActionKey(key);
         try {
           await restoreDocumentVersion(row.documentId, row.versionId);
-          toast.success('Đang xử lý để đặt phiên bản làm hiện hành');
+          toast.success('Đã gửi yêu cầu khôi phục. Hệ thống đang xử lý và sẽ chờ admin duyệt nếu cần.');
           await versionsQuery.refetch();
         } catch (error) {
           toast.error(getApiErrorMessage(error));
@@ -226,6 +237,9 @@ export default function VersionUser() {
                       <div className={styles.versionCell}>
                         <span>{row.versionNumber}</span>
                         {row.current && <Tag className={styles.currentTag}>hiện hành</Tag>}
+                        {!row.current && getVersionStatusMessage(row.status) && (
+                          <Tag color={row.status === 'REJECTED' ? 'red' : 'gold'}>{getVersionStatusMessage(row.status)}</Tag>
+                        )}
                       </div>
                     </td>
                     <td>{row.note || '—'}</td>
@@ -235,7 +249,7 @@ export default function VersionUser() {
                       <Space size={4} wrap>
                         <Button type="link" className={styles.actionButton} icon={<DownloadOutlined />} onClick={() => downloadVersion(row)}>Tải</Button>
                         {!row.current && row.status === 'INDEXED' && (
-                          <Button type="link" className={styles.actionButton} icon={<HistoryOutlined />} loading={actionKey === `restore-${row.versionId}`} onClick={() => makeCurrent(row)}>Hiện hành</Button>
+                          <Button type="link" className={styles.actionButton} icon={<HistoryOutlined />} loading={actionKey === `restore-${row.versionId}`} onClick={() => makeCurrent(row)}>Khôi phục</Button>
                         )}
                         <Button type="link" className={styles.actionButton} icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
                         {!row.current && (

@@ -61,6 +61,18 @@ public class DocumentAccessPolicyService {
         return evaluateCategoryPermission(user, document, CategoryPermission.DOWNLOAD);
     }
 
+    public AccessDecision canPreviewVersion(User user, Document document, DocumentVersion version) {
+        AccessDecision userDecision = ensureActiveUser(user);
+        if (!userDecision.granted()) {
+            return userDecision;
+        }
+        if (version == null || !document.getId().equals(version.getDocumentId())
+                || (version.getStatus() != DocumentStatus.INDEXED
+                && !(version.getStatus() == DocumentStatus.PENDING_APPROVAL && user.getRole() == Role.ADMIN))) {
+            return AccessDecision.denied(DOCUMENT_NOT_READY);
+        }
+        return evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
+    }
     public AccessDecision canDownloadVersion(User user, Document document, DocumentVersion version) {
         AccessDecision documentDecision = canDownload(user, document);
         if (!documentDecision.granted()) {

@@ -329,7 +329,12 @@ export default function DocumentHistoryPage() {
                           <div className={styles.actionsCell}>
                             <button title="Download" type="button" onClick={() => handleDownload(item)} disabled={item.status !== 'INDEXED'}><DownloadOutlined /></button>
                             <button title="Xem trước" type="button" onClick={() => handlePreview(item)} disabled={item.status !== 'INDEXED'}><EyeOutlined /></button>
-                            {!item.current && <button className={styles.restoreButton} title="Khôi phục" type="button" onClick={() => handleRestore(item)} disabled={item.status !== 'INDEXED'}><ReloadOutlined /></button>}
+                            {!item.current && item.status !== 'INDEXED' && (
+                              <span title="Chỉ có phiên bản đã duyệt mới được khôi phục" style={{ color: '#8c8c8c', fontSize: 12 }}>
+                                {item.status === 'PROCESSING' ? 'Đang xử lý' : item.status === 'PENDING_APPROVAL' ? 'Chờ admin duyệt' : item.status === 'REJECTED' ? 'Đã từ chối' : 'Chưa sẵn sàng'}
+                              </span>
+                            )}
+                            {!item.current && item.status === 'INDEXED' && <button className={styles.restoreButton} title="Khôi phục phiên bản" type="button" onClick={() => handleRestore(item)}><ReloadOutlined /></button>}
                             {!item.current && <button className={styles.deleteButton} title="Xóa" type="button" onClick={() => handleDelete(item)}><DeleteOutlined /></button>}
                           </div>
                         </td>
