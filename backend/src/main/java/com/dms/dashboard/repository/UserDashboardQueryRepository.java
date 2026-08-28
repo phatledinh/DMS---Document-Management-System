@@ -163,7 +163,18 @@ public class UserDashboardQueryRepository {
                     SELECT d.id AS document_id, d.title AS document_title, d.document_code,
                            dv.id AS version_id, dv.version_number, dv.changelog, dv.file_size,
                            dv.created_at AS uploaded_at, c.name AS category_name, dv.status,
-                           (dv.id = d.current_version_id) AS current_version
+                           (dv.id = d.current_version_id) AS current_version,
+                           EXISTS (
+                               SELECT 1
+                               FROM category_department_permissions cdp
+                               WHERE cdp.category_id = d.category_id
+                                 AND cdp.permission = 'VIEW'
+                                 AND cdp.department_id IN (
+                                     SELECT ud.department_id FROM user_departments ud WHERE ud.user_id = :currentUserId
+                                     UNION
+                                     SELECT u.department_id FROM users u WHERE u.id = :currentUserId AND u.department_id IS NOT NULL
+                                 )
+                           ) AS can_view
                     FROM document_versions dv
                     JOIN documents d ON d.id = dv.document_id
                     JOIN categories c ON c.id = d.category_id
@@ -195,7 +206,8 @@ public class UserDashboardQueryRepository {
                 rs.getLong("file_size"),
                 offsetDateTime(rs, "uploaded_at"),
                 rs.getString("category_name"),
-                rs.getString("status")
+                rs.getString("status"),
+                rs.getBoolean("can_view")
         ));
         Long total = jdbcTemplate.queryForObject(baseSql + "SELECT count(*) FROM my_versions", parameters, Long.class);
         long totalElements = total == null ? 0 : total;

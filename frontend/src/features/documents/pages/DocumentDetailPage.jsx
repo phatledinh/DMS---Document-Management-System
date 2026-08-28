@@ -141,11 +141,15 @@ export default function DocumentDetailPage() {
 
     if (documentQuery.isError) {
         return (
-            <Alert
-                type="error"
-                showIcon
-                message={getApiErrorMessage(documentQuery.error)}
-            />
+            <main className={styles.pageWrapper}>
+                <Alert
+                    type="warning"
+                    showIcon
+                    message="Bạn không còn quyền truy cập tài liệu này"
+                    description={getApiErrorMessage(documentQuery.error)}
+                    action={<Button onClick={() => navigate(-1)}>Quay lại</Button>}
+                />
+            </main>
         );
     }
 

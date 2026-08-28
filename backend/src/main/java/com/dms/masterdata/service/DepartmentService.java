@@ -1,6 +1,8 @@
 package com.dms.masterdata.service;
 
+import com.dms.audit.service.AuditLogService;
 import com.dms.common.exception.AppException;
+import com.dms.common.security.CurrentUserProvider;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.masterdata.dto.DepartmentRequest;
 import com.dms.masterdata.dto.DepartmentResponse;
@@ -19,10 +21,14 @@ import java.util.stream.Collectors;
 public class DepartmentService {
     private final DepartmentRepository departmentRepository;
     private final DepartmentMapper departmentMapper;
+    private final AuditLogService auditLogService;
+    private final CurrentUserProvider currentUserProvider;
 
-    public DepartmentService(DepartmentRepository departmentRepository, DepartmentMapper departmentMapper) {
+    public DepartmentService(DepartmentRepository departmentRepository, DepartmentMapper departmentMapper, AuditLogService auditLogService, CurrentUserProvider currentUserProvider) {
         this.departmentRepository = departmentRepository;
         this.departmentMapper = departmentMapper;
+        this.auditLogService = auditLogService;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -53,12 +59,15 @@ public class DepartmentService {
         }
 
         department = departmentRepository.save(department);
-        return departmentMapper.toResponse(department);
+        DepartmentResponse response = departmentMapper.toResponse(department);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "DEPARTMENT_CREATE", "DEPARTMENT", department.getId(), null, response);
+        return response;
     }
 
     @Transactional
     public DepartmentResponse updateDepartment(Long id, DepartmentRequest request) {
         Department department = getDepartmentEntityById(id);
+        DepartmentResponse oldValue = departmentMapper.toResponse(department);
         if (departmentRepository.existsByCodeAndIdNotAndDeletedAtIsNull(request.code(), id)) {
             throw new AppException(ErrorCodes.CONFLICT, "Mã phòng ban đã được sử dụng", HttpStatus.CONFLICT);
         }
@@ -72,15 +81,19 @@ public class DepartmentService {
         department.setUpdatedAt(OffsetDateTime.now());
 
         department = departmentRepository.save(department);
-        return departmentMapper.toResponse(department);
+        DepartmentResponse response = departmentMapper.toResponse(department);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "DEPARTMENT_UPDATE", "DEPARTMENT", id, oldValue, response);
+        return response;
     }
 
     @Transactional
     public void deleteDepartment(Long id) {
         Department department = getDepartmentEntityById(id);
+        DepartmentResponse oldValue = departmentMapper.toResponse(department);
         department.setDeletedAt(OffsetDateTime.now());
         department.setActive(false); // also set inactive
         departmentRepository.save(department);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "DEPARTMENT_DELETE", "DEPARTMENT", id, oldValue, null);
     }
     
     private Department getDepartmentEntityById(Long id) {

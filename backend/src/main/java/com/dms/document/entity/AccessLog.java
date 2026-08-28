@@ -24,6 +24,9 @@ public class AccessLog {
     @Column(name = "document_id", nullable = false)
     private Long documentId;
 
+    @Column(name = "version_id")
+    private Long versionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private AccessLogAction action;
@@ -65,6 +68,14 @@ public class AccessLog {
 
     public void setDocumentId(Long documentId) {
         this.documentId = documentId;
+    }
+
+    public Long getVersionId() {
+        return versionId;
+    }
+
+    public void setVersionId(Long versionId) {
+        this.versionId = versionId;
     }
 
     public AccessLogAction getAction() {

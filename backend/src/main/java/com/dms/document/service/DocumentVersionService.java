@@ -1,5 +1,6 @@
 package com.dms.document.service;
 
+import com.dms.audit.service.AuditLogService;
 import com.dms.common.exception.AppException;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.common.security.CurrentUserProvider;
@@ -56,6 +57,7 @@ public class DocumentVersionService {
     private final ApplicationEventPublisher eventPublisher;
     private final AccessLogRepository accessLogRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     @Value("${app.document.max-versions:20}")
     private int maxVersions;
@@ -70,7 +72,8 @@ public class DocumentVersionService {
             MimeDetectionService mimeDetectionService,
             ApplicationEventPublisher eventPublisher,
             AccessLogRepository accessLogRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            AuditLogService auditLogService
     ) {
         this.documentRepository = documentRepository;
         this.versionRepository = versionRepository;
@@ -82,6 +85,7 @@ public class DocumentVersionService {
         this.eventPublisher = eventPublisher;
         this.accessLogRepository = accessLogRepository;
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +151,7 @@ public class DocumentVersionService {
         version.setChangelog(request.changelog().trim());
         version.setUploadedBy(currentUser.getId());
         version = versionRepository.save(version);
+        auditLogService.log(currentUser, "DOCUMENT_VERSION_CREATE", "DOCUMENT_VERSION", version.getId(), null, Map.of("documentId", document.getId(), "versionId", version.getId(), "versionNumber", version.getVersionNumber(), "status", version.getStatus().name()));
 
         return new VersionUploadInitResponse(
                 document.getId(),
@@ -192,6 +197,7 @@ public class DocumentVersionService {
         version.setStatus(DocumentStatus.PROCESSING);
         version.setUploadExpiresAt(null);
         versionRepository.save(version);
+        auditLogService.log(currentUser, "DOCUMENT_VERSION_UPLOAD_COMPLETE", "DOCUMENT_VERSION", version.getId(), Map.of("status", "AWAITING_UPLOAD"), Map.of("documentId", document.getId(), "versionId", version.getId(), "status", version.getStatus().name()));
         eventPublisher.publishEvent(new DocumentExtractionRequestedEvent(document.getId(), version.getId(), version.getStoragePath(), version.getMimeType()));
         logAction(currentUser, document, AccessLogAction.VERSION_UPLOAD);
         enforceMaxVersions(document.getId());
@@ -205,14 +211,14 @@ public class DocumentVersionService {
         DocumentVersion version = findVersion(documentId, versionId);
         AccessDecision decision = accessPolicyService.canDownload(user, document);
         if (!decision.granted()) {
-            logAccess(user, document, AccessLogAction.VERSION_DOWNLOAD, false, decision.denialReason(), request);
+            logAccess(user, document, version, AccessLogAction.VERSION_DOWNLOAD, false, decision.denialReason(), request);
             throw denied(decision);
         }
         if (version.getStatus() != DocumentStatus.INDEXED) {
             throw new AppException(ErrorCodes.DOCUMENT_NOT_READY, "Version is not ready", HttpStatus.CONFLICT);
         }
         PresignedGetUrl url = objectStorageService.presignGet(version.getStoragePath(), "attachment; filename=\"" + version.getFileName() + "\"");
-        logAccess(user, document, AccessLogAction.VERSION_DOWNLOAD, true, null, request);
+        logAccess(user, document, version, AccessLogAction.VERSION_DOWNLOAD, true, null, request);
         return new PresignedUrlResponse(url.url(), version.getFileName(), url.expiresIn());
     }
 
@@ -223,13 +229,13 @@ public class DocumentVersionService {
         DocumentVersion version = findVersion(documentId, versionId);
         AccessDecision decision = accessPolicyService.canPreviewVersion(user, document, version);
         if (!decision.granted()) {
-            logAccess(user, document, AccessLogAction.VERSION_PREVIEW, false, decision.denialReason(), request);
+            logAccess(user, document, version, AccessLogAction.VERSION_PREVIEW, false, decision.denialReason(), request);
             throw denied(decision);
         }
         String key = previewKey(document, version);
         String fileName = previewFileName(version.getFileName(), document.getFileType());
         PresignedGetUrl url = objectStorageService.presignGet(key, "inline; filename=\"" + fileName + "\"");
-        logAccess(user, document, AccessLogAction.VERSION_PREVIEW, true, null, request);
+        logAccess(user, document, version, AccessLogAction.VERSION_PREVIEW, true, null, request);
         return new PresignedUrlResponse(url.url(), fileName, url.expiresIn());
     }
 
@@ -293,6 +299,7 @@ public class DocumentVersionService {
         version.setVersionNumber(versionNumber);
         version.setChangelog(request.changelog().trim());
         versionRepository.save(version);
+        auditLogService.log(currentUser, "DOCUMENT_VERSION_UPDATE", "DOCUMENT_VERSION", version.getId(), Map.of("versionNumber", versionNumber, "changelog", version.getChangelog()), Map.of("documentId", document.getId(), "versionId", version.getId(), "versionNumber", version.getVersionNumber(), "changelog", version.getChangelog()));
         if (version.getId().equals(document.getCurrentVersionId())) {
             document.setVersionNumber(versionNumber);
             document.setUpdatedAt(OffsetDateTime.now());
@@ -409,10 +416,11 @@ public class DocumentVersionService {
         }
     }
 
-    private void logAccess(User user, Document document, AccessLogAction action, boolean granted, String denialReason, HttpServletRequest request) {
+    private void logAccess(User user, Document document, DocumentVersion version, AccessLogAction action, boolean granted, String denialReason, HttpServletRequest request) {
         AccessLog log = new AccessLog();
         log.setUserId(user.getId());
         log.setDocumentId(document.getId());
+        log.setVersionId(version == null ? null : version.getId());
         log.setAction(action);
         log.setAccessGranted(granted);
         log.setDenialReason(denialReason);

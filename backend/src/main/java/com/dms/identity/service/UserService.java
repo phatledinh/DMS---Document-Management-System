@@ -1,6 +1,8 @@
 package com.dms.identity.service;
 
+import com.dms.audit.service.AuditLogService;
 import com.dms.common.exception.AppException;
+import com.dms.common.security.CurrentUserProvider;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.identity.dto.UserCreateRequest;
 import com.dms.identity.dto.UserResponse;
@@ -11,6 +13,8 @@ import com.dms.identity.entity.UserStatus;
 import com.dms.identity.mapper.UserMapper;
 import com.dms.identity.repository.UserDepartmentRepository;
 import com.dms.identity.repository.UserRepository;
+import com.dms.masterdata.entity.Department;
+import com.dms.masterdata.repository.DepartmentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,14 +36,20 @@ import java.util.stream.Collectors;
 public class UserService {
     private final UserRepository userRepository;
     private final UserDepartmentRepository userDepartmentRepository;
+    private final DepartmentRepository departmentRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
+    private final CurrentUserProvider currentUserProvider;
 
-    public UserService(UserRepository userRepository, UserDepartmentRepository userDepartmentRepository, UserMapper userMapper, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, UserDepartmentRepository userDepartmentRepository, DepartmentRepository departmentRepository, UserMapper userMapper, PasswordEncoder passwordEncoder, AuditLogService auditLogService, CurrentUserProvider currentUserProvider) {
         this.userRepository = userRepository;
         this.userDepartmentRepository = userDepartmentRepository;
+        this.departmentRepository = departmentRepository;
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
+        this.auditLogService = auditLogService;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -102,14 +113,16 @@ public class UserService {
 
         user = userRepository.save(user);
         syncDepartmentMemberships(user.getId(), departmentIds);
-        return userMapper.toResponse(user, departmentIds);
+        UserResponse response = userMapper.toResponse(user, departmentIds);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "USER_CREATE", "USER", user.getId(), null, response);
+        return response;
     }
     
     @Transactional
     public UserResponse updateUser(Long id, UserUpdateRequest request) {
         User user = getUserEntityById(id);
-        
-        if (request.name() != null) user.setName(request.name());
+        UserResponse oldValue = auditUserSnapshot(user);
+        List<Long> previousDepartmentIds = currentDepartmentIds(user.getId());
         if (request.phone() != null) user.setPhone(request.phone());
         List<Long> departmentIds = null;
         if (request.departmentIds() != null) {
@@ -130,17 +143,28 @@ public class UserService {
         user = userRepository.save(user);
         if (departmentIds != null) {
             syncDepartmentMemberships(user.getId(), departmentIds);
-            return userMapper.toResponse(user, departmentIds);
+            UserResponse response = userMapper.toResponse(user, departmentIds);
+            auditLogService.log(currentUserProvider.getRequiredUser(), "USER_UPDATE", "USER", id, oldValue, response);
+            if (!new LinkedHashSet<>(previousDepartmentIds).equals(new LinkedHashSet<>(departmentIds))) {
+                auditLogService.log(currentUserProvider.getRequiredUser(), "USER_DEPARTMENT_CHANGE", "USER", id,
+                        departmentSnapshot(id, previousDepartmentIds),
+                        departmentSnapshot(id, departmentIds));
+            }
+            return response;
         }
-        return toResponse(user);
+        UserResponse response = toResponse(user);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "USER_UPDATE", "USER", id, oldValue, response);
+        return response;
     }
     
     @Transactional
     public void deleteUser(Long id) {
         User user = getUserEntityById(id);
+        UserResponse oldValue = auditUserSnapshot(user);
         user.setDeletedAt(OffsetDateTime.now());
         user.setStatus(UserStatus.INACTIVE);
         userRepository.save(user);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "USER_DELETE", "USER", id, oldValue, null);
     }
     
     private UserResponse toResponse(User user) {
@@ -182,6 +206,34 @@ public class UserService {
                 })
                 .toList();
         userDepartmentRepository.saveAll(rows);
+    }
+
+    private UserResponse auditUserSnapshot(User user) {
+        return userMapper.toResponse(user, currentDepartmentIds(user.getId()));
+    }
+
+    private List<Long> currentDepartmentIds(Long userId) {
+        return userDepartmentRepository.findByUserId(userId).stream()
+                .map(UserDepartment::getDepartmentId)
+                .toList();
+    }
+
+    private Map<String, Object> departmentSnapshot(Long userId, List<Long> departmentIds) {
+        List<Map<String, Object>> departmentsSnapshot = departmentIds.isEmpty() ? List.of() : departmentRepository.findByIdInAndDeletedAtIsNull(departmentIds).stream()
+                .collect(Collectors.toMap(Department::getId, department -> department)).entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey())
+                .map(entry -> {
+                    Department department = entry.getValue();
+                    Map<String, Object> snapshot = new LinkedHashMap<>();
+                    snapshot.put("id", department.getId());
+                    snapshot.put("name", department.getName());
+                    snapshot.put("code", department.getCode());
+                    return snapshot;
+                }).toList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("userId", userId);
+        result.put("departments", departmentsSnapshot);
+        return result;
     }
 
     private User getUserEntityById(Long id) {

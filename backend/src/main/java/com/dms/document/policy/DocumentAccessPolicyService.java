@@ -97,6 +97,10 @@ public class DocumentAccessPolicyService {
         if (!userDecision.granted()) {
             return userDecision;
         }
+        AccessDecision viewDecision = evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
+        if (!viewDecision.granted()) {
+            return viewDecision;
+        }
         return evaluateCategoryPermission(user, document, CategoryPermission.EDIT);
     }
 
@@ -104,6 +108,10 @@ public class DocumentAccessPolicyService {
         AccessDecision userDecision = ensureActiveUser(user);
         if (!userDecision.granted()) {
             return userDecision;
+        }
+        AccessDecision viewDecision = evaluateCategoryPermission(user, document, CategoryPermission.VIEW);
+        if (!viewDecision.granted()) {
+            return viewDecision;
         }
         return evaluateCategoryPermission(user, document, CategoryPermission.DELETE);
     }

@@ -199,23 +199,8 @@ public class DocumentMetadataService {
             } else if (admin) {
                 predicates.add(builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED)));
             } else {
-                boolean isMyDocuments = (request.ownerId() != null && request.ownerId().equals(user.getId())) ||
-                                        (request.uploadedBy() != null && request.uploadedBy().equals(user.getId()));
-                
-                if (isMyDocuments) {
-                    Predicate indexedAndPermitted = builder.and(
-                            builder.equal(root.get("status"), DocumentStatus.INDEXED),
-                            categoryViewPermissionPredicate(user, root, query, builder)
-                    );
-                    Predicate ownDocuments = builder.and(
-                            builder.equal(root.get("uploadedBy"), user.getId()),
-                            builder.not(root.get("status").in(DocumentStatus.ARCHIVED, DocumentStatus.DELETED))
-                    );
-                    predicates.add(builder.or(indexedAndPermitted, ownDocuments));
-                } else {
-                    predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
-                    predicates.add(categoryViewPermissionPredicate(user, root, query, builder));
-                }
+                predicates.add(builder.equal(root.get("status"), DocumentStatus.INDEXED));
+                predicates.add(categoryViewPermissionPredicate(user, root, query, builder));
             }
             applyFilters(user, request, root, builder, predicates, admin);
             return builder.and(predicates.toArray(Predicate[]::new));

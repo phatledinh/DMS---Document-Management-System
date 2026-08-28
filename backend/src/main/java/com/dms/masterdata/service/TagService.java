@@ -1,6 +1,8 @@
 package com.dms.masterdata.service;
 
+import com.dms.audit.service.AuditLogService;
 import com.dms.common.exception.AppException;
+import com.dms.common.security.CurrentUserProvider;
 import com.dms.common.exception.ErrorCodes;
 import com.dms.masterdata.dto.TagRequest;
 import com.dms.masterdata.dto.TagResponse;
@@ -19,10 +21,14 @@ import java.util.List;
 public class TagService {
     private final TagRepository tagRepository;
     private final TagMapper tagMapper;
+    private final AuditLogService auditLogService;
+    private final CurrentUserProvider currentUserProvider;
 
-    public TagService(TagRepository tagRepository, TagMapper tagMapper) {
+    public TagService(TagRepository tagRepository, TagMapper tagMapper, AuditLogService auditLogService, CurrentUserProvider currentUserProvider) {
         this.tagRepository = tagRepository;
         this.tagMapper = tagMapper;
+        this.auditLogService = auditLogService;
+        this.currentUserProvider = currentUserProvider;
     }
 
     @Transactional(readOnly = true)
@@ -63,12 +69,15 @@ public class TagService {
         Tag tag = new Tag();
         tag.setName(request.name());
         tag.setSlug(slug);
-        return tagMapper.toResponse(tagRepository.save(tag));
+        TagResponse response = tagMapper.toResponse(tagRepository.save(tag));
+        auditLogService.log(currentUserProvider.getRequiredUser(), "TAG_CREATE", "TAG", response.id(), null, response);
+        return response;
     }
 
     @Transactional
     public TagResponse updateTag(Long id, TagRequest request) {
         Tag tag = getTagEntityById(id);
+        TagResponse oldValue = tagMapper.toResponse(tag);
         String slug = resolveSlug(request.slug(), request.name());
         if (tagRepository.existsByNameAndIdNotAndDeletedAtIsNull(request.name(), id)) {
             throw new AppException(ErrorCodes.CONFLICT, "Tên tag đã được sử dụng", HttpStatus.CONFLICT);
@@ -79,14 +88,18 @@ public class TagService {
         tag.setName(request.name());
         tag.setSlug(slug);
         tag.setUpdatedAt(OffsetDateTime.now());
-        return tagMapper.toResponse(tagRepository.save(tag));
+        TagResponse response = tagMapper.toResponse(tagRepository.save(tag));
+        auditLogService.log(currentUserProvider.getRequiredUser(), "TAG_UPDATE", "TAG", id, oldValue, response);
+        return response;
     }
 
     @Transactional
     public void deleteTag(Long id) {
         Tag tag = getTagEntityById(id);
+        TagResponse oldValue = tagMapper.toResponse(tag);
         tag.setDeletedAt(OffsetDateTime.now());
         tagRepository.save(tag);
+        auditLogService.log(currentUserProvider.getRequiredUser(), "TAG_DELETE", "TAG", id, oldValue, null);
     }
 
     private Tag getTagEntityById(Long id) {

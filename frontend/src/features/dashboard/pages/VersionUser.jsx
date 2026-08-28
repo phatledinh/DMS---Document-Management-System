@@ -1,5 +1,5 @@
 import { DeleteOutlined, DownloadOutlined, EditOutlined, FileDoneOutlined, FilterOutlined, HistoryOutlined, SearchOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Input, Modal, Pagination, Select, Skeleton, Space, Tag } from 'antd';
+import { Alert, Button, Empty, Input, Modal, Pagination, Select, Skeleton, Space, Tag, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import {
@@ -232,6 +232,7 @@ export default function VersionUser() {
                     <td>
                       <strong>{row.documentTitle}</strong>
                       <span>{row.categoryName || '—'} · {row.status}</span>
+                      {row.canView === false && <Tag color="warning">Không còn quyền truy cập</Tag>}
                     </td>
                     <td>
                       <div className={styles.versionCell}>
@@ -247,13 +248,18 @@ export default function VersionUser() {
                     <td>{formatDate(row.uploadedAt)}</td>
                     <td>
                       <Space size={4} wrap>
-                        <Button type="link" className={styles.actionButton} icon={<DownloadOutlined />} onClick={() => downloadVersion(row)}>Tải</Button>
-                        {!row.current && row.status === 'INDEXED' && (
-                          <Button type="link" className={styles.actionButton} icon={<HistoryOutlined />} loading={actionKey === `restore-${row.versionId}`} onClick={() => makeCurrent(row)}>Khôi phục</Button>
-                        )}
-                        <Button type="link" className={styles.actionButton} icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
-                        {!row.current && (
-                          <Button danger type="link" className={styles.actionButton} icon={<DeleteOutlined />} loading={actionKey === `delete-${row.versionId}`} onClick={() => removeVersion(row)}>Xóa</Button>
+                        <Button type="link" className={styles.actionButton} icon={<DownloadOutlined />} disabled={row.canView === false} onClick={() => downloadVersion(row)}>Tải</Button>
+                        {!row.canView && <Tooltip title="Bạn không còn quyền VIEW trên danh mục này"><span><Button type="link" disabled>Không thể truy cập</Button></span></Tooltip>}
+                        {!row.canView ? null : (
+                          <>
+                            {!row.current && row.status === 'INDEXED' && (
+                              <Button type="link" className={styles.actionButton} icon={<HistoryOutlined />} loading={actionKey === `restore-${row.versionId}`} onClick={() => makeCurrent(row)}>Khôi phục</Button>
+                            )}
+                            <Button type="link" className={styles.actionButton} icon={<EditOutlined />} onClick={() => openEdit(row)}>Sửa</Button>
+                            {!row.current && (
+                              <Button danger type="link" className={styles.actionButton} icon={<DeleteOutlined />} loading={actionKey === `delete-${row.versionId}`} onClick={() => removeVersion(row)}>Xóa</Button>
+                            )}
+                          </>
                         )}
                       </Space>
                     </td>

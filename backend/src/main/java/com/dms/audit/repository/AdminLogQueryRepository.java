@@ -51,6 +51,7 @@ public class AdminLogQueryRepository {
                            al.target_type,
                            al.target_id,
                            NULL::bigint AS document_id,
+                           NULL::bigint AS version_id,
                            NULL::text AS document_slug,
                            NULL::text AS document_title,
                            NULL::text AS keyword,
@@ -85,7 +86,8 @@ public class AdminLogQueryRepository {
                            al.action,
                            'DOCUMENT' AS target_type,
                            al.document_id AS target_id,
-                           al.document_id,
+                           al.document_id AS document_id,
+                           al.version_id AS version_id,
                            d.slug AS document_slug,
                            d.title AS document_title,
                            NULL::text AS keyword,
@@ -122,6 +124,7 @@ public class AdminLogQueryRepository {
                            'SEARCH' AS target_type,
                            NULL::bigint AS target_id,
                            NULL::bigint AS document_id,
+                           NULL::bigint AS version_id,
                            NULL::text AS document_slug,
                            NULL::text AS document_title,
                            sl.keyword,
@@ -150,7 +153,7 @@ public class AdminLogQueryRepository {
         if (branches.isEmpty()) {
             branches.add("""
                     SELECT NULL::bigint AS id, NULL::text AS log_type, NULL::bigint AS actor_id, NULL::text AS actor_name,
-                           NULL::text AS action, NULL::text AS target_type, NULL::bigint AS target_id, NULL::bigint AS document_id,
+                           NULL::text AS action, NULL::text AS target_type, NULL::bigint AS target_id, NULL::bigint AS document_id, NULL::bigint AS version_id,
                            NULL::text AS document_slug, NULL::text AS document_title, NULL::text AS keyword, NULL::bigint AS result_count, NULL::bigint AS latency_ms,
                            NULL::boolean AS access_granted, NULL::text AS denial_reason, NULL::text AS ip_address, NULL::text AS user_agent,
                            NULL::text AS old_value, NULL::text AS new_value, NULL::text AS filters, NULL::timestamptz AS created_at
@@ -186,6 +189,7 @@ public class AdminLogQueryRepository {
                 rs.getString("target_type"),
                 nullableLong(rs, "target_id"),
                 nullableLong(rs, "document_id"),
+                nullableLong(rs, "version_id"),
                 rs.getString("document_slug"),
                 rs.getString("document_title"),
                 rs.getString("keyword"),

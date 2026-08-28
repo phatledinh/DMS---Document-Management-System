@@ -13,6 +13,7 @@ public record MyDocumentVersionResponse(
         long fileSize,
         OffsetDateTime uploadedAt,
         String categoryName,
-        String status
+        String status,
+        boolean canView
 ) {
 }

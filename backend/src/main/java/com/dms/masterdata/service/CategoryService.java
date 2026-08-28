@@ -171,6 +171,16 @@ public class CategoryService {
             for (String permission : entry.permissions()) {
                 permissions.add(parsePermission(permission));
             }
+            if (!permissions.contains(CategoryPermission.VIEW)
+                    && permissions.stream().anyMatch(permission -> permission == CategoryPermission.EDIT
+                    || permission == CategoryPermission.DOWNLOAD
+                    || permission == CategoryPermission.DELETE)) {
+                throw new AppException(
+                        ErrorCodes.VALIDATION_ERROR,
+                        "Quyen Sua, Download va Xoa chi co hieu luc khi phong ban co quyen Xem",
+                        HttpStatus.BAD_REQUEST
+                );
+            }
         }
         List<CategoryDepartmentPermission> rows = new ArrayList<>();
         for (Map.Entry<Long, Set<CategoryPermission>> entry : normalized.entrySet()) {

@@ -11,6 +11,7 @@ public record AdminLogResponse(
         String targetType,
         Long targetId,
         Long documentId,
+        Long versionId,
         String documentSlug,
         String documentTitle,
         String keyword,

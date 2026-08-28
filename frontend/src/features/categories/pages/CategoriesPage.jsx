@@ -467,6 +467,14 @@ export default function CategoriesPage() {
     }
 
     function toPayload(values) {
+        const departmentPermissions = normalizeDepartmentPermissions(values.departmentPermissions);
+        const invalidDepartment = departmentPermissions.find(
+            (entry) => !entry.permissions.includes("VIEW")
+                && entry.permissions.some((permission) => ["EDIT", "DOWNLOAD", "DELETE"].includes(permission)),
+        );
+        if (invalidDepartment) {
+            throw new Error("Không thể lưu: quyền Sửa, Download và Xóa chỉ có hiệu lực khi phòng ban có quyền Xem. Vui lòng bật Xem hoặc bỏ các quyền phụ thuộc.");
+        }
         return {
             parentId: values.parentId || null,
             name: values.name.trim(),
@@ -474,7 +482,7 @@ export default function CategoriesPage() {
             description: values.description?.trim() || null,
             sortOrder: Number(values.sortOrder || 0),
             isActive: values.isActive ?? true,
-            departmentPermissions: normalizeDepartmentPermissions(values.departmentPermissions),
+            departmentPermissions,
             userPermissions: normalizeUserPermissions(values.userPermissions),
         };
     }
@@ -589,6 +597,7 @@ export default function CategoriesPage() {
                             <h3>Phân quyền phòng ban</h3>
                             <p>
                                 Quyền áp dụng cho mọi tài liệu thuộc danh mục này.
+                                Upload có thể cấp độc lập; Sửa, Download và Xóa chỉ hoạt động khi đồng thời có quyền Xem.
                             </p>
                         </div>
                     </div>

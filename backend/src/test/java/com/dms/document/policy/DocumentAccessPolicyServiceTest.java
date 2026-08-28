@@ -139,6 +139,51 @@ class DocumentAccessPolicyServiceTest {
         assertThat(decision.denialReason()).isEqualTo("VERSION_NOT_READY");
     }
 
+    @Test
+    @DisplayName("Edit requires VIEW and EDIT on category")
+    void canEdit_requiresViewAndEdit() {
+        User user = user(10L, Role.USER, UserStatus.ACTIVE);
+        Document document = document(1L, 200L, DocumentStatus.INDEXED);
+        when(categoryAccessPolicyService.hasPermission(user, 200L, CategoryPermission.VIEW)).thenReturn(true);
+        when(categoryAccessPolicyService.hasPermission(user, 200L, CategoryPermission.EDIT)).thenReturn(true);
+
+        assertThat(policyService.canEdit(user, document).granted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Edit is denied when VIEW is missing even if EDIT is granted")
+    void canEdit_viewMissing_denied() {
+        User user = user(10L, Role.USER, UserStatus.ACTIVE);
+        Document document = document(1L, 200L, DocumentStatus.INDEXED);
+        when(categoryAccessPolicyService.hasPermission(user, 200L, CategoryPermission.EDIT)).thenReturn(true);
+
+        AccessDecision decision = policyService.canEdit(user, document);
+
+        assertThat(decision.granted()).isFalse();
+        assertThat(decision.denialReason()).isEqualTo("ACCESS_DENIED");
+    }
+
+    @Test
+    @DisplayName("Delete is denied when VIEW is missing even if DELETE is granted")
+    void canDelete_viewMissing_denied() {
+        User user = user(10L, Role.USER, UserStatus.ACTIVE);
+        Document document = document(1L, 200L, DocumentStatus.INDEXED);
+        when(categoryAccessPolicyService.hasPermission(user, 200L, CategoryPermission.DELETE)).thenReturn(true);
+
+        AccessDecision decision = policyService.canDelete(user, document);
+
+        assertThat(decision.granted()).isFalse();
+        assertThat(decision.denialReason()).isEqualTo("ACCESS_DENIED");
+    }
+
+    @Test
+    @DisplayName("Upload remains independent from VIEW")
+    void canUpload_withoutView_grantedWhenUploadPermissionExists() {
+        User user = user(10L, Role.USER, UserStatus.ACTIVE);
+        when(categoryAccessPolicyService.hasPermission(user, 200L, CategoryPermission.UPLOAD)).thenReturn(true);
+
+        assertThat(policyService.canUpload(user, 200L).granted()).isTrue();
+    }
     private User user(Long id, Role role, UserStatus status) {
         User user = new User();
         user.setId(id);
