@@ -40,7 +40,7 @@ services:
             - JWT_ACCESS_EXPIRATION=900000
             - JWT_REFRESH_EXPIRATION=604800000
             - STORAGE_ENDPOINT=http://minio:9000
-            - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+            - STORAGE_PUBLIC_ENDPOINT=https://dms.io.vn
             - STORAGE_BUCKET=dms-documents
             - STORAGE_ACCESS_KEY=dms_minio
             - STORAGE_SECRET_KEY=dms_minio_password
