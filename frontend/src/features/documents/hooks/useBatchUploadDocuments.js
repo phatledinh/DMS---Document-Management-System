@@ -80,11 +80,8 @@ export function useBatchUploadDocuments() {
       await runWithConcurrency(uploadableItems, async (item) => {
         const file = filesByClientItemId[item.clientItemId];
         try {
-          const originalUrl = new URL(item.uploadUrl);
-          const proxyUploadUrl = `/minio-api${originalUrl.pathname}${originalUrl.search}`;
-
           await uploadToPresignedUrl({
-            uploadUrl: proxyUploadUrl,
+            uploadUrl: item.uploadUrl,
             file,
             requiredHeaders: item.requiredHeaders,
             onUploadProgress: (event) => {

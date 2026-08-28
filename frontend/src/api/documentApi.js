@@ -53,7 +53,7 @@ export async function batchMoveDocuments(documentIds, targetCategoryId) {
 }
 
 export async function uploadToPresignedUrl({ uploadUrl, file, requiredHeaders = {}, onUploadProgress }) {
-  await axios.put(uploadUrl, file, {
+  await axios.put(rewritePresignedUrl(uploadUrl), file, {
     headers: requiredHeaders,
     onUploadProgress,
   });
@@ -63,7 +63,7 @@ function rewritePresignedUrl(url) {
   if (!url) return url;
   try {
     const originalUrl = new URL(url);
-    return `/minio-api${originalUrl.pathname}${originalUrl.search}`;
+    return `${originalUrl.pathname}${originalUrl.search}`;
   } catch (e) {
     return url;
   }
